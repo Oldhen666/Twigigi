@@ -6,6 +6,8 @@ import "./globals.css";
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
 const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-fraunces" });
 
+export const instant = false;
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
   title: {
