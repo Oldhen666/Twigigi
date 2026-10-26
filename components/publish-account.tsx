@@ -10,11 +10,13 @@ export function PublishAccount({
   open,
   pending,
   state,
+  intent,
   onClose,
 }: {
   open: boolean;
   pending: boolean;
   state: FormState;
+  intent: "draft" | "publish";
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<"register" | "login">("register");
@@ -42,6 +44,7 @@ export function PublishAccount({
   }, [open, mode]);
 
   if (!open) return null;
+  const savingDraft = intent === "draft";
   const accountError = ACCOUNT_INPUTS.some((key) => state.fieldErrors?.[key]) ? state.fieldErrors : undefined;
 
   function remember(event: React.FormEvent<HTMLInputElement>) {
@@ -52,9 +55,11 @@ export function PublishAccount({
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={onClose} onKeyDown={(event) => { if (event.key === "Escape") onClose(); }}>
       <div ref={box} role="dialog" aria-modal="true" aria-labelledby="publish-account-title" className="w-full max-w-md rounded-[28px] border border-line bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
-        <h2 id="publish-account-title" className="font-serif text-3xl">Publish your Twig</h2>
+        <h2 id="publish-account-title" className="font-serif text-3xl">{savingDraft ? "Save your draft" : "Publish your Twig"}</h2>
         <p className="mt-2 text-sm text-muted">
-          {mode === "login" ? "Log in to publish this Twig on your profile." : "Create an account to publish. Your name and link exist after this."}
+          {mode === "login"
+            ? "Log in to save this Twig to your account. What you already filled in stays on this page."
+            : "Create your seller account first. Your name and link are created now, and this Twig is saved to that account."}
         </p>
         <input type="hidden" name="accountMode" value={mode} />
         {state.error ? <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{state.error}</p> : null}
@@ -77,8 +82,16 @@ export function PublishAccount({
             <input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} defaultValue={values.current.password} onInput={remember} className={inputClass} />
           </Field>
         </div>
-        <button name="intent" value="publish" disabled={pending} className={`${buttonClass} mt-5 w-full`}>
-          {pending ? "Publishing…" : mode === "login" ? "Log in and publish" : "Create account and publish"}
+        <button name="intent" value={intent} disabled={pending} className={`${buttonClass} mt-5 w-full`}>
+          {pending
+            ? "Saving…"
+            : mode === "login"
+              ? savingDraft
+                ? "Log in and save draft"
+                : "Log in and publish"
+              : savingDraft
+                ? "Create account and save draft"
+                : "Create account and publish"}
         </button>
         <button type="button" onClick={() => setMode(mode === "login" ? "register" : "login")} className={`${ghostClass} mt-2 w-full`}>
           {mode === "login" ? "New here? Create an account" : "Already have an account? Log in"}

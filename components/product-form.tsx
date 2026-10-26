@@ -2,15 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useActionState } from "react";
-import {
-  captureDraft,
-  clearNewPageDraft,
-  loadNewPageDraft,
-  readDraftImage,
-  saveNewPageDraft,
-  type DraftImage,
-  type NewPageDraft,
-} from "@/lib/new-page-draft";
+import { captureDraft, readDraftImage, type DraftImage, type NewPageDraft } from "@/lib/new-page-draft";
 import type { Cta, FormState, Product, QuoteForm } from "@/lib/types";
 import { BuyOfferFields } from "@/components/buy-offer-fields";
 import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/components/page-preview";
@@ -49,7 +41,6 @@ export function ProductForm({
   });
   const seenSave = useRef(0);
   const skipSave = useRef(false);
-  const saveTimer = useRef<number | null>(null);
   const [state, formAction, pending] = useActionState(async (prev: FormState, formData: FormData) => {
     for (const file of restoredFiles.current) formData.append("images", file);
     return action(prev, formData);
@@ -62,12 +53,13 @@ export function ProductForm({
   const [draft, setDraft] = useState<NewPageDraft | null>(null);
   const [savedId, setSavedId] = useState(product?.id ?? "");
   const [savedSlug, setSavedSlug] = useState(product?.slug ?? "");
-  const [notice, setNotice] = useState<"saved" | "device" | null>(null);
+  const [notice, setNotice] = useState<"saved" | null>(null);
+  const [accountIntent, setAccountIntent] = useState<"draft" | "publish">("publish");
   const [confirmClear, setConfirmClear] = useState(false);
   const [seller, setSeller] = useState(sellerName);
   const [needsAccount, setNeedsAccount] = useState(guest);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [ready, setReady] = useState(Boolean(product));
+  const [ready] = useState(true);
   const [resetKey, setResetKey] = useState(0);
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
   const [live, setLive] = useState<Record<string, string>>({});
@@ -125,18 +117,16 @@ export function ProductForm({
     setPreviews([]);
     if (!product) {
       imageDraft.current = [];
-      const stored: NewPageDraft = {
+      latest.current = {
         ...(latest.current ?? { fields: {}, checks: {}, images: [] }),
         productId: state.productId,
         slug: state.slug,
         savedImages: images,
         images: [],
       };
-      latest.current = stored;
-      saveNewPageDraft(cta, stored);
     }
     setNotice("saved");
-  }, [cta, product, state]);
+  }, [product, state]);
 
   function remember() {
     const form = formRef.current;
@@ -146,26 +136,7 @@ export function ProductForm({
     next.slug = savedRecord.current.slug;
     next.savedImages = savedRecord.current.savedImages;
     latest.current = next;
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      if (latest.current && !skipSave.current) saveNewPageDraft(cta, latest.current);
-    }, 200);
   }
-
-  useEffect(() => {
-    if (product) return;
-    const next = loadNewPageDraft(cta);
-    imageDraft.current = next?.images ?? [];
-    setDraft(next);
-    setPreviews(next?.images.map((image) => image.dataUrl) ?? []);
-    if (next?.productId) {
-      savedRecord.current = { productId: next.productId, slug: next.slug, savedImages: next.savedImages };
-      setSavedId(next.productId);
-      setSavedSlug(next.slug ?? "");
-      setKept(next.savedImages ?? []);
-    }
-    setReady(true);
-  }, [cta, product]);
 
   useEffect(() => {
     if (!ready || product) return;
@@ -207,10 +178,6 @@ export function ProductForm({
 
   useEffect(() => {
     if (product || !ready) return;
-    const flush = () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-      if (!skipSave.current && latest.current) saveNewPageDraft(cta, latest.current);
-    };
     const form = formRef.current;
     const onReset = () => {
       const saved = latest.current;
@@ -218,13 +185,8 @@ export function ProductForm({
       window.setTimeout(() => restoreDraft(form, saved), 0);
     };
     form?.addEventListener("reset", onReset);
-    window.addEventListener("pagehide", flush);
-    return () => {
-      form?.removeEventListener("reset", onReset);
-      window.removeEventListener("pagehide", flush);
-      flush();
-    };
-  }, [product, ready, cta, resetKey]);
+    return () => form?.removeEventListener("reset", onReset);
+  }, [product, ready, resetKey]);
 
   const stepSeen = useRef(false);
   useEffect(() => {
@@ -433,19 +395,13 @@ export function ProductForm({
     window.scrollTo({ top: 0 });
   }
 
-  function flushDraft() {
-    remember();
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    if (!product && latest.current && !skipSave.current) saveNewPageDraft(cta, latest.current);
-  }
-
   function openPreview(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
     const form = formRef.current;
     if (!form) return;
     const next = readPagePreview(new FormData(form), [...kept, ...previews], cta, seller);
-    flushDraft();
+    remember();
     // Wait until this click finishes. Replacing the button immediately can submit the form.
     window.setTimeout(() => {
       setPreview(next);
@@ -469,13 +425,13 @@ export function ProductForm({
       event.preventDefault();
       return;
     }
-    if (needsAccount && intent === "draft") {
+    if (needsAccount && !accountOpen) {
       event.preventDefault();
-      flushDraft();
-      setNotice("device");
+      setAccountIntent(intent === "draft" ? "draft" : "publish");
+      setAccountOpen(true);
       return;
     }
-    flushDraft();
+    remember();
   }
 
   function blockedOffer() {
@@ -511,15 +467,11 @@ export function ProductForm({
     return true;
   }
 
-  function saveOnDevice() {
+  function openAccount(intent: "draft" | "publish") {
     if (blockedOffer()) return;
-    flushDraft();
-    setNotice("device");
-  }
-
-  function openAccountGate() {
-    if (blockedOffer()) return;
-    flushDraft();
+    if (intent === "publish" && blockedPayments()) return;
+    remember();
+    setAccountIntent(intent);
     setAccountOpen(true);
   }
 
@@ -563,8 +515,6 @@ export function ProductForm({
 
   function clearAll() {
     skipSave.current = true;
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    clearNewPageDraft(cta);
     latest.current = null;
     imageDraft.current = [];
     restoredFiles.current = [];
@@ -609,7 +559,7 @@ export function ProductForm({
 
   const draftButton =
     published || retired ? null : needsAccount ? (
-      <button type="button" onClick={saveOnDevice} className={`${ghostClass} flex-1`}>
+      <button type="button" onClick={() => openAccount("draft")} className={`${ghostClass} flex-1`}>
         Save draft
       </button>
     ) : (
@@ -618,7 +568,7 @@ export function ProductForm({
       </button>
     );
   const publishButton = needsAccount ? (
-    <button type="button" onClick={openAccountGate} className={`${buttonClass} flex-1`}>
+    <button type="button" onClick={() => openAccount("publish")} className={`${buttonClass} flex-1`}>
       Publish
     </button>
   ) : retired ? (
@@ -704,10 +654,8 @@ export function ProductForm({
       {notice ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={() => setNotice(null)} onKeyDown={(event) => { if (event.key === "Escape") setNotice(null); }}>
           <div role="dialog" aria-modal="true" aria-labelledby="draft-saved-title" className="w-full max-w-sm rounded-[28px] border border-line bg-card p-6 text-center shadow-lg" onClick={(event) => event.stopPropagation()}>
-            <h2 id="draft-saved-title" className="font-serif text-3xl">{notice === "device" ? "Saved on this device" : "Draft saved"}</h2>
-            <p className="mt-2 text-sm text-muted">
-              {notice === "device" ? "It stays in this browser until you publish. Publishing creates your account and your Twig." : "Your Twig is saved. You can keep editing."}
-            </p>
+            <h2 id="draft-saved-title" className="font-serif text-3xl">Draft saved</h2>
+            <p className="mt-2 text-sm text-muted">Your Twig is saved to your account. You can keep editing.</p>
             <button type="button" autoFocus className={`${buttonClass} mt-5 w-full`} onClick={() => setNotice(null)}>
               OK
             </button>
@@ -721,7 +669,7 @@ export function ProductForm({
         <input key={image} type="hidden" name="kept" value={image} />
       ))}
       {state.error ? <p className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{state.error}</p> : null}
-      {fresh ? (
+      {fresh && !previewing ? (
         <div className="mt-4 flex justify-end">
           <button type="button" onClick={() => setConfirmClear(true)} className="text-sm text-danger">
             Clear all
@@ -917,7 +865,7 @@ export function ProductForm({
         </button>
       </div>
       )}
-      <PublishAccount open={accountOpen} pending={pending} state={state} onClose={() => setAccountOpen(false)} />
+      <PublishAccount open={accountOpen} pending={pending} state={state} intent={accountIntent} onClose={() => setAccountOpen(false)} />
       {reactivateOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={() => setReactivateOpen(false)}>
           <div role="dialog" aria-modal="true" aria-labelledby="reactivate-title" className="w-full max-w-sm rounded-[28px] border border-line bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>

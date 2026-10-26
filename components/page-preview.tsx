@@ -71,11 +71,11 @@ export function PagePreview({ draft }: { draft: PagePreviewDraft }) {
           <div className="flex snap-x snap-mandatory overflow-x-auto">
             {draft.images.map((src) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img key={src} src={src} alt="" className="aspect-[4/3] w-full shrink-0 snap-center object-cover" />
+              <img key={src} src={src} alt="" className="aspect-square w-full shrink-0 snap-center object-cover" />
             ))}
           </div>
         ) : (
-          <div className="grid aspect-[4/3] place-items-center bg-paper-deep text-sm text-muted">No photo yet</div>
+          <div className="grid aspect-square place-items-center bg-paper-deep text-sm text-muted">No photo yet</div>
         )}
         <div className="px-5 pt-4">
           {draft.location ? <p className="text-xs uppercase tracking-[0.16em] text-muted">{draft.location}</p> : null}

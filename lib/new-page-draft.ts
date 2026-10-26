@@ -15,46 +15,6 @@ export type NewPageDraft = {
 
 const SKIP = new Set(["id", "slug", "cta", "kept", "intent", "accountMode", "displayName", "username", "email", "password"]);
 
-function key(cta: string) {
-  return `twigigi-new-${cta}`;
-}
-
-export function loadNewPageDraft(cta: string): NewPageDraft | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = sessionStorage.getItem(key(cta));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as NewPageDraft;
-    if (!parsed || typeof parsed.fields !== "object" || !parsed.fields) return null;
-    return {
-      fields: parsed.fields,
-      checks: parsed.checks ?? {},
-      images: Array.isArray(parsed.images) ? parsed.images : [],
-      productId: typeof parsed.productId === "string" ? parsed.productId : undefined,
-      slug: typeof parsed.slug === "string" ? parsed.slug : undefined,
-      savedImages: Array.isArray(parsed.savedImages) ? parsed.savedImages.filter((item) => typeof item === "string") : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function saveNewPageDraft(cta: string, draft: NewPageDraft) {
-  try {
-    sessionStorage.setItem(key(cta), JSON.stringify(draft));
-  } catch {
-    try {
-      sessionStorage.setItem(key(cta), JSON.stringify({ ...draft, images: [] }));
-    } catch {
-      // The browser refused the saved draft.
-    }
-  }
-}
-
-export function clearNewPageDraft(cta: string) {
-  sessionStorage.removeItem(key(cta));
-}
-
 export function captureDraft(form: HTMLFormElement, images: DraftImage[]): NewPageDraft {
   const fields: Record<string, string> = {};
   for (const [name, value] of new FormData(form).entries()) {

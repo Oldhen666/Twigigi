@@ -74,7 +74,7 @@ export async function ProductView({
         {product.images.length > 0 ? (
           <div className="flex snap-x snap-mandatory overflow-x-auto">
             {product.images.map((src, index) => (
-              <div key={src} className="relative aspect-[4/3] w-full shrink-0 snap-center bg-paper-deep">
+              <div key={src} className="relative aspect-square w-full shrink-0 snap-center bg-paper-deep">
                 <Image
                   src={src}
                   alt={`${product.title}, photo ${index + 1}`}

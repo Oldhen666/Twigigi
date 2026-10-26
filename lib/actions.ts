@@ -21,6 +21,7 @@ import {
   findUserByEmail,
   findUserByUsername,
   findUserById,
+  getOrder,
   getProductById,
   insertMessage,
   insertOrder,
@@ -45,6 +46,7 @@ import {
 } from "@/lib/db";
 import {
   appUrl,
+  formatMoney,
   fulfillmentOptions,
   isTwigLive,
   nextBillingDate,
@@ -57,7 +59,7 @@ import {
   SRC_COOKIE,
 } from "@/lib/format";
 import type { Cta, FormState, Fulfillment, OrderStatus, ProductInput } from "@/lib/types";
-import { sendResetEmail } from "@/lib/mail";
+import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
 
@@ -708,6 +710,30 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   } catch {
     if (product.quantityAvailable != null) releaseStock(product.id, parsed.data.quantity);
     return { error: "Could not save this order. Try again." };
+  }
+
+  const seller = findUserById(product.userId);
+  const reserved = product.contactEmail.trim().toLowerCase();
+  const notify = z.string().email().safeParse(reserved).success ? reserved : seller?.email ?? "";
+  if (notify) {
+    const order = getOrder(orderId);
+    const lines = [
+      "You have a new order on Twigigi.",
+      "",
+      `Product: ${product.title}`,
+      selection.label ? `Option: ${selection.label}` : null,
+      `Buyer: ${parsed.data.name}`,
+      `Email: ${parsed.data.email}`,
+      parsed.data.phone ? `Phone: ${parsed.data.phone}` : null,
+      `Quantity: ${parsed.data.quantity}`,
+      `Fulfillment: ${parsed.data.fulfillment}`,
+      parsed.data.fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
+      `Total: ${formatMoney(total, product.currency)}`,
+      order?.publicRef ? `Order: ${order.publicRef}` : null,
+      "",
+      `Open the order: ${appUrl()}/order/${orderId}`,
+    ].filter((line): line is string => line !== null);
+    await sendOrderEmail(notify, { subject: `New order: ${product.title}`, text: lines.join("\n") });
   }
 
   redirect(`/order/${orderId}`);

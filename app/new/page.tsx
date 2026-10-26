@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { ProductForm } from "@/components/product-form";
@@ -20,14 +19,9 @@ async function NewPage({
   const title = cta === "buy" ? "New Product" : cta === "quote" ? "New Quote" : "New Contact";
   return (
     <main className="mx-auto w-full max-w-xl px-5 py-6">
-      <div className="flex items-center justify-between gap-3">
-        <BackButton />
-        <Link href={`/login?next=${encodeURIComponent(`/new?cta=${cta}`)}`} className="text-sm text-ink hover:text-forest">
-          Sign in
-        </Link>
-      </div>
+      <BackButton />
       <h1 className="mt-4 font-serif text-4xl">{title}</h1>
-      <p className="mt-2 text-sm text-muted">Build the Twig now. Your profile is created when you publish.</p>
+      <p className="mt-2 text-sm text-muted">Save draft or Publish creates your seller account. Your name and link are created then, and what you already filled in stays on this page.</p>
       <ProductForm action={saveProduct} defaultEmail="" sellerName="" cta={cta} guest />
     </main>
   );

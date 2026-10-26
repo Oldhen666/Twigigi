@@ -10,7 +10,7 @@ export function ProductFallback() {
   return (
     <Stage>
       <div className="animate-pulse bg-card sm:rounded-[28px]">
-        <div className="aspect-[4/3] bg-paper-deep" />
+        <div className="aspect-square bg-paper-deep" />
         <div className="space-y-3 p-5">
           <div className="h-3 w-28 rounded bg-paper-deep" />
           <div className="h-8 w-3/4 rounded bg-paper-deep" />
