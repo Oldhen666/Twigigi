@@ -23,7 +23,7 @@ export function BackButton() {
         if (window.history.length > 1) router.back();
         else router.push(fallbackFor(path));
       }}
-      className="text-sm text-muted"
+      className="self-start text-left text-sm text-muted"
     >
       ← Back
     </button>

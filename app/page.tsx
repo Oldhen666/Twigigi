@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
-import { BackButton } from "@/components/back-button";
 import { getCurrentUser } from "@/lib/auth";
 
 const demos = [
@@ -39,8 +38,7 @@ async function HomeAuth() {
 export default function Home() {
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="flex items-center justify-between px-5 py-5 sm:px-8">
-        <BackButton />
+      <header className="flex items-center justify-end px-5 py-5 sm:px-8">
         <Suspense fallback={<span className="text-sm text-transparent">Sign in</span>}>
           <HomeAuth />
         </Suspense>
