@@ -35,8 +35,15 @@ export async function requireUser() {
   return user;
 }
 
+export async function requireSeller() {
+  const user = await requireUser();
+  if (user.role === "buyer") redirect("/orders");
+  return user;
+}
+
 export async function requireAdmin() {
   const user = await requireUser();
+  if (user.role === "buyer") redirect("/orders");
   if (user.role !== "admin") redirect("/dashboard");
   return user;
 }

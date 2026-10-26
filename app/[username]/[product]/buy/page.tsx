@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { placeOrder } from "@/lib/actions";
+import { getCurrentUser } from "@/lib/auth";
 import { getPublicProduct, requireLiveTwig, staticProductParams } from "@/lib/catalog";
 import { CheckoutForm } from "@/components/checkout-form";
 import { ProductFallback, Stage } from "@/components/stage";
@@ -48,6 +49,7 @@ async function BuyDetails({
   const requested = Number(typeof query.qty === "string" ? query.qty : "1");
   const cap = product.quantityAvailable == null ? 20 : Math.min(20, product.quantityAvailable);
   const initialQuantity = Number.isInteger(requested) ? Math.min(Math.max(requested, 1), Math.max(cap, 1)) : 1;
+  const account = await getCurrentUser();
   return (
     <Stage>
       <div className="bg-card px-5 py-6 sm:rounded-[28px] sm:shadow-[0_24px_80px_rgba(70,48,16,0.08)]">
@@ -81,6 +83,8 @@ async function BuyDetails({
               requirePhone={product.requirePhone}
               initialQuantity={initialQuantity}
               maxQuantity={Math.max(cap, 1)}
+              defaultName={account?.displayName ?? ""}
+              defaultEmail={account?.email ?? ""}
               payments={{
                 methods: product.paymentMethods,
                 cardPaymentUrl: product.cardPaymentUrl,

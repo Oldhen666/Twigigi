@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { saveProduct } from "@/lib/actions";
-import { requireUser } from "@/lib/auth";
+import { requireSeller } from "@/lib/auth";
 import { ProductForm } from "@/components/product-form";
 import { readCta } from "@/lib/format";
 
@@ -10,7 +10,7 @@ async function NewProduct({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const user = await requireUser();
+  const user = await requireSeller();
   const params = await searchParams;
   const cta = readCta(typeof params.cta === "string" ? params.cta : undefined);
   if (!cta) redirect("/start");

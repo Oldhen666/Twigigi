@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { saveProduct } from "@/lib/actions";
-import { requireUser } from "@/lib/auth";
+import { requireSeller } from "@/lib/auth";
 import { DeleteTwig } from "@/components/delete-twig";
 import { ProductForm } from "@/components/product-form";
 import { getProductById } from "@/lib/db";
@@ -13,7 +13,7 @@ async function Editor({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const user = await requireUser();
+  const user = await requireSeller();
   const { id } = await params;
   const query = await searchParams;
   const product = getProductById(id);

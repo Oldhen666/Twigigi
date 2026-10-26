@@ -24,6 +24,13 @@ const demos = [
 
 async function HomeAuth() {
   const user = await getCurrentUser();
+  if (user?.role === "buyer") {
+    return (
+      <Link href="/orders" className="text-sm text-ink hover:text-forest">
+        Your orders
+      </Link>
+    );
+  }
   return user ? (
     <Link href="/dashboard" className="text-sm text-ink hover:text-forest">
       Your Twigs

@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { setLeadStatus } from "@/lib/actions";
-import { requireUser } from "@/lib/auth";
+import { requireSeller } from "@/lib/auth";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
@@ -11,7 +11,7 @@ import { BUCKET_LABEL } from "@/lib/ledger";
 import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatDate, formatMoney, isTwigLive, nextBillingDate, productUrl, srcLabel } from "@/lib/format";
 
 async function DashboardBody() {
-  const user = await requireUser();
+  const user = await requireSeller();
   const stats = sellerStats(user.id);
   const products = sellerProducts(user.id);
   const viewSources = sellerViewSources(user.id);

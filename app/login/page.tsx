@@ -14,7 +14,7 @@ async function LoginScreen({
   const user = await getCurrentUser();
   if (user) redirect("/dashboard");
   const params = await searchParams;
-  const nextPath = typeof params.next === "string" ? params.next : "/dashboard";
+  const nextPath = typeof params.next === "string" ? params.next : "";
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-6">
       <Logo />

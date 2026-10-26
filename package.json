@@ -12,6 +12,7 @@
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.13",
     "next": "16.4.2",
+    "nodemailer": "^10.2.1",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",

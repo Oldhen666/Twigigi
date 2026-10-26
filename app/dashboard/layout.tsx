@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { signOut } from "@/lib/actions";
-import { requireUser } from "@/lib/auth";
+import { requireSeller } from "@/lib/auth";
 import { BackButton } from "@/components/back-button";
 import { Logo } from "@/components/logo";
 
 async function Header() {
-  const user = await requireUser();
+  const user = await requireSeller();
   return (
     <header className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-5 py-5">
       <Logo />

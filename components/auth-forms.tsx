@@ -53,27 +53,44 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
       <button disabled={pending} className={`${buttonClass} w-full`}>
         {pending ? "Signing in…" : "Log in"}
       </button>
+      <p className="text-sm text-muted">
+        <a href="/forgot" className="text-forest">Forgot password?</a>
+      </p>
     </form>
   );
 }
 
-export function SignupForm({ cta }: { cta?: string }) {
+export function SignupForm({ cta, initialRole = "seller" }: { cta?: string; initialRole?: "seller" | "buyer" }) {
   const [state, action, pending] = useActionState(signUp, {} as FormState);
+  const [role, setRole] = useState<"seller" | "buyer">(initialRole);
   return (
     <form action={action} noValidate className="space-y-4">
       {cta ? <input type="hidden" name="cta" value={cta} /> : null}
+      <input type="hidden" name="role" value={role} />
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => setRole("buyer")} className={`h-11 rounded-full border text-sm ${role === "buyer" ? "border-forest bg-moss text-forest" : "border-line bg-card text-muted"}`}>
+          Buy
+        </button>
+        <button type="button" onClick={() => setRole("seller")} className={`h-11 rounded-full border text-sm ${role === "seller" ? "border-forest bg-moss text-forest" : "border-line bg-card text-muted"}`}>
+          Sell
+        </button>
+      </div>
       {state.error ? <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{state.error}</p> : null}
       <label className="block">
         <span className={labelClass}>Your name</span>
         <input name="displayName" autoComplete="name" className={inputClass} />
         <ErrorText message={state.fieldErrors?.displayName} />
       </label>
-      <label className="block">
-        <span className={labelClass}>Username</span>
-        <input name="username" autoCapitalize="none" autoCorrect="off" placeholder="ava" className={inputClass} />
-        <ErrorText message={state.fieldErrors?.username} />
-        <span className="mt-1 block text-xs text-muted">Must be unique. Your link will be twigigi.com/username/product</span>
-      </label>
+      {role === "seller" ? (
+        <label className="block">
+          <span className={labelClass}>Username</span>
+          <input name="username" autoCapitalize="none" autoCorrect="off" placeholder="ava" className={inputClass} />
+          <ErrorText message={state.fieldErrors?.username} />
+          <span className="mt-1 block text-xs text-muted">Must be unique. Your link will be twigigi.com/username/product</span>
+        </label>
+      ) : (
+        <p className="text-sm text-muted">A buyer account keeps the orders placed with this email.</p>
+      )}
       <label className="block">
         <span className={labelClass}>Email</span>
         <input name="email" type="email" autoComplete="email" className={inputClass} />
@@ -85,7 +102,7 @@ export function SignupForm({ cta }: { cta?: string }) {
         <ErrorText message={state.fieldErrors?.password} />
       </label>
       <button disabled={pending} className={`${buttonClass} w-full`}>
-        {pending ? "Creating…" : "Create your Twig"}
+        {pending ? "Creating…" : role === "buyer" ? "Create buyer account" : "Create your Twig"}
       </button>
     </form>
   );

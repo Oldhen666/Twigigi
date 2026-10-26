@@ -14,17 +14,19 @@ async function SignupScreen({
 }) {
   const params = await searchParams;
   const cta = readCta(typeof params.cta === "string" ? params.cta : undefined);
+  const role = params.role === "buyer" ? "buyer" : "seller";
   const user = await getCurrentUser();
+  if (user?.role === "buyer") redirect("/orders");
   if (user) redirect(cta ? `/dashboard/products/new?cta=${cta}` : "/dashboard");
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-6">
       <BackButton />
       <div className="flex flex-1 flex-col justify-center py-6">
       <Logo />
-      <h1 className="mt-8 font-serif text-4xl">Create your first Twig</h1>
-      <p className="mt-2 text-muted">A name, a username, and a password. Then the product.</p>
+      <h1 className="mt-8 font-serif text-4xl">Create an account</h1>
+      <p className="mt-2 text-muted">Buyers keep their orders. Sellers publish Twigs.</p>
       <div className="mt-6">
-        <SignupForm cta={cta ?? undefined} />
+        <SignupForm cta={cta ?? undefined} initialRole={role} />
       </div>
       <p className="mt-4 text-sm text-muted">
         Already selling? <Link href="/login" className="text-forest">Log in</Link>

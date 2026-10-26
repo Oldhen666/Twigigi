@@ -35,6 +35,8 @@ export function CheckoutForm({
   initialQuantity = 1,
   maxQuantity,
   payments = null,
+  defaultName = "",
+  defaultEmail = "",
 }: {
   mode: Cta;
   action: Action;
@@ -50,6 +52,8 @@ export function CheckoutForm({
   initialQuantity?: number;
   maxQuantity?: number;
   payments?: PayDetails | null;
+  defaultName?: string;
+  defaultEmail?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, {} as FormState);
   const [fulfillment, setFulfillment] = useState(options[0]?.id ?? "pickup");
@@ -83,11 +87,11 @@ export function CheckoutForm({
 
       {mode !== "buy" || requireName ? (
         <Field label="Name" name="name" required error={fieldErrors?.name}>
-          <input name="name" autoComplete="name" aria-required="true" className={inputClass} />
+          <input name="name" autoComplete="name" aria-required="true" defaultValue={defaultName} className={inputClass} />
         </Field>
       ) : null}
       <Field label="Email" name="email" required error={fieldErrors?.email}>
-        <input name="email" type="email" autoComplete="email" aria-required="true" className={inputClass} />
+        <input name="email" type="email" autoComplete="email" aria-required="true" defaultValue={defaultEmail} className={inputClass} />
       </Field>
       {mode !== "buy" || requirePhone ? (
         <Field label="Phone" name="phone" required error={fieldErrors?.phone}>

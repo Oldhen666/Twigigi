@@ -277,6 +277,15 @@ function ensureColumns(database: DatabaseSync) {
   `);
   backfillOrders(database);
   ensureOrderNumbers(database);
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      used_at TEXT
+    );
+  `);
   promoteAdmins(database);
   const paid = database.prepare(`SELECT id FROM orders WHERE payment_status = 'paid' OR status IN ('paid', 'fulfilled')`).all() as Array<{ id: string }>;
   for (const row of paid) postPaymentLedger(database, row.id);
@@ -549,7 +558,7 @@ function mapPublic(row: Row): PublicProduct {
 }
 
 function mapUser(row: Row): User {
-  const role: UserRole = row.role === "admin" ? "admin" : "seller";
+  const role: UserRole = row.role === "admin" ? "admin" : row.role === "buyer" ? "buyer" : "seller";
   return {
     id: str(row.id),
     email: str(row.email),
@@ -707,10 +716,40 @@ export function createUser(input: {
   passwordHash: string;
   username: string;
   displayName: string;
+  role?: "seller" | "buyer";
 }) {
   db.prepare(
-    "INSERT INTO users (id, email, password_hash, username, display_name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(input.id, input.email.toLowerCase(), input.passwordHash, input.username, input.displayName, new Date().toISOString());
+    "INSERT INTO users (id, email, password_hash, username, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    input.id,
+    input.email.toLowerCase(),
+    input.passwordHash,
+    input.username,
+    input.displayName,
+    input.role === "buyer" ? "buyer" : "seller",
+    new Date().toISOString(),
+  );
+}
+
+export function updatePassword(userId: string, passwordHash: string) {
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, userId);
+}
+
+export function replacePasswordReset(id: string, userId: string, tokenHash: string, expiresAt: string) {
+  db.prepare("DELETE FROM password_resets WHERE user_id = ?").run(userId);
+  db.prepare("INSERT INTO password_resets (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)").run(id, userId, tokenHash, expiresAt);
+}
+
+export function takePasswordReset(tokenHash: string) {
+  const row = one("SELECT id, user_id, expires_at, used_at FROM password_resets WHERE token_hash = ?", tokenHash);
+  if (!row || row.used_at) return null;
+  if (Date.parse(str(row.expires_at)) <= Date.now()) return null;
+  db.prepare("UPDATE password_resets SET used_at = ? WHERE id = ?").run(new Date().toISOString(), str(row.id));
+  return str(row.user_id);
+}
+
+export function claimBuyerOrders(userId: string, email: string) {
+  db.prepare("UPDATE orders SET buyer_id = ? WHERE buyer_id IS NULL AND lower(email) = ?").run(userId, email.toLowerCase());
 }
 
 export function getProductById(id: string) {
@@ -731,8 +770,8 @@ export function getPublishedProduct(username: string, slug: string) {
 }
 
 export function getSellerWithProducts(username: string): PublicSeller | null {
-  const user = one("SELECT id, username, display_name FROM users WHERE username = ?", username);
-  if (!user) return null;
+  const user = one("SELECT id, username, display_name, role FROM users WHERE username = ?", username);
+  if (!user || str(user.role) === "buyer") return null;
   const products = many(
     `SELECT p.*, u.username, u.display_name
      FROM products p JOIN users u ON u.id = p.user_id
@@ -1142,6 +1181,10 @@ export function getOrder(id: string) {
 
 export function listOrders(userId: string) {
   return many(`${ORDER_SELECT} WHERE o.seller_id = ? ORDER BY o.created_at DESC LIMIT 12`, userId).map(mapOrder);
+}
+
+export function listBuyerOrders(userId: string) {
+  return many(`${ORDER_SELECT} WHERE o.buyer_id = ? ORDER BY o.created_at DESC LIMIT 50`, userId).map(mapOrder);
 }
 
 export type StoredLedgerEntry = {

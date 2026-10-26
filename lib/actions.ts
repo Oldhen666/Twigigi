@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { cookies } from "next/headers";
@@ -9,9 +10,10 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, interacEmailProblem, isTransferMethod, methodsForFulfillment, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
-import { clearSession, getCurrentUser, requireAdmin, requireUser, setSession } from "@/lib/auth";
+import { clearSession, getCurrentUser, requireAdmin, requireSeller, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import {
+  claimBuyerOrders,
   createUser,
   clearDeactivatesAt,
   clearDeactivatedAt,
@@ -29,7 +31,10 @@ import {
   reserveStock,
   setDeactivatesAt,
   reactivateProduct,
+  replacePasswordReset,
+  takePasswordReset,
   uniqueSlug,
+  updatePassword,
   updateMessageStatus,
   completePayout,
   setDispute,
@@ -39,6 +44,7 @@ import {
   updateQuoteStatus,
 } from "@/lib/db";
 import {
+  appUrl,
   fulfillmentOptions,
   isTwigLive,
   nextBillingDate,
@@ -51,6 +57,7 @@ import {
   SRC_COOKIE,
 } from "@/lib/format";
 import type { Cta, FormState, Fulfillment, OrderStatus, ProductInput } from "@/lib/types";
+import { sendResetEmail } from "@/lib/mail";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
 
@@ -134,6 +141,40 @@ async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
   return { ok: true, userId: id };
 }
 
+async function createBuyerAccount(formData: FormData): Promise<OpenedAccount> {
+  const parsed = z
+    .object({
+      displayName: signupSchema.shape.displayName,
+      email: signupSchema.shape.email,
+      password: signupSchema.shape.password,
+    })
+    .safeParse({
+      displayName: text(formData, "displayName"),
+      email: text(formData, "email"),
+      password: text(formData, "password"),
+    });
+  if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
+  const id = newId("usr");
+  const username = `b${randomBytes(6).toString("hex")}`;
+  try {
+    createUser({
+      id,
+      email: parsed.data.email,
+      passwordHash: bcrypt.hashSync(parsed.data.password, 10),
+      username,
+      displayName: parsed.data.displayName,
+      role: "buyer",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("users.email")) return { fieldErrors: { email: "An account with that email already exists." } };
+    return { error: "Could not create the account." };
+  }
+  claimBuyerOrders(id, parsed.data.email);
+  await setSession(id);
+  return { ok: true, userId: id };
+}
+
 async function signInAccount(formData: FormData): Promise<OpenedAccount> {
   const email = text(formData, "email").trim().toLowerCase();
   const password = text(formData, "password");
@@ -151,16 +192,56 @@ async function openAccount(formData: FormData) {
 }
 
 export async function signUp(_prev: FormState, formData: FormData): Promise<FormState> {
-  const created = await createSellerAccount(formData);
+  const buyer = text(formData, "role") === "buyer";
+  const created = buyer ? await createBuyerAccount(formData) : await createSellerAccount(formData);
   if (!created.ok) return created;
+  if (buyer) redirect("/orders");
   const cta = readCta(text(formData, "cta"));
   redirect(cta ? `/dashboard/products/new?cta=${cta}` : "/start");
 }
 
 export async function signIn(_prev: FormState, formData: FormData): Promise<FormState> {
   const opened = await signInAccount(formData);
-  if (!opened.ok) return opened;
-  redirect(safeNext(text(formData, "next")));
+  if (!opened.ok || !opened.userId) return opened;
+  const user = findUserById(opened.userId);
+  const requested = text(formData, "next");
+  if (user?.role === "buyer") {
+    claimBuyerOrders(user.id, user.email);
+    redirect(!requested || requested === "/dashboard" ? "/orders" : safeNext(requested));
+  }
+  redirect(requested ? safeNext(requested) : "/dashboard");
+}
+
+export async function requestPasswordReset(_prev: FormState, formData: FormData): Promise<FormState> {
+  const email = text(formData, "email").trim().toLowerCase();
+  if (!z.string().email().safeParse(email).success) return { fieldErrors: { email: "Enter a valid email." } };
+  if (!process.env.SMTP_HOST || !process.env.SMTP_FROM) return { error: "Password reset email is not set up yet." };
+  const user = findUserByEmail(email);
+  if (user) {
+    const token = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    replacePasswordReset(newId("rst"), user.id, tokenHash, expires);
+    try {
+      await sendResetEmail(user.email, `${appUrl()}/reset?token=${encodeURIComponent(token)}`);
+    } catch {
+      return { error: "Could not send the reset email. Try again later." };
+    }
+  }
+  return { saved: true };
+}
+
+export async function resetPassword(_prev: FormState, formData: FormData): Promise<FormState> {
+  const token = text(formData, "token");
+  const password = text(formData, "password");
+  if (password.length < 8 || password.length > 72) return { fieldErrors: { password: "Use at least 8 characters." } };
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const userId = token ? takePasswordReset(tokenHash) : null;
+  if (!userId) return { error: "This reset link is invalid or expired." };
+  updatePassword(userId, bcrypt.hashSync(password, 10));
+  await setSession(userId);
+  const user = findUserById(userId);
+  redirect(user?.role === "buyer" ? "/orders" : "/dashboard");
 }
 
 export async function signOut() {
@@ -418,6 +499,9 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     if (!user) return { error: "Could not open the account." };
     sessionStamp = { signedIn: true, displayName: user.displayName };
   }
+  if (user.role === "buyer") {
+    return { error: "This account is for buying. Use a seller account to publish a Twig.", ...sessionStamp };
+  }
   if (id && (!existing || existing.userId !== user.id)) {
     return { error: "That Twig was not found.", ...sessionStamp };
   }
@@ -506,7 +590,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
 }
 
 export async function removeProduct(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireSeller();
   const id = text(formData, "id");
   const product = getProductById(id);
   if (!product || product.userId !== user.id) redirect("/dashboard");
@@ -521,7 +605,7 @@ export async function removeProduct(formData: FormData) {
 }
 
 export async function scheduleDeactivation(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireSeller();
   const product = getProductById(text(formData, "id"));
   if (!product || product.userId !== user.id || product.status !== "published") redirect("/dashboard");
   if (!product.deactivatesAt) setDeactivatesAt(product.id, user.id, nextBillingDate());
@@ -531,7 +615,7 @@ export async function scheduleDeactivation(formData: FormData) {
 }
 
 export async function reactivateTwig(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireSeller();
   const product = getProductById(text(formData, "id"));
   if (!product || product.userId !== user.id) redirect("/dashboard");
   if (product.status === "deactivated") reactivateProduct(product.id, user.id);
@@ -598,13 +682,15 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   if (!reserveStock(product.id, parsed.data.quantity)) return { error: "There aren't enough left." };
 
   const orderId = newId("ord");
-  const buyer = findUserByEmail(parsed.data.email);
+  const sessionUser = await getCurrentUser();
+  const emailMatch = findUserByEmail(parsed.data.email);
+  const buyerId = sessionUser ? sessionUser.id : emailMatch?.role === "buyer" ? emailMatch.id : null;
   try {
     insertOrder({
       id: orderId,
       productId: product.id,
       sellerId: product.userId,
-      buyerId: buyer?.id ?? null,
+      buyerId,
       buyerName: parsed.data.name,
       email: parsed.data.email,
       phone: parsed.data.phone,
@@ -783,7 +869,7 @@ export async function closeOrderDispute(formData: FormData) {
 }
 
 export async function setLeadStatus(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireSeller();
   const kind = text(formData, "kind");
   const id = text(formData, "id");
   const status = text(formData, "status");
