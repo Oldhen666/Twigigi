@@ -25,7 +25,7 @@ async function LoginScreen({
         <LoginForm nextPath={nextPath} />
       </div>
       <p className="mt-4 text-sm text-muted">
-        New here? <Link href="/start" className="text-forest">Create a Twig</Link>
+        New here? <Link href="/signup" className="text-forest">Create a Twigigi account</Link>
       </p>
       <LoginHelp />
       </div>
