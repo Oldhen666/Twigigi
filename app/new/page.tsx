@@ -21,7 +21,6 @@ async function NewPage({
     <main className="mx-auto w-full max-w-xl px-5 py-6">
       <BackButton />
       <h1 className="mt-4 font-serif text-4xl">{title}</h1>
-      <p className="mt-2 text-sm text-muted">Save draft or Publish creates your seller account. Your name and link are created then, and what you already filled in stays on this page.</p>
       <ProductForm action={saveProduct} defaultEmail="" sellerName="" cta={cta} guest />
     </main>
   );
