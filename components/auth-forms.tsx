@@ -1,13 +1,39 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { signIn, signUp } from "@/lib/actions";
 import type { FormState } from "@/lib/types";
-import { buttonClass, inputClass, labelClass } from "@/components/ui";
+import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 
 function ErrorText({ message }: { message?: string }) {
   if (!message) return null;
   return <p className="mt-1 text-sm text-danger">{message}</p>;
+}
+
+export function LoginHelp() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <p className="mt-6 text-sm text-muted">
+        Having a problem?{" "}
+        <button type="button" onClick={() => setOpen(true)} className="font-medium text-forest">
+          Contact
+        </button>
+      </p>
+      {open ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={() => setOpen(false)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="login-help-title" className="w-full max-w-sm rounded-[28px] border border-line bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
+            <h2 id="login-help-title" className="font-serif text-3xl">Contact</h2>
+            <p className="mt-3 text-sm text-muted">Email</p>
+            <a href="mailto:chenk@dybridge.com" className="mt-1 block text-base text-forest">chenk@dybridge.com</a>
+            <button type="button" onClick={() => setOpen(false)} className={`${ghostClass} mt-5 w-full`}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 export function LoginForm({ nextPath }: { nextPath: string }) {

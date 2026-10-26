@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { LoginForm } from "@/components/auth-forms";
+import { LoginForm, LoginHelp } from "@/components/auth-forms";
 import { BackButton } from "@/components/back-button";
 import { Logo } from "@/components/logo";
 import { getCurrentUser } from "@/lib/auth";
@@ -17,9 +17,9 @@ async function LoginScreen({
   const nextPath = typeof params.next === "string" ? params.next : "/dashboard";
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-6">
-      <BackButton />
-      <div className="flex flex-1 flex-col justify-center py-6">
       <Logo />
+      <div className="flex flex-1 flex-col justify-center py-6">
+      <BackButton />
       <h1 className="mt-8 font-serif text-4xl">Log in</h1>
       <div className="mt-6">
         <LoginForm nextPath={nextPath} />
@@ -27,11 +27,7 @@ async function LoginScreen({
       <p className="mt-4 text-sm text-muted">
         New here? <Link href="/start" className="text-forest">Create a Twig</Link>
       </p>
-      <p className="mt-6 rounded-2xl bg-card px-4 py-3 text-sm text-muted">
-        Sample seller: ava@twigigi.demo
-        <br />
-        Password: planter-demo
-      </p>
+      <LoginHelp />
       </div>
     </main>
   );
