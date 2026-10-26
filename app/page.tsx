@@ -1,67 +1,95 @@
 import Image from "next/image";
+import Link from "next/link";
+import { Suspense } from "react";
+import { BackButton } from "@/components/back-button";
+import { getCurrentUser } from "@/lib/auth";
+
+const demos = [
+  {
+    href: "/ava/cedar-planter",
+    title: "Cedar planter box",
+    location: "Edmonton, Alberta",
+    price: "$128.00",
+    cta: "Buy now",
+    image: "/seed/cedar-1.jpg",
+  },
+  {
+    href: "/ava/garden-bench",
+    title: "Custom garden bench",
+    location: "Edmonton, Alberta",
+    price: "Pricing on request",
+    cta: "Get a quote",
+    image: "/seed/bench-1.jpg",
+  },
+] as const;
+
+async function HomeAuth() {
+  const user = await getCurrentUser();
+  return user ? (
+    <Link href="/dashboard" className="text-sm text-ink hover:text-forest">
+      Your Twigs
+    </Link>
+  ) : (
+    <Link href="/login" className="text-sm text-ink hover:text-forest">
+      Sign in
+    </Link>
+  );
+}
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="flex min-h-dvh flex-col">
+      <header className="flex items-center justify-between px-5 py-5 sm:px-8">
+        <BackButton />
+        <Suspense fallback={<span className="text-sm text-transparent">Sign in</span>}>
+          <HomeAuth />
+        </Suspense>
+      </header>
+
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-5 pb-16">
+        <h1 className="text-center font-serif text-6xl leading-[0.92] tracking-tight sm:text-8xl">
+          One Product
+          <br />
+          One Link
+        </h1>
+        <p className="mt-4 text-center text-base text-muted sm:mt-5 sm:text-lg">
+          Twig any product or service into a shareable sales page in minutes.
+        </p>
+
+        <div className="mx-auto mt-12 grid w-full grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-stretch gap-3 sm:mt-16 sm:gap-5">
+          <section aria-label="Demo" className="rounded-[32px] bg-paper-deep p-3 sm:p-4">
+            <h2 className="px-1 pb-3 text-xs tracking-[0.18em] text-muted uppercase sm:px-2 sm:text-sm">Demo</h2>
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              {demos.map((demo) => (
+                <Link
+                  key={demo.href}
+                  href={demo.href}
+                  className="flex flex-col overflow-hidden rounded-[28px] bg-card shadow-[0_18px_50px_rgba(70,48,16,0.12)] transition hover:-translate-y-0.5"
+                >
+                  <div className="relative aspect-[4/3] bg-paper">
+                    <Image src={demo.image} alt="" fill sizes="(min-width: 1024px) 280px, 30vw" className="object-cover" />
+                  </div>
+                  <div className="flex flex-1 flex-col px-3 pt-3 pb-3 sm:px-4 sm:pt-4 sm:pb-4">
+                    <p className="truncate text-[10px] tracking-[0.14em] text-muted uppercase">{demo.location}</p>
+                    <h3 className="mt-1 font-serif text-base leading-tight sm:text-2xl">{demo.title}</h3>
+                    <p className="mt-1 font-serif text-sm text-forest sm:text-lg">{demo.price}</p>
+                    <span className="mt-auto flex h-9 items-center justify-center rounded-xl bg-forest px-2 text-xs whitespace-nowrap text-card sm:mt-4 sm:h-11 sm:text-sm">
+                      {demo.cta}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+          <Link
+            href="/start"
+            className="flex flex-col items-center justify-center gap-1 rounded-[32px] bg-forest px-3 text-center text-card transition hover:bg-forest-2"
           >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <span className="font-serif text-sm underline decoration-1 underline-offset-4 sm:text-2xl sm:decoration-2 sm:underline-offset-[6px]">
+              Create
+            </span>
+            <span className="font-serif text-3xl leading-none sm:text-6xl">Twig it</span>
+          </Link>
         </div>
       </main>
     </div>

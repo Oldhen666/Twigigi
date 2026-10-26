@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Twigigi
 
-## Getting Started
+一个给个人和小本地商家用的产品页。创建一页、发出链接、接收订单、报价或留言。不需要先搭一整家店。
 
-First, run the development server:
+公开地址是 `/{username}/{slug}`，例如 `/ava/cedar-planter`。商品页按天缓存，卖家保存后立刻刷新。买家不需要账号。
+
+## 本地运行
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开 http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+示例卖家：
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- 邮箱 `ava@twigigi.demo`
+- 密码 `planter-demo`
+- 在售页 `/ava/cedar-planter`（立即购买）
+- 报价页 `/ava/garden-bench`
+- 联系页 `/ava/garden-consult`
 
-## Learn More
+## 环境变量
 
-To learn more about Next.js, take a look at the following resources:
+复制 `.env.example` 为 `.env.local`。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `NEXT_PUBLIC_APP_URL`：分享链接、二维码和 Stripe 回跳地址
+- `AUTH_SECRET`：卖家登录 cookie 的签名
+- `STRIPE_SECRET_KEY` 和 `STRIPE_WEBHOOK_SECRET`：可选。未配置时，Buy now 仍会记下未付款订单
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Webhook 地址：`/api/stripe/webhook`
 
-## Deploy on Vercel
+流量来源用 `?src=facebook` 这类参数，也会从引荐域名推断。二维码自带 `src=qr`。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+数据库在 `data/twigigi.db`。删掉这个文件会重新种入示例卖家。上传的图片在 `public/uploads`。
