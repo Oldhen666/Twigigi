@@ -125,20 +125,29 @@ function zonedParts(date: Date, timeZone: string) {
   return { year: read("year"), month: read("month"), day: read("day"), hour: read("hour"), minute: read("minute"), second: read("second") };
 }
 
-export function nextBillingDate(now = new Date()) {
-  const current = zonedParts(now, BILLING_ZONE);
-  const month = current.month === 12 ? 1 : current.month + 1;
-  const year = current.month === 12 ? current.year + 1 : current.year;
-  let utc = Date.UTC(year, month - 1, 1, 7, 0, 0);
+function edmontonMidnight(year: number, month: number, day: number) {
+  let utc = Date.UTC(year, month - 1, day, 7, 0, 0);
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const shown = zonedParts(new Date(utc), BILLING_ZONE);
     const shownUtc = Date.UTC(shown.year, shown.month - 1, shown.day, shown.hour, shown.minute, shown.second);
-    const target = Date.UTC(year, month - 1, 1, 0, 0, 0);
+    const target = Date.UTC(year, month - 1, day, 0, 0, 0);
     const delta = target - shownUtc;
     if (delta === 0) break;
     utc += delta;
   }
   return new Date(utc).toISOString();
+}
+
+export function periodStart(now = new Date()) {
+  const current = zonedParts(now, BILLING_ZONE);
+  return edmontonMidnight(current.year, current.month, 1);
+}
+
+export function nextBillingDate(now = new Date()) {
+  const current = zonedParts(now, BILLING_ZONE);
+  const month = current.month === 12 ? 1 : current.month + 1;
+  const year = current.month === 12 ? current.year + 1 : current.year;
+  return edmontonMidnight(year, month, 1);
 }
 
 export const DEACTIVATION_GRACE_DAYS = 30;

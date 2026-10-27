@@ -2,6 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { requireSeller } from "@/lib/auth";
+import { payAndPublish } from "@/lib/actions";
+import { activeWindow, twigMonthlyCents } from "@/lib/billing";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
@@ -18,12 +20,20 @@ async function DashboardBody() {
     ["Quotes", String(stats.quotes), "/dashboard/quotes"],
   ];
   const billingEndsLabel = formatBillingDate(nextBillingDate());
+  const monthlyCents = twigMonthlyCents();
+  const amountLabel = monthlyCents ? formatMoney(monthlyCents, "CAD") : "Not set";
 
   return (
     <main className="page-frame pb-16">
       <div className="mt-6">
         <h1 className="font-serif text-4xl">Your Twigs</h1>
         <p className="mt-2 text-sm text-muted">Hi, {user.displayName}</p>
+        {user.billingMethod ? null : (
+          <p className="mt-3 text-sm">
+            <Link href="/billing?next=/dashboard" className="font-medium text-forest">Add a credit card, PayPal, or Stripe</Link>
+            <span className="text-muted"> before a Twig can be published.</span>
+          </p>
+        )}
       </div>
 
       <section className="mt-6 overflow-hidden rounded-3xl border border-line bg-card">
@@ -56,6 +66,8 @@ async function DashboardBody() {
             const ending = live && Boolean(product.deactivatesAt);
             const url = productUrl(user.username, product.slug);
             const badge = product.status === "deactivated" ? "Deactivated" : ending ? "Deactivating" : live ? "Live" : "Draft";
+            const period = activeWindow(product.billingStartedAt || product.createdAt);
+            const activeLabel = `${formatBillingDate(period.start)} – ${formatBillingDate(period.end)}`;
             const endsLabel = product.deactivatesAt ? formatBillingDate(product.deactivatesAt) : billingEndsLabel;
             const deactivatedLabel = product.deactivatedAt ? formatBillingDate(product.deactivatedAt, true) : "";
             const deleteLabel = formatBillingDate(
@@ -82,18 +94,36 @@ async function DashboardBody() {
                   <p className="mt-1 text-sm text-muted">
                     {ctaCopy(product.cta).label} · {product.viewCount} {product.viewCount === 1 ? "view" : "views"}
                   </p>
-                  {ending && product.deactivatesAt ? (
-                    <p className="mt-2 text-sm text-muted">Paid through {endsLabel}. It deactivates that day. If you do not reactivate, it is permanently deleted on {deleteLabel}.</p>
-                  ) : null}
-                  {product.status === "deactivated" ? (
-                    <p className="mt-2 text-sm text-muted">Deactivated{deactivatedLabel ? ` on ${deactivatedLabel}` : ""}. The link is off. Reactivate before {deleteLabel} or this Twig is permanently deleted.</p>
-                  ) : null}
-                  {product.status === "draft" ? (
-                    <p className="mt-2 text-sm text-muted">Platform billing starts when you publish.</p>
-                  ) : null}
-                  {product.status === "published" && !ending ? (
-                    <p className="mt-2 text-sm text-muted">Paid through {billingEndsLabel}.</p>
-                  ) : null}
+                  <div className="mt-2 space-y-0.5 text-sm text-muted">
+                    {product.status === "published" && !ending ? (
+                      <>
+                        <p>Active {activeLabel}</p>
+                        <p>Next charge {billingEndsLabel}</p>
+                        <p>Amount {amountLabel}</p>
+                      </>
+                    ) : null}
+                    {ending ? (
+                      <>
+                        <p>Active until {endsLabel}</p>
+                        <p>Next charge canceled</p>
+                        <p>This page turns off on {endsLabel}</p>
+                      </>
+                    ) : null}
+                    {product.status === "deactivated" ? (
+                      <>
+                        <p>Inactive{deactivatedLabel ? ` since ${deactivatedLabel}` : ""}</p>
+                        <p>Next charge none</p>
+                        <p>Pay again before {deleteLabel} or this Twig is permanently deleted.</p>
+                      </>
+                    ) : null}
+                    {product.status === "draft" ? (
+                      <>
+                        <p>Not active</p>
+                        <p>Next charge none until you pay and publish</p>
+                        <p>Amount {amountLabel}</p>
+                      </>
+                    ) : null}
+                  </div>
                   <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
                     <Link href={`/dashboard/products/${product.id}`} className="font-medium text-forest">Edit</Link>
                     {live ? <Link href={`/${user.username}/${product.slug}`} className="font-medium text-forest">Open</Link> : null}
@@ -102,9 +132,20 @@ async function DashboardBody() {
                       <DeactivateTwig productId={product.id} mode={ending ? "ending" : "live"} endsLabel={endsLabel} deleteLabel={deleteLabel} />
                     ) : null}
                     {product.status === "deactivated" ? (
-                      <DeactivateTwig productId={product.id} mode="deactivated" endsLabel={deactivatedLabel} deleteLabel={deleteLabel} />
+                      <form action={payAndPublish}>
+                        <input type="hidden" name="id" value={product.id} />
+                        <button className="font-medium text-forest">Pay and reactivate</button>
+                      </form>
                     ) : null}
-                    {product.status === "draft" ? <DeleteTwig productId={product.id} /> : null}
+                    {product.status === "draft" ? (
+                      <>
+                        <form action={payAndPublish}>
+                          <input type="hidden" name="id" value={product.id} />
+                          <button className="font-medium text-forest">Pay and publish</button>
+                        </form>
+                        <DeleteTwig productId={product.id} />
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </article>

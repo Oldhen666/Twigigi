@@ -39,7 +39,11 @@ import {
   productHasActivity,
   releaseStock,
   reserveStock,
-  setDeactivatesAt,
+  deactivateNow,
+  publishDraft,
+  setBillingMethod,
+  setBillingStarted,
+  recordTwigBill,
   reactivateProduct,
   replacePasswordReset,
   takePasswordReset,
@@ -65,7 +69,6 @@ import {
   fulfillmentOptions,
   isPrivateUsername,
   isTwigLive,
-  nextBillingDate,
   normalizeSrc,
   orderAmount,
   readCta,
@@ -76,7 +79,9 @@ import {
 } from "@/lib/format";
 import type { Cta, FormState, Fulfillment, OrderStatus, ProductInput } from "@/lib/types";
 import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
+import { activeWindow, isBillingMethod, twigMonthlyCents } from "@/lib/billing";
 import { normalizeQuoteForm } from "@/lib/quote-form";
+import { getStripe } from "@/lib/stripe";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
 
 function fieldErrors(error: z.ZodError) {
@@ -241,7 +246,8 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
   const created = await createAccount(formData);
   if (!created.ok) return created;
   const cta = readCta(text(formData, "cta"));
-  return { next: cta ? `/dashboard/products/new?cta=${cta}` : "/orders" };
+  const after = cta ? `/dashboard/products/new?cta=${cta}` : "/orders";
+  return { next: `/billing?next=${encodeURIComponent(after)}` };
 }
 
 export async function signIn(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -619,6 +625,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   };
 
   const savedProductId = existing?.id ?? newId("prd");
+  const needsBilling = intent === "publish" && !adminEdit && !user.billingMethod;
+  if (needsBilling) input.status = "draft";
   try {
     if (existing) {
       updateProduct(existing.id, owner.id, input);
@@ -637,6 +645,24 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   updateTag(productTag(owner.username, slug));
   updateTag(sellerTag(owner.username));
 
+  if (needsBilling) redirect(`/billing?next=${encodeURIComponent(`/dashboard/products/${savedProductId}`)}`);
+  if (input.status === "published" && (!existing || existing.status !== "published")) {
+    setBillingStarted(savedProductId, owner.id);
+    const cents = twigMonthlyCents();
+    if (cents && user.billingMethod) {
+      const window = activeWindow(new Date().toISOString());
+      recordTwigBill({
+        id: newId("bill"),
+        userId: owner.id,
+        productId: savedProductId,
+        amountCents: cents,
+        method: user.billingMethod,
+        periodStart: window.start,
+        periodEnd: window.end,
+        status: "recorded",
+      });
+    }
+  }
   if (input.status === "published") redirect(`/${owner.username}/${slug}`);
   if (existing?.status === "published") redirect(`/dashboard/products/${savedProductId}?saved=1`);
   return { saved: true, productId: savedProductId, slug, images, savedAt: Date.now() };
@@ -657,11 +683,68 @@ export async function removeProduct(formData: FormData) {
   redirect("/dashboard");
 }
 
+export async function saveBillingMethod(formData: FormData) {
+  const user = await requireSeller();
+  const method = text(formData, "method");
+  if (!isBillingMethod(method)) redirect("/billing");
+  setBillingMethod(user.id, method);
+  redirect(safeNext(text(formData, "next")));
+}
+
+export async function payAndPublish(formData: FormData) {
+  const user = await requireSeller();
+  const product = getProductById(text(formData, "id"));
+  if (!product || product.userId !== user.id || product.status === "published") redirect("/dashboard");
+  if (!user.billingMethod) redirect(`/billing?next=${encodeURIComponent("/dashboard")}`);
+  if (product.status === "draft" && (product.title.trim().length < 2 || product.images.length < 1)) {
+    redirect(`/dashboard/products/${product.id}`);
+  }
+  const cents = twigMonthlyCents();
+  const stripe = getStripe();
+  if (stripe && cents && (user.billingMethod === "card" || user.billingMethod === "stripe")) {
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "cad",
+            unit_amount: cents,
+            product_data: { name: `Twigigi · ${product.title}` },
+          },
+        },
+      ],
+      success_url: `${appUrl()}/billing/complete?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl()}/dashboard`,
+      metadata: { purpose: "twig", userId: user.id, productId: product.id },
+    });
+    if (session.url) redirect(session.url);
+  }
+  if (product.status === "deactivated") reactivateProduct(product.id, user.id);
+  else publishDraft(product.id, user.id);
+  if (cents) {
+    const window = activeWindow(new Date().toISOString());
+    recordTwigBill({
+      id: newId("bill"),
+      userId: user.id,
+      productId: product.id,
+      amountCents: cents,
+      method: user.billingMethod,
+      periodStart: window.start,
+      periodEnd: window.end,
+      status: "recorded",
+    });
+  }
+  updateTag(productTag(user.username, product.slug));
+  updateTag(sellerTag(user.username));
+  redirect("/dashboard");
+}
+
 export async function scheduleDeactivation(formData: FormData) {
   const user = await requireSeller();
   const product = getProductById(text(formData, "id"));
   if (!product || product.userId !== user.id || product.status !== "published") redirect("/dashboard");
-  if (!product.deactivatesAt) setDeactivatesAt(product.id, user.id, nextBillingDate());
+  deactivateNow(product.id, user.id);
   updateTag(productTag(user.username, product.slug));
   updateTag(sellerTag(user.username));
   redirect("/dashboard");
@@ -1121,7 +1204,7 @@ export async function adminSetTwig(formData: FormData) {
   const product = getProductById(text(formData, "id"));
   if (!product) redirect("/admin/twigs");
   const mode = text(formData, "mode");
-  if (mode === "deactivate" && product.status === "published" && !product.deactivatesAt) setDeactivatesAt(product.id, product.userId, nextBillingDate());
+  if (mode === "deactivate" && product.status === "published") deactivateNow(product.id, product.userId);
   if (mode === "reactivate") {
     if (product.status === "deactivated") reactivateProduct(product.id, product.userId);
     else if (product.status === "published") clearDeactivatesAt(product.id, product.userId);

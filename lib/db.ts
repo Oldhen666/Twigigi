@@ -228,7 +228,21 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "seller_contact", "seller_contact TEXT NOT NULL DEFAULT ''");
   add("products", "deactivates_at", "deactivates_at TEXT");
   add("products", "deactivated_at", "deactivated_at TEXT");
+  add("products", "billing_started_at", "billing_started_at TEXT");
   add("users", "role", "role TEXT NOT NULL DEFAULT 'seller'");
+  add("users", "billing_method", "billing_method TEXT NOT NULL DEFAULT ''");
+  database.exec(`CREATE TABLE IF NOT EXISTS twig_bills (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      product_id TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'CAD',
+      method TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`);
   add("quotes", "documents_json", "documents_json TEXT NOT NULL DEFAULT '[]'");
   add("orders", "public_ref", "public_ref TEXT NOT NULL DEFAULT ''");
   add("orders", "seller_id", "seller_id TEXT NOT NULL DEFAULT ''");
@@ -623,6 +637,7 @@ function mapProduct(row: Row): Product {
     updatedAt: str(row.updated_at),
     deactivatesAt: row.deactivates_at ? str(row.deactivates_at) : null,
     deactivatedAt: row.deactivated_at ? str(row.deactivated_at) : null,
+    billingStartedAt: row.billing_started_at ? str(row.billing_started_at) : null,
   };
 }
 
@@ -676,6 +691,7 @@ function mapUser(row: Row): User {
     displayName: str(row.display_name),
     role,
     createdAt: str(row.created_at),
+    billingMethod: row.billing_method === "card" || row.billing_method === "paypal" || row.billing_method === "stripe" ? row.billing_method : "",
   };
 }
 
@@ -1084,11 +1100,70 @@ export function clearDeactivatedAt(id: string, userId: string) {
 }
 
 export function reactivateProduct(id: string, userId: string) {
+  const now = new Date().toISOString();
   db.prepare(
     `UPDATE products
-     SET status = 'published', deactivates_at = NULL, deactivated_at = NULL, updated_at = ?
+     SET status = 'published', deactivates_at = NULL, deactivated_at = NULL, billing_started_at = ?, updated_at = ?
      WHERE id = ? AND user_id = ? AND status = 'deactivated'`,
-  ).run(new Date().toISOString(), id, userId);
+  ).run(now, now, id, userId);
+}
+
+export function deactivateNow(id: string, userId: string) {
+  const now = new Date().toISOString();
+  const result = db
+    .prepare(
+      `UPDATE products
+       SET status = 'deactivated', deactivated_at = ?, deactivates_at = NULL, updated_at = ?
+       WHERE id = ? AND user_id = ? AND status = 'published'`,
+    )
+    .run(now, now, id, userId);
+  return result.changes > 0;
+}
+
+export function publishDraft(id: string, userId: string) {
+  const now = new Date().toISOString();
+  const result = db
+    .prepare(
+      `UPDATE products
+       SET status = 'published', deactivates_at = NULL, deactivated_at = NULL, billing_started_at = ?, updated_at = ?
+       WHERE id = ? AND user_id = ? AND status = 'draft'`,
+    )
+    .run(now, now, id, userId);
+  return result.changes > 0;
+}
+
+export function setBillingStarted(id: string, userId: string) {
+  db.prepare("UPDATE products SET billing_started_at = ? WHERE id = ? AND user_id = ?").run(new Date().toISOString(), id, userId);
+}
+
+export function setBillingMethod(userId: string, method: string) {
+  db.prepare("UPDATE users SET billing_method = ? WHERE id = ?").run(method, userId);
+}
+
+export function recordTwigBill(input: {
+  id: string;
+  userId: string;
+  productId: string;
+  amountCents: number;
+  method: string;
+  periodStart: string;
+  periodEnd: string;
+  status: string;
+}) {
+  db.prepare(
+    `INSERT INTO twig_bills (id, user_id, product_id, amount_cents, currency, method, period_start, period_end, status, created_at)
+     VALUES (?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?)`,
+  ).run(
+    input.id,
+    input.userId,
+    input.productId,
+    input.amountCents,
+    input.method,
+    input.periodStart,
+    input.periodEnd,
+    input.status,
+    new Date().toISOString(),
+  );
 }
 
 export function productHasActivity(productId: string) {

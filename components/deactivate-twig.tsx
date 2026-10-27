@@ -22,7 +22,7 @@ export function DeactivateTwig({
     ? mode === "ending"
       ? `This cancels the deactivation set for ${endsLabel}. The Twig stays live, and it will not be deleted on ${deleteLabel}.`
       : `This publishes the Twig again and the link works. The permanent deletion set for ${deleteLabel} is canceled.`
-    : `This Twig is paid through ${endsLabel}. It stays live until that billing date, then the link stops working. If you do not reactivate, it is permanently deleted on ${deleteLabel}.`;
+    : `The next charge on ${endsLabel} is canceled, and this page becomes inactive now. Pay again to publish it. If you do not reactivate, it is permanently deleted on ${deleteLabel}.`;
 
   return (
     <>

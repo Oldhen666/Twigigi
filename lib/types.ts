@@ -29,6 +29,7 @@ export type User = {
   displayName: string;
   role: UserRole;
   createdAt: string;
+  billingMethod: "" | "card" | "paypal" | "stripe";
 };
 
 export type ProductOption = {
@@ -121,6 +122,7 @@ export type Product = ProductInput & {
   updatedAt: string;
   deactivatesAt: string | null;
   deactivatedAt: string | null;
+  billingStartedAt: string | null;
 };
 
 export type PublicProduct = Product & {
