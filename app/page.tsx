@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
+import { BuyerMenu } from "@/components/buyer-menu";
 import { getCurrentUser } from "@/lib/auth";
 
 const demos = [
@@ -34,7 +35,7 @@ async function HomeAuth() {
   return (
     <nav className="flex items-center gap-4 text-sm">
       <Link href="/dashboard" className="text-ink hover:text-forest">Your Twigs</Link>
-      <Link href="/orders" className="text-ink hover:text-forest">Other Twigs</Link>
+      <BuyerMenu active={false} />
     </nav>
   );
 }

@@ -16,7 +16,7 @@ export function InteractionLine({
     <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
       <span className="text-muted">{item.publicRef} · {interactionLabel(item)}</span>
       {confirmed ? (
-        side === "buyer" && item.buyerConfirmedAt ? <Link href="/reviews" className="text-forest">Write a review</Link> : null
+        side === "buyer" && item.buyerConfirmedAt ? <Link href="/orders#reviews" className="text-forest">Write a review</Link> : null
       ) : (
         <form action={confirmInteraction}>
           <input type="hidden" name="id" value={item.id} />

@@ -11,7 +11,7 @@ async function SavedScreen() {
   const user = await requireUser();
   const saved = listFavorites(user.id);
   return (
-    <AccountFrame section="saved" title="Saved" lede="Twigs you want to come back to.">
+    <AccountFrame title="Saved" lede="Twigs you want to come back to.">
       {saved.length === 0 ? (
         <p className="mt-8 text-sm text-muted">Save a Twig from its page. It stays here.</p>
       ) : (

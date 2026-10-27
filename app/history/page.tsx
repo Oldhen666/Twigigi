@@ -10,7 +10,7 @@ async function HistoryScreen() {
   const user = await requireUser();
   const history = listBrowseHistory(user.id);
   return (
-    <AccountFrame section="history" title="History" lede="Twigs you opened while signed in.">
+    <AccountFrame title="Browse history" lede="Twigs you opened while signed in.">
       {history.length === 0 ? (
         <p className="mt-8 text-sm text-muted">Twigs you open will show up here.</p>
       ) : (
@@ -44,4 +44,4 @@ export default function Page() {
   );
 }
 
-export const metadata = { title: "History", robots: { index: false, follow: false } };
+export const metadata = { title: "Browse history", robots: { index: false, follow: false } };
