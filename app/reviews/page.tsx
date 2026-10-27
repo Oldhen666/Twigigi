@@ -10,7 +10,7 @@ async function ReviewsScreen() {
   const waiting = listReviewableInteractions(user.id, user.email);
   const reviews = listUserReviews(user.id);
   return (
-    <AccountFrame title="Reviews" lede="A review opens after you mark the interaction completed. Both sides confirming makes it a verified transaction.">
+    <AccountFrame section="reviews" title="Reviews" lede="A review opens after you mark the interaction completed. Both sides confirming makes it a verified transaction.">
       {waiting.length === 0 ? (
         <p className="mt-8 text-sm text-muted">No confirmed interactions are waiting for a review.</p>
       ) : (

@@ -2,7 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { getCurrentUser } from "@/lib/auth";
-import { userHasTwigs } from "@/lib/db";
 
 const demos = [
   {
@@ -32,13 +31,11 @@ async function HomeAuth() {
       </Link>
     );
   }
-  const selling = userHasTwigs(user.id);
-  const href = selling ? "/dashboard" : "/orders";
-  const label = selling ? "Your Twigs" : "Your orders";
   return (
-    <Link href={href} className="text-sm text-ink hover:text-forest">
-      {label}
-    </Link>
+    <nav className="flex items-center gap-4 text-sm">
+      <Link href="/dashboard" className="text-ink hover:text-forest">Your Twigs</Link>
+      <Link href="/orders" className="text-ink hover:text-forest">Other Twigs</Link>
+    </nav>
   );
 }
 

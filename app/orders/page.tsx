@@ -13,7 +13,7 @@ async function OrdersScreen() {
   const bySource = new Map(interactions.map((item) => [item.sourceId, item]));
   const quotes = interactions.filter((item) => item.kind === "quote");
   return (
-    <AccountFrame title="Your orders" lede={user.email}>
+    <AccountFrame section="orders" title="Your orders" lede={user.email}>
       {orders.length === 0 && quotes.length === 0 ? (
         <p className="mt-8 text-sm text-muted">Orders and quote requests placed with this account show up here.</p>
       ) : null}
