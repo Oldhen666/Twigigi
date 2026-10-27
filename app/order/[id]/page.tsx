@@ -4,8 +4,9 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { Stage } from "@/components/stage";
 import { PayMethods } from "@/components/pay-methods";
+import { InteractionLine } from "@/components/interaction-line";
 import { getCurrentUser } from "@/lib/auth";
-import { getOrder, getProductById } from "@/lib/db";
+import { getInteractionBySource, getOrder, getProductById } from "@/lib/db";
 import { formatMoney } from "@/lib/format";
 import { methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
 import { confirmStripeSession } from "@/lib/stripe";
@@ -25,6 +26,7 @@ async function OrderView({
   const order = getOrder(id);
   if (!order) notFound();
   const account = await getCurrentUser();
+  const interaction = getInteractionBySource(order.id);
   const product = getProductById(order.productId);
   const paid = order.status === "paid" || order.status === "fulfilled";
   return (
@@ -55,11 +57,15 @@ async function OrderView({
           />
         ) : null}
         {product?.cta === "buy" ? <SellerReach mode={product.sellerContactMode} contact={product.sellerContact} name={order.displayName} /> : null}
+        {interaction && account && (account.id === interaction.buyerId || account.email.toLowerCase() === interaction.buyerEmail) ? (
+          <div className="mt-6"><InteractionLine item={interaction} nextPath={`/order/${order.id}`} side="buyer" /></div>
+        ) : interaction && account && account.id === interaction.sellerId ? (
+          <div className="mt-6"><InteractionLine item={interaction} nextPath={`/order/${order.id}`} side="seller" /></div>
+        ) : interaction ? (
+          <p className="mt-6 text-sm text-muted">{interaction.publicRef} · {interaction.buyerConfirmedAt && interaction.sellerConfirmedAt ? "Verified transaction" : interaction.buyerConfirmedAt ? "Buyer confirmed" : "Open"}</p>
+        ) : null}
         {account && account.id === order.buyerId ? (
-          <p className="mt-6 text-sm">
-            <Link href="/orders" className="text-forest">Your orders</Link>
-            {order.status === "fulfilled" ? <> · <Link href="/reviews" className="text-forest">Write a review</Link></> : null}
-          </p>
+          <p className="mt-3 text-sm"><Link href="/orders" className="text-forest">Your orders</Link></p>
         ) : !order.buyerId ? (
           <p className="mt-6 text-sm text-muted">
             <Link href="/signup" className="text-forest">Create an account</Link> with this email to keep this order.

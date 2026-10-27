@@ -1,3 +1,4 @@
+import { getCurrentUser } from "@/lib/auth";
 import { getProductById, recordView } from "@/lib/db";
 import { normalizeSrc, srcFromReferrer } from "@/lib/format";
 
@@ -15,6 +16,7 @@ export async function POST(request: Request) {
     normalizeSrc(typeof body.src === "string" ? body.src : "") ||
     srcFromReferrer(typeof body.referrer === "string" ? body.referrer : "") ||
     "direct";
-  recordView(product.id, src);
+  const viewer = await getCurrentUser();
+  recordView(product.id, src, viewer?.id ?? null);
   return new Response(null, { status: 204 });
 }

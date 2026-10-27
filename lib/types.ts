@@ -130,6 +130,8 @@ export type PublicSeller = {
   username: string;
   displayName: string;
   products: PublicProduct[];
+  ratingAverage: number | null;
+  ratingCount: number;
 };
 
 export type OrderRecord = {

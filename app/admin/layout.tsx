@@ -6,6 +6,9 @@ import { Logo } from "@/components/logo";
 
 const LINKS = [
   ["Users", "/admin/users"],
+  ["Twigs", "/admin/twigs"],
+  ["Interactions", "/admin/interactions"],
+  ["Reviews", "/admin/reviews"],
   ["Payments", "/admin/payments"],
   ["Payouts", "/admin/payouts"],
   ["Disputes", "/admin/disputes"],

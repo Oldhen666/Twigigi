@@ -25,6 +25,10 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
       </div>
       <p className="mt-10 text-sm uppercase tracking-[0.16em] text-muted">Twigs</p>
       <h1 className="mt-2 font-serif text-5xl">{seller.displayName}</h1>
+      <p className="mt-2 text-sm text-muted">
+        {seller.username}
+        {seller.ratingCount > 0 && seller.ratingAverage != null ? <span className="ml-2 font-medium text-ink">{seller.ratingAverage.toFixed(1)}</span> : null}
+      </p>
       {products.length === 0 ? <p className="mt-6 text-muted">Nothing is published yet.</p> : null}
       <ul className="mt-8 grid gap-4 sm:grid-cols-2">
         {products.map((product) => (

@@ -21,6 +21,7 @@ export async function AccountFrame({
           <Link href="/dashboard" className="text-ink">Twigs</Link>
           <Link href="/orders" className="text-ink">Orders</Link>
           <Link href="/saved" className="text-ink">Saved</Link>
+          <Link href="/history" className="text-ink">History</Link>
           <Link href="/reviews" className="text-ink">Reviews</Link>
           {user.role === "admin" ? <Link href="/admin/users" className="text-ink">Admin</Link> : null}
           <form action={signOut}>

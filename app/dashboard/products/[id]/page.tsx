@@ -4,7 +4,7 @@ import { saveProduct } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { DeleteTwig } from "@/components/delete-twig";
 import { ProductForm } from "@/components/product-form";
-import { getProductById } from "@/lib/db";
+import { findUserById, getProductById } from "@/lib/db";
 import { isPrivateUsername } from "@/lib/format";
 
 async function Editor({
@@ -18,7 +18,8 @@ async function Editor({
   const { id } = await params;
   const query = await searchParams;
   const product = getProductById(id);
-  if (!product || product.userId !== user.id) notFound();
+  const owner = product && product.userId !== user.id && user.role === "admin" ? findUserById(product.userId) : user;
+  if (!product || !owner || (product.userId !== user.id && user.role !== "admin")) notFound();
   return (
     <main className="mx-auto w-full max-w-xl px-5 py-6">
       <h1 className="font-serif text-4xl">Edit Twig</h1>
@@ -33,7 +34,7 @@ async function Editor({
           A live or deactivated Twig cannot be deleted. Deactivate it from the dashboard, then reactivate before it is permanently deleted.
         </p>
       ) : null}
-      <ProductForm action={saveProduct} product={product} defaultEmail={user.email} sellerName={user.displayName} cta={product.cta} needsUsername={isPrivateUsername(user.username)} />
+      <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} cta={product.cta} needsUsername={isPrivateUsername(owner.username)} />
       {product.status === "draft" ? (
         <div className="mt-2">
           <DeleteTwig productId={product.id} />

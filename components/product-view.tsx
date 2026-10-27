@@ -13,7 +13,7 @@ import { BackButton } from "@/components/back-button";
 import { PayMethods } from "@/components/pay-methods";
 import { toggleSaved } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
-import { isFavorite, listProductReviews } from "@/lib/db";
+import { isFavorite, listProductReviews, sellerReviewSummary } from "@/lib/db";
 import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
 
 export async function ProductView({
@@ -28,6 +28,7 @@ export async function ProductView({
   const account = await getCurrentUser();
   const saved = account ? isFavorite(account.id, product.id) : false;
   const reviews = listProductReviews(product.id);
+  const rating = sellerReviewSummary(product.userId);
   const ownTwig = account?.username === product.username;
 
   const canonical = productUrl(product.username, product.slug);
@@ -127,12 +128,7 @@ export async function ProductView({
                   ))}
                 </ul>
               ) : null}
-              <p className="mt-3 text-sm text-muted">
-                Sold by{" "}
-                <Link href={`/${product.username}`} className="text-ink underline-offset-2 hover:underline">
-                  {product.displayName}
-                </Link>
-              </p>
+              <SellerCredit username={product.username} name={product.displayName} rating={rating} />
               <SaveControl productId={product.id} path={`/${product.username}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} />
               {product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </BuyPicker>
@@ -150,12 +146,7 @@ export async function ProductView({
                   ))}
                 </ul>
               ) : null}
-              <p className="mt-3 text-sm text-muted">
-                Sold by{" "}
-                <Link href={`/${product.username}`} className="text-ink underline-offset-2 hover:underline">
-                  {product.displayName}
-                </Link>
-              </p>
+              <SellerCredit username={product.username} name={product.displayName} rating={rating} />
               <SaveControl productId={product.id} path={`/${product.username}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} />
               {product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </>
@@ -174,20 +165,30 @@ export async function ProductView({
         )}
         <div className="space-y-5 px-5 py-5">
           <p className="whitespace-pre-wrap text-[15px] leading-7">{product.description}</p>
-          {reviews.length > 0 ? (
-            <section>
-              <h2 className="font-serif text-2xl">Reviews</h2>
-              <ul className="mt-3 space-y-3">
+          <section>
+            <h2 className="font-serif text-2xl">Reviews</h2>
+            {reviews.length === 0 ? (
+              <p className="mt-2 text-sm text-muted">No reviews yet.</p>
+            ) : (
+              <ul className="mt-3 space-y-4">
                 {reviews.map((review) => (
                   <li key={review.id}>
-                    <p className="text-sm font-medium">{review.displayName} · {review.rating}/5</p>
+                    <p className="text-sm font-medium">{review.displayName} · {review.overall}/5 · {review.publicRef}</p>
+                    <p className="text-sm text-muted">As described {review.asDescribed} · Communication {review.communication} · Reliability {review.reliability}{review.quality != null ? ` · Quality ${review.quality}` : ""}</p>
                     {review.body ? <p className="mt-1 text-sm">{review.body}</p> : null}
+                    {review.images.length > 0 ? (
+                      <div className="mt-2 flex gap-2">
+                        {review.images.map((src) => (
+                          <Image key={src} src={src} alt="" width={72} height={72} className="h-[72px] w-[72px] rounded-xl object-cover" />
+                        ))}
+                      </div>
+                    ) : null}
                     <p className="text-xs text-muted">{formatDate(review.createdAt)}</p>
                   </li>
                 ))}
               </ul>
-            </section>
-          ) : null}
+            )}
+          </section>
           {embed ? (
             <div className="relative aspect-video overflow-hidden rounded-2xl bg-paper-deep">
               <iframe src={embed} title={`${product.title} video`} className="absolute inset-0 h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
@@ -216,6 +217,17 @@ export async function ProductView({
       <ViewTracker productId={product.id} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
     </Stage>
+  );
+}
+
+function SellerCredit({ username, name, rating }: { username: string; name: string; rating: { average: number | null; count: number } }) {
+  return (
+    <p className="mt-3 text-sm text-muted">
+      Sold by{" "}
+      <Link href={`/${username}`} className="text-ink underline-offset-2 hover:underline">{name}</Link>
+      <span className="ml-2 text-ink">{username}</span>
+      {rating.count > 0 && rating.average != null ? <span className="ml-2 font-medium text-ink">{rating.average.toFixed(1)}</span> : null}
+    </p>
   );
 }
 

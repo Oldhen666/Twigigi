@@ -28,6 +28,14 @@ import {
   insertProduct,
   insertQuote,
   insertReview,
+  openInteraction,
+  confirmInteractionParty,
+  adminSetConfirmation,
+  updateReview,
+  deleteReview,
+  reviewPlacement,
+  updateDisplayName,
+  getInteraction,
   productHasActivity,
   releaseStock,
   reserveStock,
@@ -531,17 +539,20 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     if (!user) return { error: "Could not open the account." };
     sessionStamp = { signedIn: true, displayName: user.displayName };
   }
-  const previousUsername = user.username;
-  if (isPrivateUsername(user.username)) {
+  const adminEdit = Boolean(existing && user.role === "admin" && existing.userId !== user.id);
+  const usernameBefore = user.username;
+  if (!adminEdit && isPrivateUsername(user.username)) {
     const claimed = claimPublicUsername(user.id, text(formData, "username"));
     if (claimed.fieldErrors || claimed.error) return { ...claimed, ...sessionStamp };
     const refreshed = findUserById(user.id);
     if (!refreshed) return { error: "Could not save the username.", ...sessionStamp };
     user = refreshed;
   }
-  if (id && (!existing || existing.userId !== user.id)) {
+  const owner = adminEdit && existing ? findUserById(existing.userId) : user;
+  if (!owner || (id && (!existing || existing.userId !== owner.id))) {
     return { error: "That Twig was not found.", ...sessionStamp };
   }
+  const previousUsername = adminEdit ? owner.username : usernameBefore;
   if (existing && existing.status !== "draft" && intent === "draft") {
     return {
       error:
@@ -560,7 +571,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   }
 
   const requestedSlug = slugify(text(formData, "slug") || title);
-  const slug = uniqueSlug(user.id, requestedSlug, existing?.id);
+  const slug = uniqueSlug(owner.id, requestedSlug, existing?.id);
   const input: ProductInput = {
     slug,
     title,
@@ -609,23 +620,23 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const savedProductId = existing?.id ?? newId("prd");
   try {
     if (existing) {
-      updateProduct(existing.id, user.id, input);
-      if (input.status !== "published" || existing.status === "deactivated") clearDeactivatesAt(existing.id, user.id);
-      if (input.status === "published" && existing.status === "deactivated") clearDeactivatedAt(existing.id, user.id);
-    } else insertProduct(savedProductId, user.id, input);
+      updateProduct(existing.id, owner.id, input);
+      if (input.status !== "published" || existing.status === "deactivated") clearDeactivatesAt(existing.id, owner.id);
+      if (input.status === "published" && existing.status === "deactivated") clearDeactivatedAt(existing.id, owner.id);
+    } else insertProduct(savedProductId, owner.id, input);
   } catch {
     return { error: "Could not save this Twig. Try a different link name.", ...sessionStamp };
   }
 
-  if (previousUsername !== user.username) {
+  if (previousUsername !== owner.username) {
     updateTag(sellerTag(previousUsername));
     if (existing) updateTag(productTag(previousUsername, existing.slug));
   }
-  if (existing && existing.slug !== slug) updateTag(productTag(user.username, existing.slug));
-  updateTag(productTag(user.username, slug));
-  updateTag(sellerTag(user.username));
+  if (existing && existing.slug !== slug) updateTag(productTag(owner.username, existing.slug));
+  updateTag(productTag(owner.username, slug));
+  updateTag(sellerTag(owner.username));
 
-  if (input.status === "published") redirect(`/${user.username}/${slug}`);
+  if (input.status === "published") redirect(`/${owner.username}/${slug}`);
   if (existing?.status === "published") redirect(`/dashboard/products/${savedProductId}?saved=1`);
   return { saved: true, productId: savedProductId, slug, images, savedAt: Date.now() };
 }
@@ -746,6 +757,14 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       src: await trafficSource(),
       variantLabel: selection.label,
     });
+    openInteraction({
+      kind: "order",
+      sourceId: orderId,
+      productId: product.id,
+      sellerId: product.userId,
+      buyerId,
+      buyerEmail: parsed.data.email,
+    });
   } catch {
     if (product.quantityAvailable != null) releaseStock(product.id, parsed.data.quantity);
     return { error: "Could not save this order. Try again." };
@@ -861,6 +880,8 @@ export async function requestQuote(_prev: FormState, formData: FormData): Promis
   }
 
   const id = newId("quo");
+  const sessionUser = await getCurrentUser();
+  const emailMatch = findUserByEmail(parsed.data.email);
   insertQuote({
     id,
     productId: product.id,
@@ -872,6 +893,14 @@ export async function requestQuote(_prev: FormState, formData: FormData): Promis
     projectDetails: lines.join("\n").slice(0, 2000),
     documents,
     src: await trafficSource(),
+  });
+  openInteraction({
+    kind: "quote",
+    sourceId: id,
+    productId: product.id,
+    sellerId: product.userId,
+    buyerId: sessionUser?.id ?? emailMatch?.id ?? null,
+    buyerEmail: parsed.data.email,
   });
   redirect(`/quote/${id}`);
 }
@@ -944,21 +973,142 @@ export async function toggleSaved(formData: FormData) {
   redirect(next);
 }
 
+function score(formData: FormData, name: string) {
+  const value = Number(text(formData, name));
+  return Number.isInteger(value) && value >= 1 && value <= 5 ? value : null;
+}
+
+export async function confirmInteraction(formData: FormData) {
+  const user = await requireUser();
+  const side = text(formData, "side") === "seller" ? "seller" : "buyer";
+  const next = safeNext(text(formData, "next"));
+  const ok = confirmInteractionParty(text(formData, "id"), user.id, user.email, side);
+  if (!ok) redirect(`${next}?error=${encodeURIComponent("That interaction is not yours.")}`);
+  redirect(next);
+}
+
 export async function saveReview(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireUser();
-  const order = getOrder(text(formData, "orderId"));
-  const rating = Number(text(formData, "rating"));
-  const body = text(formData, "body").trim().slice(0, 500);
-  if (!order || order.buyerId !== user.id || order.status !== "fulfilled") {
-    return { error: "You can review a Twig after that order is fulfilled." };
+  const interaction = getInteraction(text(formData, "interactionId"));
+  const owns = interaction && (interaction.buyerId === user.id || interaction.buyerEmail === user.email.toLowerCase());
+  if (!interaction || !owns || !interaction.buyerConfirmedAt) {
+    return { error: "Confirm the interaction before writing a review." };
   }
-  if (!Number.isInteger(rating) || rating < 1 || rating > 5) return { fieldErrors: { rating: "Choose a rating from 1 to 5." } };
+  const overall = score(formData, "overall");
+  const asDescribed = score(formData, "asDescribed");
+  const communication = score(formData, "communication");
+  const reliability = score(formData, "reliability");
+  const quality = interaction.kind === "quote" ? score(formData, "quality") : null;
+  if (!overall || !asDescribed || !communication || !reliability || (interaction.kind === "quote" && !quality)) {
+    return { fieldErrors: { overall: "Choose each rating from 1 to 5." } };
+  }
+  const files = formData.getAll("images").filter((item): item is File => item instanceof File && item.size > 0);
+  if (files.length > 2) return { fieldErrors: { images: "Add up to 2 photos." } };
+  let images: string[] = [];
   try {
-    insertReview({ id: newId("rev"), userId: user.id, productId: order.productId, orderId: order.id, rating, body });
-  } catch {
-    return { error: "This order already has a review." };
+    images = await saveImages(files);
+  } catch (error) {
+    return { fieldErrors: { images: error instanceof Error ? error.message : "Use JPG, PNG, or WebP photos." } };
   }
+  try {
+    insertReview({
+      id: newId("rev"),
+      userId: user.id,
+      sellerId: interaction.sellerId,
+      productId: interaction.productId,
+      interactionId: interaction.id,
+      overall,
+      asDescribed,
+      communication,
+      reliability,
+      quality,
+      body: text(formData, "body").trim().slice(0, 500),
+      images,
+    });
+  } catch {
+    return { error: "This interaction already has a review." };
+  }
+  const seller = findUserById(interaction.sellerId);
+  if (seller) updateTag(sellerTag(seller.username.toLowerCase()));
+  const product = getProductById(interaction.productId);
+  if (product && seller) updateTag(productTag(seller.username.toLowerCase(), product.slug));
   return { saved: true };
+}
+
+export async function adminConfirmInteraction(formData: FormData) {
+  await requireAdmin();
+  const side = text(formData, "side") === "seller" ? "seller" : "buyer";
+  adminSetConfirmation(text(formData, "id"), side, text(formData, "on") === "1");
+  redirect("/admin/interactions");
+}
+
+export async function adminSaveReview(formData: FormData) {
+  await requireAdmin();
+  const overall = score(formData, "overall");
+  const asDescribed = score(formData, "asDescribed");
+  const communication = score(formData, "communication");
+  const reliability = score(formData, "reliability");
+  const qualityRaw = text(formData, "quality");
+  const quality = qualityRaw ? score(formData, "quality") : null;
+  if (!overall || !asDescribed || !communication || !reliability || (qualityRaw && !quality)) {
+    redirect("/admin/reviews?error=Choose%20each%20rating%20from%201%20to%205.");
+  }
+  const reviewId = text(formData, "id");
+  updateReview(reviewId, {
+    overall,
+    asDescribed,
+    communication,
+    reliability,
+    quality,
+    body: text(formData, "body").trim().slice(0, 500),
+  });
+  refreshReview(reviewId);
+  redirect("/admin/reviews");
+}
+
+export async function adminRemoveReview(formData: FormData) {
+  await requireAdmin();
+  const reviewId = text(formData, "id");
+  const placement = reviewPlacement(reviewId);
+  deleteReview(reviewId);
+  if (placement) refreshReviewTags(placement);
+  redirect("/admin/reviews");
+}
+
+function refreshReview(id: string) {
+  const placement = reviewPlacement(id);
+  if (placement) refreshReviewTags(placement);
+}
+
+function refreshReviewTags(placement: { username: string; slug: string }) {
+  updateTag(sellerTag(placement.username));
+  if (placement.slug) updateTag(productTag(placement.username, placement.slug));
+}
+
+export async function adminRenameUser(formData: FormData) {
+  await requireAdmin();
+  const name = text(formData, "displayName").trim();
+  if (name.length < 2 || name.length > 60) redirect("/admin/users?error=Enter%20a%20name.");
+  updateDisplayName(text(formData, "id"), name);
+  redirect("/admin/users");
+}
+
+export async function adminSetTwig(formData: FormData) {
+  await requireAdmin();
+  const product = getProductById(text(formData, "id"));
+  if (!product) redirect("/admin/twigs");
+  const mode = text(formData, "mode");
+  if (mode === "deactivate" && product.status === "published" && !product.deactivatesAt) setDeactivatesAt(product.id, product.userId, nextBillingDate());
+  if (mode === "reactivate") {
+    if (product.status === "deactivated") reactivateProduct(product.id, product.userId);
+    else if (product.status === "published") clearDeactivatesAt(product.id, product.userId);
+  }
+  const seller = findUserById(product.userId);
+  if (seller) {
+    updateTag(productTag(seller.username.toLowerCase(), product.slug));
+    updateTag(sellerTag(seller.username.toLowerCase()));
+  }
+  redirect("/admin/twigs");
 }
 
 export async function startSellerPayout(formData: FormData) {

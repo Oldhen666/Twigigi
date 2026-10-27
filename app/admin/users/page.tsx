@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { setUserRole } from "@/lib/actions";
+import { adminRenameUser, setUserRole } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { listUsers } from "@/lib/db";
 import { formatDate, isPrivateUsername } from "@/lib/format";
@@ -36,6 +36,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                       {yours ? <span className="ml-2 text-xs font-normal uppercase tracking-wide text-muted">You</span> : null}
                     </p>
                     <p className="text-muted">{user.email}</p>
+                    <form action={adminRenameUser} className="mt-2 flex gap-2">
+                      <input type="hidden" name="id" value={user.id} />
+                      <input name="displayName" defaultValue={user.displayName} className="h-9 w-40 rounded-xl border border-line bg-white px-2 text-sm" />
+                      <button className="text-forest">Save name</button>
+                    </form>
                     {isPrivateUsername(user.username) ? (
                       <p className="text-muted">No public link yet</p>
                     ) : (

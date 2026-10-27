@@ -1,14 +1,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
-import { setLeadStatus } from "@/lib/actions";
+import { confirmInteraction, setLeadStatus } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
-import { listMessages, listOrders, listQuotes, sellerBooks, sellerProducts, sellerStats, sellerViewSources } from "@/lib/db";
+import { listMessages, listOrders, listQuotes, listSellerInteractions, sellerBooks, sellerProducts, sellerStats, sellerViewSources } from "@/lib/db";
 import { BUCKET_LABEL } from "@/lib/ledger";
-import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatDate, formatMoney, isPrivateUsername, isTwigLive, nextBillingDate, productUrl, srcLabel } from "@/lib/format";
+import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatDate, formatMoney, interactionLabel, isPrivateUsername, isTwigLive, nextBillingDate, productUrl, srcLabel } from "@/lib/format";
 
 async function DashboardBody() {
   const user = await requireSeller();
@@ -16,6 +16,7 @@ async function DashboardBody() {
   const products = sellerProducts(user.id);
   const viewSources = sellerViewSources(user.id);
   const orders = listOrders(user.id);
+  const interactions = listSellerInteractions(user.id);
   const quotes = listQuotes(user.id);
   const messages = listMessages(user.id);
   const books = sellerBooks(user.id);
@@ -145,6 +146,51 @@ async function DashboardBody() {
           })}
         </section>
       )}
+
+      <section className="mt-10">
+        <h2 className="font-serif text-2xl">Platform</h2>
+        <p className="mt-2 max-w-2xl text-sm text-muted">A published Twig is covered until {formatBillingDate(nextBillingDate())}. That is the date your Twigigi fee runs through.</p>
+        <ul className="mt-4 space-y-2 text-sm">
+          {products.filter((product) => product.status !== "draft").length === 0 ? (
+            <li className="text-muted">Platform billing starts when you publish a Twig.</li>
+          ) : products.filter((product) => product.status !== "draft").map((product) => (
+            <li key={product.id} className="flex flex-wrap justify-between gap-2 rounded-2xl border border-line bg-card px-4 py-3">
+              <span>{product.title}</span>
+              <span className="text-muted">
+                {product.status === "deactivated"
+                  ? `Deactivated${product.deactivatedAt ? ` ${formatBillingDate(product.deactivatedAt)}` : ""}`
+                  : product.deactivatesAt
+                    ? `Paid through ${formatBillingDate(product.deactivatesAt)}`
+                    : `Paid through ${formatBillingDate(nextBillingDate())}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="font-serif text-2xl">Interactions</h2>
+        {interactions.length === 0 ? (
+          <p className="mt-2 text-sm text-muted">Orders and quote requests appear here with an interaction ID.</p>
+        ) : (
+          <ul className="mt-3 space-y-3">
+            {interactions.map((item) => (
+              <li key={item.id} className="rounded-2xl border border-line bg-card p-4 text-sm">
+                <p className="font-medium">{item.publicRef} · {item.productTitle}</p>
+                <p className="text-muted">{item.kind === "quote" ? "Quote" : "Order"} · {item.buyerEmail} · {interactionLabel(item)}</p>
+                {item.sellerConfirmedAt ? null : (
+                  <form action={confirmInteraction} className="mt-2">
+                    <input type="hidden" name="id" value={item.id} />
+                    <input type="hidden" name="side" value="seller" />
+                    <input type="hidden" name="next" value="/dashboard" />
+                    <button className="text-forest">Mark completed</button>
+                  </form>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {hasActivity ? (
         <section className={`mt-10 grid gap-8 ${activityCount > 2 ? "lg:grid-cols-3" : activityCount > 1 ? "lg:grid-cols-2" : ""}`}>

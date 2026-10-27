@@ -252,6 +252,7 @@ function ensureColumns(database: DatabaseSync) {
   add("orders", "payout_completed_at", "payout_completed_at TEXT");
   add("orders", "refund_status", "refund_status TEXT NOT NULL DEFAULT 'none'");
   add("orders", "dispute_status", "dispute_status TEXT NOT NULL DEFAULT 'none'");
+  add("page_views", "user_id", "user_id TEXT");
   database.exec("CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders(seller_id)");
   database.exec(`
     CREATE TABLE IF NOT EXISTS ledger_entries (
@@ -294,16 +295,8 @@ function ensureColumns(database: DatabaseSync) {
       PRIMARY KEY (user_id, product_id)
     );
 
-    CREATE TABLE IF NOT EXISTS reviews (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id),
-      product_id TEXT NOT NULL REFERENCES products(id),
-      order_id TEXT NOT NULL UNIQUE REFERENCES orders(id),
-      rating INTEGER NOT NULL,
-      body TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL
-    );
   `);
+  migrateCommerce(database);
   database.prepare(`UPDATE users SET role = 'user' WHERE role NOT IN ('admin', 'user')`).run();
   promoteAdmins(database);
   const paid = database.prepare(`SELECT id FROM orders WHERE payment_status = 'paid' OR status IN ('paid', 'fulfilled')`).all() as Array<{ id: string }>;
@@ -365,6 +358,93 @@ function ensureOrderNumbers(database: DatabaseSync) {
 function nextOrderRef(database: DatabaseSync) {
   const row = database.prepare(`UPDATE counters SET value = value + 1 WHERE name = 'order' RETURNING value`).get() as { value: number } | undefined;
   return `TW-${row?.value ?? 10001}`;
+}
+
+function nextCounter(database: DatabaseSync, name: string, prefix: string) {
+  database.exec(`CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value INTEGER NOT NULL)`);
+  database.prepare(`INSERT INTO counters (name, value) VALUES (?, 10000) ON CONFLICT(name) DO NOTHING`).run(name);
+  const row = database.prepare(`UPDATE counters SET value = value + 1 WHERE name = ? RETURNING value`).get(name) as { value: number } | undefined;
+  return `${prefix}${row?.value ?? 10001}`;
+}
+
+function freshId(prefix: string) {
+  const bytes = crypto.getRandomValues(new Uint8Array(9));
+  return `${prefix}_${Buffer.from(bytes).toString("base64url")}`;
+}
+
+function migrateCommerce(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS interactions (
+      id TEXT PRIMARY KEY,
+      public_ref TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL,
+      source_id TEXT NOT NULL UNIQUE,
+      product_id TEXT NOT NULL,
+      seller_id TEXT NOT NULL,
+      buyer_id TEXT,
+      buyer_email TEXT NOT NULL,
+      buyer_confirmed_at TEXT,
+      seller_confirmed_at TEXT,
+      created_at TEXT NOT NULL
+    );
+  `);
+  const insert = database.prepare(
+    `INSERT INTO interactions (
+      id, public_ref, kind, source_id, product_id, seller_id, buyer_id, buyer_email, buyer_confirmed_at, seller_confirmed_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
+  );
+  const orders = database.prepare(
+    `SELECT id, product_id, seller_id, buyer_id, email, created_at FROM orders
+     WHERE seller_id != '' AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.source_id = orders.id)`,
+  ).all() as Row[];
+  for (const row of orders) {
+    insert.run(freshId("int"), nextCounter(database, "interaction", "IX-"), "order", str(row.id), str(row.product_id), str(row.seller_id), row.buyer_id ? str(row.buyer_id) : null, str(row.email).toLowerCase(), str(row.created_at));
+  }
+  const quotes = database.prepare(
+    `SELECT q.id, q.product_id, p.user_id AS seller_id, q.email, q.created_at,
+       (SELECT u.id FROM users u WHERE lower(u.email) = lower(q.email)) AS buyer_id
+     FROM quotes q JOIN products p ON p.id = q.product_id
+     WHERE NOT EXISTS (SELECT 1 FROM interactions i WHERE i.source_id = q.id)`,
+  ).all() as Row[];
+  for (const row of quotes) {
+    insert.run(freshId("int"), nextCounter(database, "interaction", "IX-"), "quote", str(row.id), str(row.product_id), str(row.seller_id), row.buyer_id ? str(row.buyer_id) : null, str(row.email).toLowerCase(), str(row.created_at));
+  }
+  const existing = database.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reviews'`).get() as { name: string } | undefined;
+  const columns = existing ? (database.prepare(`PRAGMA table_info(reviews)`).all() as Array<{ name: string }>) : [];
+  if (columns.some((column) => column.name === "interaction_id")) return;
+  database.exec(`
+    CREATE TABLE reviews_next (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      seller_id TEXT NOT NULL,
+      product_id TEXT NOT NULL,
+      interaction_id TEXT NOT NULL UNIQUE,
+      overall INTEGER NOT NULL,
+      as_described INTEGER NOT NULL,
+      communication INTEGER NOT NULL,
+      reliability INTEGER NOT NULL,
+      quality INTEGER,
+      body TEXT NOT NULL DEFAULT '',
+      images_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL
+    );
+  `);
+  if (existing) {
+    const old = database.prepare(`SELECT * FROM reviews`).all() as Row[];
+    const copy = database.prepare(
+      `INSERT INTO reviews_next (
+        id, user_id, seller_id, product_id, interaction_id, overall, as_described, communication, reliability, quality, body, images_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, '[]', ?)`,
+    );
+    for (const row of old) {
+      const interaction = database.prepare(`SELECT id, seller_id FROM interactions WHERE source_id = ?`).get(str(row.order_id)) as Row | undefined;
+      if (!interaction) continue;
+      const score = num(row.rating);
+      copy.run(str(row.id), str(row.user_id), str(interaction.seller_id), str(row.product_id), str(interaction.id), score, score, score, score, str(row.body), str(row.created_at));
+    }
+    database.exec(`DROP TABLE reviews`);
+  }
+  database.exec(`ALTER TABLE reviews_next RENAME TO reviews`);
 }
 
 function promoteAdmins(database: DatabaseSync) {
@@ -814,7 +894,8 @@ export function getSellerWithProducts(username: string): PublicSeller | null {
      ORDER BY p.updated_at DESC`,
     str(user.id),
   ).map(mapPublic);
-  return { username: str(user.username), displayName: str(user.display_name), products };
+  const rating = sellerReviewSummary(str(user.id));
+  return { username: str(user.username), displayName: str(user.display_name), products, ratingAverage: rating.average, ratingCount: rating.count };
 }
 
 export function listPublishedParams() {
@@ -1026,9 +1107,9 @@ export function sellerProducts(userId: string) {
   return many("SELECT * FROM products WHERE user_id = ? ORDER BY updated_at DESC", userId).map(mapProduct);
 }
 
-export function recordView(productId: string, src: string) {
+export function recordView(productId: string, src: string, userId: string | null) {
   const now = new Date().toISOString();
-  db.prepare("INSERT INTO page_views (product_id, src, created_at) VALUES (?, ?, ?)").run(productId, src, now);
+  db.prepare("INSERT INTO page_views (product_id, src, created_at, user_id) VALUES (?, ?, ?, ?)").run(productId, src, now, userId);
   db.prepare("UPDATE products SET view_count = view_count + 1 WHERE id = ?").run(productId);
 }
 
@@ -1247,37 +1328,188 @@ export function listFavorites(userId: string) {
   ).map(mapPublic);
 }
 
+export type InteractionKind = "order" | "quote";
+
+export type InteractionRecord = {
+  id: string;
+  publicRef: string;
+  kind: InteractionKind;
+  sourceId: string;
+  productId: string;
+  sellerId: string;
+  buyerId: string | null;
+  buyerEmail: string;
+  buyerConfirmedAt: string | null;
+  sellerConfirmedAt: string | null;
+  createdAt: string;
+  productTitle: string;
+  username: string;
+  sellerName: string;
+};
+
 export type ReviewRecord = {
   id: string;
   userId: string;
+  sellerId: string;
   productId: string;
-  orderId: string;
-  rating: number;
+  interactionId: string;
+  overall: number;
+  asDescribed: number;
+  communication: number;
+  reliability: number;
+  quality: number | null;
   body: string;
+  images: string[];
   createdAt: string;
   displayName: string;
   productTitle: string;
+  publicRef: string;
+  kind: InteractionKind;
 };
 
+function mapInteraction(row: Row): InteractionRecord {
+  const kind: InteractionKind = row.kind === "quote" ? "quote" : "order";
+  return {
+    id: str(row.id),
+    publicRef: str(row.public_ref),
+    kind,
+    sourceId: str(row.source_id),
+    productId: str(row.product_id),
+    sellerId: str(row.seller_id),
+    buyerId: row.buyer_id ? str(row.buyer_id) : null,
+    buyerEmail: str(row.buyer_email),
+    buyerConfirmedAt: row.buyer_confirmed_at ? str(row.buyer_confirmed_at) : null,
+    sellerConfirmedAt: row.seller_confirmed_at ? str(row.seller_confirmed_at) : null,
+    createdAt: str(row.created_at),
+    productTitle: str(row.product_title),
+    username: str(row.username),
+    sellerName: str(row.seller_name),
+  };
+}
+
+const INTERACTION_SELECT = `
+  SELECT i.*,
+    COALESCE(p.title, 'Removed Twig') AS product_title,
+    COALESCE(u.username, '') AS username,
+    COALESCE(u.display_name, '') AS seller_name
+  FROM interactions i
+  LEFT JOIN products p ON p.id = i.product_id
+  LEFT JOIN users u ON u.id = i.seller_id
+`;
+
+export function openInteraction(input: {
+  kind: InteractionKind;
+  sourceId: string;
+  productId: string;
+  sellerId: string;
+  buyerId: string | null;
+  buyerEmail: string;
+  createdAt?: string;
+}) {
+  const existing = one("SELECT id, public_ref FROM interactions WHERE source_id = ?", input.sourceId);
+  if (existing) return { id: str(existing.id), publicRef: str(existing.public_ref) };
+  const id = freshId("int");
+  const publicRef = nextCounter(db, "interaction", "IX-");
+  db.prepare(
+    `INSERT INTO interactions (
+      id, public_ref, kind, source_id, product_id, seller_id, buyer_id, buyer_email, buyer_confirmed_at, seller_confirmed_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
+  ).run(id, publicRef, input.kind, input.sourceId, input.productId, input.sellerId, input.buyerId, input.buyerEmail.toLowerCase(), input.createdAt ?? new Date().toISOString());
+  return { id, publicRef };
+}
+
+export function getInteraction(id: string) {
+  const row = one(`${INTERACTION_SELECT} WHERE i.id = ?`, id);
+  return row ? mapInteraction(row) : null;
+}
+
+export function getInteractionBySource(sourceId: string) {
+  const row = one(`${INTERACTION_SELECT} WHERE i.source_id = ?`, sourceId);
+  return row ? mapInteraction(row) : null;
+}
+
+export function listSellerInteractions(sellerId: string) {
+  return many(`${INTERACTION_SELECT} WHERE i.seller_id = ? ORDER BY i.created_at DESC LIMIT 20`, sellerId).map(mapInteraction);
+}
+
+export function listBuyerInteractions(userId: string, email: string) {
+  return many(
+    `${INTERACTION_SELECT} WHERE i.buyer_id = ? OR lower(i.buyer_email) = ? ORDER BY i.created_at DESC LIMIT 50`,
+    userId,
+    email.toLowerCase(),
+  ).map(mapInteraction);
+}
+
+export function listAllInteractions() {
+  return many(`${INTERACTION_SELECT} ORDER BY i.created_at DESC LIMIT 100`).map(mapInteraction);
+}
+
+export function confirmInteractionParty(id: string, userId: string, email: string, side: "buyer" | "seller") {
+  const row = one("SELECT * FROM interactions WHERE id = ?", id);
+  if (!row) return false;
+  const now = new Date().toISOString();
+  if (side === "seller") {
+    if (str(row.seller_id) !== userId) return false;
+    db.prepare("UPDATE interactions SET seller_confirmed_at = COALESCE(seller_confirmed_at, ?) WHERE id = ?").run(now, id);
+    return true;
+  }
+  const owns = (row.buyer_id && str(row.buyer_id) === userId) || str(row.buyer_email) === email.toLowerCase();
+  if (!owns) return false;
+  db.prepare("UPDATE interactions SET buyer_id = ?, buyer_confirmed_at = COALESCE(buyer_confirmed_at, ?) WHERE id = ?").run(userId, now, id);
+  return true;
+}
+
+export function adminSetConfirmation(id: string, side: "buyer" | "seller", on: boolean) {
+  const column = side === "buyer" ? "buyer_confirmed_at" : "seller_confirmed_at";
+  const result = db.prepare(`UPDATE interactions SET ${column} = ? WHERE id = ?`).run(on ? new Date().toISOString() : null, id);
+  return result.changes > 0;
+}
+
+export function sellerReviewSummary(sellerId: string) {
+  const row = one("SELECT AVG(overall) AS average, COUNT(*) AS n FROM reviews WHERE seller_id = ?", sellerId);
+  const count = num(row?.n);
+  return { average: count > 0 ? num(row?.average) : null, count };
+}
+
+function readImages(value: unknown) {
+  if (typeof value !== "string" || !value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function mapReview(row: Row): ReviewRecord {
+  const kind: InteractionKind = row.kind === "quote" ? "quote" : "order";
   return {
     id: str(row.id),
     userId: str(row.user_id),
+    sellerId: str(row.seller_id),
     productId: str(row.product_id),
-    orderId: str(row.order_id),
-    rating: num(row.rating),
+    interactionId: str(row.interaction_id),
+    overall: num(row.overall),
+    asDescribed: num(row.as_described),
+    communication: num(row.communication),
+    reliability: num(row.reliability),
+    quality: row.quality == null || row.quality === "" ? null : num(row.quality),
     body: str(row.body),
+    images: readImages(row.images_json),
     createdAt: str(row.created_at),
     displayName: str(row.display_name),
     productTitle: str(row.product_title),
+    publicRef: str(row.public_ref),
+    kind,
   };
 }
 
 const REVIEW_SELECT = `
-  SELECT r.*, u.display_name, COALESCE(p.title, '') AS product_title
+  SELECT r.*, u.display_name, COALESCE(p.title, '') AS product_title, COALESCE(i.public_ref, '') AS public_ref, COALESCE(i.kind, 'order') AS kind
   FROM reviews r
   JOIN users u ON u.id = r.user_id
   LEFT JOIN products p ON p.id = r.product_id
+  LEFT JOIN interactions i ON i.id = r.interaction_id
 `;
 
 export function listProductReviews(productId: string) {
@@ -1288,22 +1520,105 @@ export function listUserReviews(userId: string) {
   return many(`${REVIEW_SELECT} WHERE r.user_id = ? ORDER BY r.created_at DESC`, userId).map(mapReview);
 }
 
-export function listReviewableOrders(userId: string) {
-  return many(
-    `SELECT o.id, o.public_ref, COALESCE(p.title, 'Removed Twig') AS product_title
-     FROM orders o
-     LEFT JOIN products p ON p.id = o.product_id
-     WHERE o.buyer_id = ? AND o.status = 'fulfilled'
-       AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.order_id = o.id)
-     ORDER BY o.created_at DESC`,
-    userId,
-  ).map((row) => ({ id: str(row.id), publicRef: str(row.public_ref), productTitle: str(row.product_title) }));
+export function listAllReviews() {
+  return many(`${REVIEW_SELECT} ORDER BY r.created_at DESC LIMIT 100`).map(mapReview);
 }
 
-export function insertReview(input: { id: string; userId: string; productId: string; orderId: string; rating: number; body: string }) {
+export function listReviewableInteractions(userId: string, email: string) {
+  return many(
+    `${INTERACTION_SELECT}
+     WHERE i.buyer_confirmed_at IS NOT NULL
+       AND (i.buyer_id = ? OR lower(i.buyer_email) = ?)
+       AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.interaction_id = i.id)
+     ORDER BY i.buyer_confirmed_at DESC`,
+    userId,
+    email.toLowerCase(),
+  ).map(mapInteraction);
+}
+
+export function insertReview(input: {
+  id: string;
+  userId: string;
+  sellerId: string;
+  productId: string;
+  interactionId: string;
+  overall: number;
+  asDescribed: number;
+  communication: number;
+  reliability: number;
+  quality: number | null;
+  body: string;
+  images: string[];
+}) {
   db.prepare(
-    "INSERT INTO reviews (id, user_id, product_id, order_id, rating, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run(input.id, input.userId, input.productId, input.orderId, input.rating, input.body, new Date().toISOString());
+    `INSERT INTO reviews (
+      id, user_id, seller_id, product_id, interaction_id, overall, as_described, communication, reliability, quality, body, images_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    input.id,
+    input.userId,
+    input.sellerId,
+    input.productId,
+    input.interactionId,
+    input.overall,
+    input.asDescribed,
+    input.communication,
+    input.reliability,
+    input.quality,
+    input.body,
+    JSON.stringify(input.images),
+    new Date().toISOString(),
+  );
+}
+
+export function updateReview(id: string, input: { overall: number; asDescribed: number; communication: number; reliability: number; quality: number | null; body: string }) {
+  const result = db.prepare(
+    `UPDATE reviews SET overall = ?, as_described = ?, communication = ?, reliability = ?, quality = ?, body = ? WHERE id = ?`,
+  ).run(input.overall, input.asDescribed, input.communication, input.reliability, input.quality, input.body, id);
+  return result.changes > 0;
+}
+
+export function reviewPlacement(id: string) {
+  const row = one(
+    `SELECT seller.username AS username, COALESCE(p.slug, '') AS slug
+     FROM reviews r
+     JOIN users seller ON seller.id = r.seller_id
+     LEFT JOIN products p ON p.id = r.product_id
+     WHERE r.id = ?`,
+    id,
+  );
+  return row ? { username: str(row.username), slug: str(row.slug) } : null;
+}
+
+export function deleteReview(id: string) {
+  const result = db.prepare("DELETE FROM reviews WHERE id = ?").run(id);
+  return result.changes > 0;
+}
+
+export function updateDisplayName(id: string, displayName: string) {
+  db.prepare("UPDATE users SET display_name = ? WHERE id = ?").run(displayName, id);
+}
+
+export function listBrowseHistory(userId: string) {
+  return many(
+    `SELECT p.*, u.username, u.display_name, MAX(v.created_at) AS seen_at
+     FROM page_views v
+     JOIN products p ON p.id = v.product_id
+     JOIN users u ON u.id = p.user_id
+     WHERE v.user_id = ? AND p.user_id != ?
+     GROUP BY p.id
+     ORDER BY seen_at DESC
+     LIMIT 30`,
+    userId,
+    userId,
+  ).map((row) => ({ product: mapPublic(row), seenAt: str(row.seen_at) }));
+}
+
+export function listAllProducts() {
+  settleDeactivations();
+  return many(
+    `SELECT p.*, u.username, u.display_name FROM products p JOIN users u ON u.id = p.user_id ORDER BY p.updated_at DESC`,
+  ).map((row) => ({ ...mapProduct(row), username: str(row.username), displayName: str(row.display_name) }));
 }
 
 export type StoredLedgerEntry = {

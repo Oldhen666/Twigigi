@@ -27,6 +27,7 @@ export const RESERVED_USERNAMES = new Set([
   "signup",
   "static",
   "uploads",
+  "history",
   "forgot",
   "reset",
   "reviews",
@@ -37,6 +38,13 @@ export const RESERVED_USERNAMES = new Set([
 
 export function isPrivateUsername(username: string) {
   return /^[ub][0-9a-f]{12}$/.test(username);
+}
+
+export function interactionLabel(item: { buyerConfirmedAt: string | null; sellerConfirmedAt: string | null }) {
+  if (item.buyerConfirmedAt && item.sellerConfirmedAt) return "Verified transaction";
+  if (item.buyerConfirmedAt) return "Buyer confirmed";
+  if (item.sellerConfirmedAt) return "Seller confirmed";
+  return "Open";
 }
 
 const SRC_LABELS: Record<string, string> = {
