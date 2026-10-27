@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { useId } from "react";
 import { connection } from "next/server";
 import QRCode from "qrcode";
 import { getPublicProduct, requireLiveTwig } from "@/lib/catalog";
@@ -12,6 +11,7 @@ import { ViewTracker } from "@/components/view-tracker";
 import { Logo } from "@/components/logo";
 import { BackButton } from "@/components/back-button";
 import { PayMethods } from "@/components/pay-methods";
+import { Stars } from "@/components/stars";
 import { toggleSaved } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { isFavorite, listProductReviews, sellerReviewSummary } from "@/lib/db";
@@ -241,35 +241,10 @@ function SellerCredit({ username, name, rating }: { username: string; name: stri
         <span className="inline-flex items-center gap-1 text-forest">
           <Stars value={rating.average} />
           <span className="font-medium text-ink">{rating.average.toFixed(1)}</span>
+          <span className="text-muted">{rating.count}</span>
         </span>
       ) : null}
     </p>
-  );
-}
-
-function Stars({ value }: { value: number }) {
-  const prefix = useId().replace(/:/g, "");
-  return (
-    <span className="inline-flex" aria-label={`${value.toFixed(1)} out of 5 stars`}>
-      {[0, 1, 2, 3, 4].map((index) => {
-        const fill = Math.max(0, Math.min(1, value - index));
-        const id = `${prefix}-${index}`;
-        return (
-          <svg key={index} width="14" height="14" viewBox="0 0 20 20" aria-hidden className="text-forest">
-            <defs>
-              <linearGradient id={id} x1="0" x2="1" y1="0" y2="0">
-                <stop offset={`${fill * 100}%`} stopColor="currentColor" />
-                <stop offset={`${fill * 100}%`} stopColor="#e4dcd0" />
-              </linearGradient>
-            </defs>
-            <path
-              d="M10 1.8 12.4 7l5.6.5-4.2 3.7 1.3 5.5L10 13.8 4.9 16.7l1.3-5.5L2 7.5 7.6 7 10 1.8Z"
-              fill={`url(#${id})`}
-            />
-          </svg>
-        );
-      })}
-    </span>
   );
 }
 
