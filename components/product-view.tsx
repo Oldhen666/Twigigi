@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { useId } from "react";
 import { connection } from "next/server";
 import QRCode from "qrcode";
 import { getPublicProduct, requireLiveTwig } from "@/lib/catalog";
@@ -29,6 +30,7 @@ export async function ProductView({
   const saved = account ? isFavorite(account.id, product.id) : false;
   const reviews = listProductReviews(product.id);
   const rating = sellerReviewSummary(product.userId);
+  const reviewAverage = reviews.length ? reviews.reduce((sum, review) => sum + review.overall, 0) / reviews.length : null;
   const ownTwig = account?.username === product.username;
 
   const canonical = productUrl(product.username, product.slug);
@@ -97,7 +99,6 @@ export async function ProductView({
             ))}
           </div>
         ) : null}
-        {product.images.length > 1 ? <p className="px-5 pt-2 text-xs text-muted">Swipe for more photos</p> : null}
         <div className="px-5 pt-4">
           <p className="text-xs uppercase tracking-[0.16em] text-muted">{product.location}</p>
           <h1 className="mt-2 font-serif text-4xl leading-tight">{product.title}</h1>
@@ -165,17 +166,26 @@ export async function ProductView({
         )}
         <div className="space-y-5 px-5 py-5">
           <p className="whitespace-pre-wrap text-[15px] leading-7">{product.description}</p>
-          <section>
-            <h2 className="font-serif text-2xl">Reviews</h2>
-            {reviews.length === 0 ? (
-              <p className="mt-2 text-sm text-muted">No reviews yet.</p>
-            ) : (
-              <ul className="mt-3 space-y-4">
+          {reviews.length > 0 && reviewAverage != null ? (
+            <section>
+              <div className="flex items-start justify-between gap-4">
+                <h2 className="font-serif text-2xl">Reviews</h2>
+                <div className="pt-1 text-right">
+                  <p className="flex items-center justify-end gap-1.5 text-sm text-forest">
+                    <Stars value={reviewAverage} />
+                    <span className="font-medium text-ink">{reviewAverage.toFixed(1)}</span>
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted">Reviewed by {reviews.length} {reviews.length === 1 ? "person" : "people"}</p>
+                </div>
+              </div>
+              <ul className="mt-4 space-y-4">
                 {reviews.map((review) => (
-                  <li key={review.id}>
-                    <p className="text-sm font-medium">{review.displayName} · {review.overall}/5 · {review.publicRef}</p>
-                    <p className="text-sm text-muted">As described {review.asDescribed} · Communication {review.communication} · Reliability {review.reliability}{review.quality != null ? ` · Quality ${review.quality}` : ""}</p>
-                    {review.body ? <p className="mt-1 text-sm">{review.body}</p> : null}
+                  <li key={review.id} className="border-t border-line pt-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium">{review.displayName}</p>
+                      <Stars value={review.overall} />
+                    </div>
+                    {review.body ? <p className="mt-1 text-sm leading-6">{review.body}</p> : null}
                     {review.images.length > 0 ? (
                       <div className="mt-2 flex gap-2">
                         {review.images.map((src) => (
@@ -183,12 +193,12 @@ export async function ProductView({
                         ))}
                       </div>
                     ) : null}
-                    <p className="text-xs text-muted">{formatDate(review.createdAt)}</p>
+                    <p className="mt-1 text-xs text-muted">{formatDate(review.createdAt)}</p>
                   </li>
                 ))}
               </ul>
-            )}
-          </section>
+            </section>
+          ) : null}
           {embed ? (
             <div className="relative aspect-video overflow-hidden rounded-2xl bg-paper-deep">
               <iframe src={embed} title={`${product.title} video`} className="absolute inset-0 h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
@@ -222,12 +232,44 @@ export async function ProductView({
 
 function SellerCredit({ username, name, rating }: { username: string; name: string; rating: { average: number | null; count: number } }) {
   return (
-    <p className="mt-3 text-sm text-muted">
-      Sold by{" "}
-      <Link href={`/${username}`} className="text-ink underline-offset-2 hover:underline">{name}</Link>
-      <span className="ml-2 text-ink">{username}</span>
-      {rating.count > 0 && rating.average != null ? <span className="ml-2 font-medium text-ink">{rating.average.toFixed(1)}</span> : null}
+    <p className="mt-3 flex flex-wrap items-center gap-x-2 text-sm text-muted">
+      <span>
+        Sold by{" "}
+        <Link href={`/${username}`} className="text-ink underline-offset-2 hover:underline">{name}</Link>
+      </span>
+      {rating.count > 0 && rating.average != null ? (
+        <span className="inline-flex items-center gap-1 text-forest">
+          <Stars value={rating.average} />
+          <span className="font-medium text-ink">{rating.average.toFixed(1)}</span>
+        </span>
+      ) : null}
     </p>
+  );
+}
+
+function Stars({ value }: { value: number }) {
+  const prefix = useId().replace(/:/g, "");
+  return (
+    <span className="inline-flex" aria-label={`${value.toFixed(1)} out of 5 stars`}>
+      {[0, 1, 2, 3, 4].map((index) => {
+        const fill = Math.max(0, Math.min(1, value - index));
+        const id = `${prefix}-${index}`;
+        return (
+          <svg key={index} width="14" height="14" viewBox="0 0 20 20" aria-hidden className="text-forest">
+            <defs>
+              <linearGradient id={id} x1="0" x2="1" y1="0" y2="0">
+                <stop offset={`${fill * 100}%`} stopColor="currentColor" />
+                <stop offset={`${fill * 100}%`} stopColor="#e4dcd0" />
+              </linearGradient>
+            </defs>
+            <path
+              d="M10 1.8 12.4 7l5.6.5-4.2 3.7 1.3 5.5L10 13.8 4.9 16.7l1.3-5.5L2 7.5 7.6 7 10 1.8Z"
+              fill={`url(#${id})`}
+            />
+          </svg>
+        );
+      })}
+    </span>
   );
 }
 

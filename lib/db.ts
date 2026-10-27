@@ -2128,5 +2128,184 @@ function ensureConsultPage() {
   );
 }
 
+function ensureDemoReviews() {
+  const product = (slug: string) =>
+    one(
+      `SELECT p.id AS id, p.user_id AS seller_id
+       FROM products p JOIN users u ON u.id = p.user_id
+       WHERE lower(u.username) = 'ava' AND p.slug = ?`,
+      slug,
+    );
+  const cedar = product("cedar-planter");
+  const bench = product("garden-bench");
+  if (!cedar && !bench) return;
+  const expected = (cedar ? 3 : 0) + (bench ? 2 : 0);
+  const seeded = one("SELECT COUNT(*) AS n FROM reviews WHERE id LIKE 'rev_demo_%'");
+  if (num(seeded?.n) >= expected) return;
+  const passwordHash = bcrypt.hashSync(`${crypto.randomUUID()}${crypto.randomUUID()}`, 10);
+  const people = [
+    ["usr_demo_maya", "maya.hale@twigigi.demo", "maya-hale", "Maya Hale", "2026-09-02T15:00:00.000Z"],
+    ["usr_demo_owen", "owen.park@twigigi.demo", "owen-park", "Owen Park", "2026-09-04T15:00:00.000Z"],
+    ["usr_demo_lina", "lina.cho@twigigi.demo", "lina-cho", "Lina Cho", "2026-09-06T15:00:00.000Z"],
+    ["usr_demo_noah", "noah.reid@twigigi.demo", "noah-reid", "Noah Reid", "2026-09-08T15:00:00.000Z"],
+    ["usr_demo_priya", "priya.shah@twigigi.demo", "priya-shah", "Priya Shah", "2026-09-10T15:00:00.000Z"],
+  ] as const;
+  const insertUser = db.prepare(
+    `INSERT INTO users (id, email, password_hash, username, display_name, role, created_at)
+     SELECT ?, ?, ?, ?, ?, 'user', ?
+     WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = ? OR lower(email) = lower(?) OR lower(username) = lower(?))`,
+  );
+  for (const [id, email, username, displayName, createdAt] of people) {
+    insertUser.run(id, email, passwordHash, username, displayName, createdAt, id, email, username);
+  }
+  const insertInteraction = db.prepare(
+    `INSERT INTO interactions (
+      id, public_ref, kind, source_id, product_id, seller_id, buyer_id, buyer_email, buyer_confirmed_at, seller_confirmed_at, created_at
+    ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE NOT EXISTS (SELECT 1 FROM interactions WHERE id = ? OR source_id = ? OR public_ref = ?)`,
+  );
+  const insertReview = db.prepare(
+    `INSERT INTO reviews (
+      id, user_id, seller_id, product_id, interaction_id, overall, as_described, communication, reliability, quality, body, images_json, created_at
+    ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?
+      WHERE NOT EXISTS (SELECT 1 FROM reviews WHERE id = ? OR interaction_id = ?)`,
+  );
+  const reviews = [
+    cedar && {
+      id: "rev_demo_cedar_1",
+      userId: "usr_demo_maya",
+      email: "maya.hale@twigigi.demo",
+      productId: str(cedar.id),
+      sellerId: str(cedar.seller_id),
+      interactionId: "int_demo_cedar_1",
+      publicRef: "IX-D01",
+      kind: "order",
+      overall: 5,
+      asDescribed: 5,
+      communication: 5,
+      reliability: 5,
+      quality: null,
+      body: "Solid cedar, and the drainage actually works. It sat outside through a wet week and the wood still looks clean.",
+      at: "2026-09-14T18:00:00.000Z",
+    },
+    cedar && {
+      id: "rev_demo_cedar_2",
+      userId: "usr_demo_owen",
+      email: "owen.park@twigigi.demo",
+      productId: str(cedar.id),
+      sellerId: str(cedar.seller_id),
+      interactionId: "int_demo_cedar_2",
+      publicRef: "IX-D02",
+      kind: "order",
+      overall: 5,
+      asDescribed: 5,
+      communication: 5,
+      reliability: 4,
+      quality: null,
+      body: "Exactly as described. Pickup was easy, and Ava answered the size questions the same day.",
+      at: "2026-09-28T18:00:00.000Z",
+    },
+    cedar && {
+      id: "rev_demo_cedar_3",
+      userId: "usr_demo_lina",
+      email: "lina.cho@twigigi.demo",
+      productId: str(cedar.id),
+      sellerId: str(cedar.seller_id),
+      interactionId: "int_demo_cedar_3",
+      publicRef: "IX-D03",
+      kind: "order",
+      overall: 4,
+      asDescribed: 4,
+      communication: 5,
+      reliability: 5,
+      quality: null,
+      body: "Beautiful planter. A little heavier than I expected, but the finish is even and it fits the entry.",
+      at: "2026-10-09T18:00:00.000Z",
+    },
+    bench && {
+      id: "rev_demo_bench_1",
+      userId: "usr_demo_noah",
+      email: "noah.reid@twigigi.demo",
+      productId: str(bench.id),
+      sellerId: str(bench.seller_id),
+      interactionId: "int_demo_bench_1",
+      publicRef: "IX-D04",
+      kind: "quote",
+      overall: 5,
+      asDescribed: 5,
+      communication: 5,
+      reliability: 5,
+      quality: 5,
+      body: "Built to the length I asked for. Communication stayed clear from the quote through pickup.",
+      at: "2026-09-20T18:00:00.000Z",
+    },
+    bench && {
+      id: "rev_demo_bench_2",
+      userId: "usr_demo_priya",
+      email: "priya.shah@twigigi.demo",
+      productId: str(bench.id),
+      sellerId: str(bench.seller_id),
+      interactionId: "int_demo_bench_2",
+      publicRef: "IX-D05",
+      kind: "quote",
+      overall: 5,
+      asDescribed: 5,
+      communication: 5,
+      reliability: 5,
+      quality: 5,
+      body: "Sturdy, and the wood choice was explained properly. It has lived outside since the week it arrived.",
+      at: "2026-10-16T18:00:00.000Z",
+    },
+  ].filter((item): item is NonNullable<typeof item> => Boolean(item));
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    for (const review of reviews) {
+      const buyer = one("SELECT id FROM users WHERE id = ?", review.userId);
+      if (!buyer) continue;
+      insertInteraction.run(
+        review.interactionId,
+        review.publicRef,
+        review.kind,
+        review.interactionId,
+        review.productId,
+        review.sellerId,
+        review.userId,
+        review.email,
+        review.at,
+        review.at,
+        review.at,
+        review.interactionId,
+        review.interactionId,
+        review.publicRef,
+      );
+      insertReview.run(
+        review.id,
+        review.userId,
+        review.sellerId,
+        review.productId,
+        review.interactionId,
+        review.overall,
+        review.asDescribed,
+        review.communication,
+        review.reliability,
+        review.quality,
+        review.body,
+        review.at,
+        review.id,
+        review.interactionId,
+      );
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // The statement error may already have ended the transaction.
+    }
+    throw error;
+  }
+}
+
 seedIfEmpty();
 ensureConsultPage();
+ensureDemoReviews();
