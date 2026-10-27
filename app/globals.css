@@ -49,6 +49,22 @@ body {
   background: #d5e6da;
 }
 
+.seller-theme {
+  --paper: #eef2e8;
+  --paper-deep: #e0e6d6;
+  --card: #fbfdf7;
+  --line: #d7e0cc;
+  --moss: #dceadf;
+  --background: var(--paper);
+  background:
+    radial-gradient(900px 420px at 50% -120px, #f4f8ef, transparent),
+    var(--paper);
+}
+
+.seller-theme ::selection {
+  background: #d3e6d4;
+}
+
 .buyer-theme {
   --paper: #eef2f6;
   --paper-deep: #dce4ee;

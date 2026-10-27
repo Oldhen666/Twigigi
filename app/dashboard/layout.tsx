@@ -16,7 +16,7 @@ async function Header() {
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-paper">
+    <div className="seller-theme min-h-screen">
       <Suspense fallback={<div className="h-16" />}>
         <Header />
       </Suspense>
