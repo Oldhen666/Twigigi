@@ -20,7 +20,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={<div className="h-16" />}>
         <Header />
       </Suspense>
-      <div className="mx-auto w-full max-w-5xl px-5 pt-1">
+      <div className="mx-auto w-full max-w-5xl px-5 pt-2">
         <BackButton />
       </div>
       {children}

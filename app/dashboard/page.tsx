@@ -6,7 +6,7 @@ import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
 import { sellerProducts, sellerStats } from "@/lib/db";
-import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isPrivateUsername, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
+import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
 
 async function DashboardBody() {
   const user = await requireSeller();
@@ -21,14 +21,9 @@ async function DashboardBody() {
 
   return (
     <main className="mx-auto w-full max-w-5xl px-5 pb-16">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-serif text-4xl">Your Twigs</h1>
-          <p className="mt-1 text-sm text-muted">{isPrivateUsername(user.username) ? "Your public link is created when you publish." : `twigigi.com/${user.username}`}</p>
-        </div>
-        <Link href="/start" className="inline-flex h-10 shrink-0 items-center rounded-full bg-forest px-4 text-sm text-card">
-          New Twig +
-        </Link>
+      <div className="mt-6">
+        <h1 className="font-serif text-4xl">Your Twigs</h1>
+        <p className="mt-2 text-sm text-muted">Hi, {user.displayName}</p>
       </div>
 
       <section className="mt-6 overflow-hidden rounded-3xl border border-line bg-card">
@@ -52,7 +47,10 @@ async function DashboardBody() {
         </div>
       ) : (
         <section className="mt-8 space-y-3">
-          <h2 className="font-serif text-2xl">Twigs</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-serif text-2xl">Twigs</h2>
+            <Link href="/start" className="text-sm text-forest">New Twig</Link>
+          </div>
           {products.map((product) => {
             const live = isTwigLive(product);
             const ending = live && Boolean(product.deactivatesAt);
@@ -118,6 +116,8 @@ async function DashboardBody() {
     </main>
   );
 }
+
+export const metadata = { title: "Your Twigs", robots: { index: false, follow: false } };
 
 export default function Page() {
   return (
