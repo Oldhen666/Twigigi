@@ -354,6 +354,7 @@ function promoteAdmins(database: DatabaseSync) {
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
   if (!emails.includes("ava@twigigi.demo")) emails.push("ava@twigigi.demo");
+  if (!emails.includes("chenk@dybridge.com")) emails.push("chenk@dybridge.com");
   const update = database.prepare(`UPDATE users SET role = 'admin' WHERE email = ?`);
   for (const email of emails) update.run(email);
 }
@@ -729,6 +730,19 @@ export function createUser(input: {
     input.role === "buyer" ? "buyer" : "seller",
     new Date().toISOString(),
   );
+}
+
+export function listUsers() {
+  return many(
+    `SELECT u.*,
+      (SELECT COUNT(*) FROM products p WHERE p.user_id = u.id) AS product_count
+     FROM users u
+     ORDER BY u.created_at ASC`,
+  ).map((row) => ({ ...mapUser(row), productCount: num(row.product_count) }));
+}
+
+export function updateUserRole(id: string, role: UserRole) {
+  db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
 }
 
 export function updatePassword(userId: string, passwordHash: string) {

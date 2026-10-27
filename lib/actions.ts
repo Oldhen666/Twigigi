@@ -35,7 +35,9 @@ import {
   replacePasswordReset,
   takePasswordReset,
   uniqueSlug,
+  listUsers,
   updatePassword,
+  updateUserRole,
   updateMessageStatus,
   completePayout,
   setDispute,
@@ -889,6 +891,27 @@ async function recordMoneyAction(formData: FormData, run: (id: string) => { ok: 
   const result = run(id);
   const next = text(formData, "next") || `/admin/payments/${id}`;
   if (!result.ok) redirect(`${next}?error=${encodeURIComponent(result.error)}`);
+  redirect(next);
+}
+
+export async function setUserRole(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = text(formData, "id");
+  const role = text(formData, "role");
+  const next = "/admin/users";
+  if (role !== "admin" && role !== "seller" && role !== "buyer") {
+    redirect(`${next}?error=${encodeURIComponent("Choose a role.")}`);
+  }
+  if (id === admin.id) {
+    redirect(`${next}?error=${encodeURIComponent("You can't change your own role.")}`);
+  }
+  const user = findUserById(id);
+  if (!user) redirect(`${next}?error=${encodeURIComponent("That account was not found.")}`);
+  if (user.role === "admin" && role !== "admin" && !listUsers().some((item) => item.role === "admin" && item.id !== user.id)) {
+    redirect(`${next}?error=${encodeURIComponent("Keep at least one admin.")}`);
+  }
+  updateUserRole(user.id, role);
+  updateTag(sellerTag(user.username.toLowerCase()));
   redirect(next);
 }
 

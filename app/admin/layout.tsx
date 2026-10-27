@@ -5,6 +5,7 @@ import { BackButton } from "@/components/back-button";
 import { Logo } from "@/components/logo";
 
 const LINKS = [
+  ["Users", "/admin/users"],
   ["Payments", "/admin/payments"],
   ["Payouts", "/admin/payouts"],
   ["Disputes", "/admin/disputes"],

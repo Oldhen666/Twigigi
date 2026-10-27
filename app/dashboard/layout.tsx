@@ -12,7 +12,7 @@ async function Header() {
       <Logo />
       <nav className="flex items-center gap-5 text-sm whitespace-nowrap">
         <Link href="/dashboard" className="text-ink">Twigs</Link>
-        {user.role === "admin" ? <Link href="/admin/payments" className="text-ink">Admin</Link> : null}
+        {user.role === "admin" ? <Link href="/admin/users" className="text-ink">Admin</Link> : null}
         <form action={signOut}>
           <button className="text-muted">Sign out</button>
         </form>
