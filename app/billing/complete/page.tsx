@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import { activeWindow, twigMonthlyCents } from "@/lib/billing";
+import { activeWindow, billingCurrency, listingFeeCents } from "@/lib/billing";
 import { requireUser } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { getProductById, publishDraft, reactivateProduct, recordTwigBill } from "@/lib/db";
@@ -30,14 +30,16 @@ async function CompleteScreen({
   if (!product || product.userId !== user.id || product.status === "published") redirect("/dashboard");
   if (product.status === "deactivated") reactivateProduct(product.id, user.id);
   else if (product.status === "draft") publishDraft(product.id, user.id);
-  const cents = twigMonthlyCents() ?? session.amount_total ?? 0;
+  const cents = listingFeeCents(product.cta) || session.amount_total || 0;
   const window = activeWindow(new Date().toISOString());
   recordTwigBill({
     id: newId(),
     userId: user.id,
     productId: product.id,
     amountCents: cents,
+    currency: billingCurrency(product.location),
     method: user.billingMethod || "stripe",
+    kind: "listing",
     periodStart: window.start,
     periodEnd: window.end,
     status: "paid",

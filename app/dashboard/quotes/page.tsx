@@ -10,6 +10,7 @@ async function QuotesScreen() {
   return (
     <main className="page-frame pb-16">
       <h1 className="font-serif text-4xl">Quotes</h1>
+      <p className="mt-2 text-sm text-muted">Each quote submission is $0.25, in CAD or USD for that Twig.</p>
       {quotes.length === 0 ? (
         <div className="mt-8">
           <p className="text-sm text-muted">No quote record</p>

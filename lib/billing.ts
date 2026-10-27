@@ -1,13 +1,17 @@
 import { nextBillingDate, periodStart } from "@/lib/format";
+import { splitLocation } from "@/lib/places";
 
 export type BillingMethod = "card" | "paypal" | "stripe";
 
-export function twigMonthlyCents() {
-  const raw = process.env.TWIG_MONTHLY_CENTS?.trim();
-  if (!raw) return null;
-  const cents = Number(raw);
-  if (!Number.isInteger(cents) || cents <= 0) return null;
-  return cents;
+export const LISTING_CENTS = 100;
+export const QUOTE_SUBMISSION_CENTS = 25;
+
+export function billingCurrency(location: string) {
+  return splitLocation(location).country === "US" ? "USD" : "CAD";
+}
+
+export function listingFeeCents(cta: string) {
+  return cta === "buy" || cta === "quote" ? LISTING_CENTS : 0;
 }
 
 export function isBillingMethod(value: string): value is BillingMethod {

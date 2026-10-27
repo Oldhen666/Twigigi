@@ -3,11 +3,11 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { requireSeller } from "@/lib/auth";
 import { payAndPublish } from "@/lib/actions";
-import { activeWindow, twigMonthlyCents } from "@/lib/billing";
+import { activeWindow, billingCurrency, listingFeeCents, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
-import { sellerProducts, sellerStats } from "@/lib/db";
+import { quoteChargesSince, sellerProducts, sellerStats } from "@/lib/db";
 import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
 
 async function DashboardBody() {
@@ -20,8 +20,6 @@ async function DashboardBody() {
     ["Quotes", String(stats.quotes), "/dashboard/quotes"],
   ];
   const billingEndsLabel = formatBillingDate(nextBillingDate());
-  const monthlyCents = twigMonthlyCents();
-  const amountLabel = monthlyCents ? formatMoney(monthlyCents, "CAD") : "Not set";
 
   return (
     <main className="page-frame pb-16">
@@ -68,6 +66,11 @@ async function DashboardBody() {
             const badge = product.status === "deactivated" ? "Deactivated" : ending ? "Deactivating" : live ? "Live" : "Draft";
             const period = activeWindow(product.billingStartedAt || product.createdAt);
             const activeLabel = `${formatBillingDate(period.start)} – ${formatBillingDate(period.end)}`;
+            const currency = billingCurrency(product.location);
+            const money = (cents: number) => `${formatMoney(cents, currency)} ${currency}`;
+            const listingLabel = money(listingFeeCents(product.cta));
+            const quoteEach = money(QUOTE_SUBMISSION_CENTS);
+            const quoteUse = product.cta === "quote" ? quoteChargesSince(product.id, period.start) : null;
             const endsLabel = product.deactivatesAt ? formatBillingDate(product.deactivatesAt) : billingEndsLabel;
             const deactivatedLabel = product.deactivatedAt ? formatBillingDate(product.deactivatedAt, true) : "";
             const deleteLabel = formatBillingDate(
@@ -98,8 +101,8 @@ async function DashboardBody() {
                     {product.status === "published" && !ending ? (
                       <>
                         <p>Active {activeLabel}</p>
-                        <p>Next charge {billingEndsLabel}</p>
-                        <p>Amount {amountLabel}</p>
+                        {listingFeeCents(product.cta) > 0 ? <p>Next charge {billingEndsLabel} · {listingLabel} / month</p> : <p>No listing fee</p>}
+                        {product.cta === "quote" ? <p>Each quote {quoteEach}{quoteUse && quoteUse.count > 0 ? ` · ${quoteUse.count} this period · ${money(quoteUse.cents)}` : ""}</p> : null}
                       </>
                     ) : null}
                     {ending ? (
@@ -113,14 +116,16 @@ async function DashboardBody() {
                       <>
                         <p>Inactive{deactivatedLabel ? ` since ${deactivatedLabel}` : ""}</p>
                         <p>Next charge none</p>
+                        {listingFeeCents(product.cta) > 0 ? <p>Reactivate for {listingLabel} / month</p> : <p>No listing fee</p>}
+                        {product.cta === "quote" ? <p>Each quote {quoteEach}</p> : null}
                         <p>Pay again before {deleteLabel} or this Twig is permanently deleted.</p>
                       </>
                     ) : null}
                     {product.status === "draft" ? (
                       <>
                         <p>Not active</p>
-                        <p>Next charge none until you pay and publish</p>
-                        <p>Amount {amountLabel}</p>
+                        {listingFeeCents(product.cta) > 0 ? <p>Listing {listingLabel} / month when you publish</p> : <p>No listing fee</p>}
+                        {product.cta === "quote" ? <p>Each quote {quoteEach}</p> : null}
                       </>
                     ) : null}
                   </div>

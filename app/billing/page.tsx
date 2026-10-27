@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { saveBillingMethod } from "@/lib/actions";
-import { billingMethodLabel, twigMonthlyCents } from "@/lib/billing";
+import { billingMethodLabel } from "@/lib/billing";
 import { requireUser } from "@/lib/auth";
 import { BackButton } from "@/components/back-button";
 import { Logo } from "@/components/logo";
 import { buttonClass } from "@/components/ui";
-import { formatMoney, nextBillingDate, safeNext, formatBillingDate } from "@/lib/format";
+import { nextBillingDate, safeNext, formatBillingDate } from "@/lib/format";
 
 async function BillingScreen({
   searchParams,
@@ -16,7 +16,6 @@ async function BillingScreen({
   const params = await searchParams;
   const next = safeNext(typeof params.next === "string" ? params.next : "/dashboard");
   const user = await requireUser();
-  const cents = twigMonthlyCents();
   const chargeLabel = formatBillingDate(nextBillingDate());
   const methods = [
     ["card", "Credit card"],
@@ -31,8 +30,7 @@ async function BillingScreen({
         <Logo />
         <h1 className="mt-8 font-serif text-4xl">Pay Twigigi</h1>
         <p className="mt-2 text-muted">
-          Choose how this account pays for each live Twig. The next charge date is {chargeLabel}.
-          {cents ? ` The fee is ${formatMoney(cents, "CAD")} per Twig.` : " The monthly amount is not set yet."}
+          Choose how this account pays Twigigi. A Buy now listing and a quote listing are $1.00 a month, in CAD for Canada and USD for the United States. Each quote a customer sends is $0.25 in that same currency. The next listing charge is {chargeLabel}.
         </p>
         {user.billingMethod ? (
           <p className="mt-4 text-sm text-forest">Current method: {billingMethodLabel(user.billingMethod)}</p>

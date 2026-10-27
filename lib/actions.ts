@@ -79,7 +79,7 @@ import {
 } from "@/lib/format";
 import type { Cta, FormState, Fulfillment, OrderStatus, ProductInput } from "@/lib/types";
 import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
-import { activeWindow, isBillingMethod, twigMonthlyCents } from "@/lib/billing";
+import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { getStripe } from "@/lib/stripe";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
@@ -648,7 +648,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   if (needsBilling) redirect(`/billing?next=${encodeURIComponent(`/dashboard/products/${savedProductId}`)}`);
   if (input.status === "published" && (!existing || existing.status !== "published")) {
     setBillingStarted(savedProductId, owner.id);
-    const cents = twigMonthlyCents();
+    const cents = listingFeeCents(input.cta);
     if (cents && user.billingMethod) {
       const window = activeWindow(new Date().toISOString());
       recordTwigBill({
@@ -656,7 +656,9 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
         userId: owner.id,
         productId: savedProductId,
         amountCents: cents,
+        currency: billingCurrency(location),
         method: user.billingMethod,
+        kind: "listing",
         periodStart: window.start,
         periodEnd: window.end,
         status: "recorded",
@@ -699,7 +701,8 @@ export async function payAndPublish(formData: FormData) {
   if (product.status === "draft" && (product.title.trim().length < 2 || product.images.length < 1)) {
     redirect(`/dashboard/products/${product.id}`);
   }
-  const cents = twigMonthlyCents();
+  const cents = listingFeeCents(product.cta);
+  const currency = billingCurrency(product.location);
   const stripe = getStripe();
   if (stripe && cents && (user.billingMethod === "card" || user.billingMethod === "stripe")) {
     const session = await stripe.checkout.sessions.create({
@@ -708,7 +711,7 @@ export async function payAndPublish(formData: FormData) {
         {
           quantity: 1,
           price_data: {
-            currency: "cad",
+            currency: currency.toLowerCase(),
             unit_amount: cents,
             product_data: { name: `Twigigi · ${product.title}` },
           },
@@ -729,7 +732,9 @@ export async function payAndPublish(formData: FormData) {
       userId: user.id,
       productId: product.id,
       amountCents: cents,
+      currency,
       method: user.billingMethod,
+      kind: "listing",
       periodStart: window.start,
       periodEnd: window.end,
       status: "recorded",
@@ -991,6 +996,20 @@ export async function requestQuote(_prev: FormState, formData: FormData): Promis
     projectDetails: lines.join("\n").slice(0, 2000),
     documents,
     src: await trafficSource(),
+  });
+  const quoteSeller = findUserById(product.userId);
+  const quotedAt = new Date().toISOString();
+  recordTwigBill({
+    id: newId("bill"),
+    userId: product.userId,
+    productId: product.id,
+    amountCents: QUOTE_SUBMISSION_CENTS,
+    currency: billingCurrency(product.location),
+    method: quoteSeller?.billingMethod || "",
+    kind: "quote",
+    periodStart: quotedAt,
+    periodEnd: quotedAt,
+    status: "recorded",
   });
   openInteraction({
     kind: "quote",

@@ -238,11 +238,13 @@ function ensureColumns(database: DatabaseSync) {
       amount_cents INTEGER NOT NULL,
       currency TEXT NOT NULL DEFAULT 'CAD',
       method TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'listing',
       period_start TEXT NOT NULL,
       period_end TEXT NOT NULL,
       status TEXT NOT NULL,
       created_at TEXT NOT NULL
     )`);
+  add("twig_bills", "kind", "kind TEXT NOT NULL DEFAULT 'listing'");
   add("quotes", "documents_json", "documents_json TEXT NOT NULL DEFAULT '[]'");
   add("orders", "public_ref", "public_ref TEXT NOT NULL DEFAULT ''");
   add("orders", "seller_id", "seller_id TEXT NOT NULL DEFAULT ''");
@@ -1145,25 +1147,39 @@ export function recordTwigBill(input: {
   userId: string;
   productId: string;
   amountCents: number;
+  currency: string;
   method: string;
+  kind: "listing" | "quote";
   periodStart: string;
   periodEnd: string;
   status: string;
 }) {
   db.prepare(
-    `INSERT INTO twig_bills (id, user_id, product_id, amount_cents, currency, method, period_start, period_end, status, created_at)
-     VALUES (?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?)`,
+    `INSERT INTO twig_bills (id, user_id, product_id, amount_cents, currency, method, kind, period_start, period_end, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.userId,
     input.productId,
     input.amountCents,
+    input.currency,
     input.method,
+    input.kind,
     input.periodStart,
     input.periodEnd,
     input.status,
     new Date().toISOString(),
   );
+}
+
+export function quoteChargesSince(productId: string, since: string) {
+  const row = one(
+    `SELECT COUNT(*) AS n, COALESCE(SUM(amount_cents), 0) AS cents
+     FROM twig_bills WHERE product_id = ? AND kind = 'quote' AND created_at >= ?`,
+    productId,
+    since,
+  );
+  return { count: num(row?.n), cents: num(row?.cents) };
 }
 
 export function productHasActivity(productId: string) {
