@@ -1296,7 +1296,7 @@ export function getOrder(id: string) {
 }
 
 export function listOrders(userId: string) {
-  return many(`${ORDER_SELECT} WHERE o.seller_id = ? ORDER BY o.created_at DESC LIMIT 12`, userId).map(mapOrder);
+  return many(`${ORDER_SELECT} WHERE o.seller_id = ? ORDER BY o.created_at DESC LIMIT 100`, userId).map(mapOrder);
 }
 
 export function listBuyerOrders(userId: string) {
@@ -1935,7 +1935,7 @@ export function getQuote(id: string) {
 }
 
 export function listQuotes(userId: string) {
-  return many(`${QUOTE_SELECT} WHERE p.user_id = ? ORDER BY q.created_at DESC LIMIT 12`, userId).map(mapQuote);
+  return many(`${QUOTE_SELECT} WHERE p.user_id = ? ORDER BY q.created_at DESC LIMIT 100`, userId).map(mapQuote);
 }
 
 export function updateQuoteStatus(id: string, userId: string, status: QuoteRecord["status"]) {

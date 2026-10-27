@@ -1,34 +1,22 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
-import { confirmInteraction, setLeadStatus } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
-import { listMessages, listOrders, listQuotes, listSellerInteractions, sellerBooks, sellerProducts, sellerStats, sellerViewSources } from "@/lib/db";
-import { BUCKET_LABEL } from "@/lib/ledger";
-import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatDate, formatMoney, interactionLabel, isPrivateUsername, isTwigLive, nextBillingDate, productUrl, srcLabel } from "@/lib/format";
+import { sellerProducts, sellerStats } from "@/lib/db";
+import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isPrivateUsername, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
 
 async function DashboardBody() {
   const user = await requireSeller();
   const stats = sellerStats(user.id);
   const products = sellerProducts(user.id);
-  const viewSources = sellerViewSources(user.id);
-  const orders = listOrders(user.id);
-  const interactions = listSellerInteractions(user.id);
-  const quotes = listQuotes(user.id);
-  const messages = listMessages(user.id);
-  const books = sellerBooks(user.id);
   const summary = [
-    ["Views", String(stats.views)],
-    ["Orders", String(stats.orders)],
-    ["Revenue", formatMoney(stats.revenueCents)],
-    ["Quotes", String(stats.quotes)],
-    ["Messages", String(stats.messages)],
+    ["Views", String(stats.views), "/dashboard/views"],
+    ["Orders", String(stats.orders), "/dashboard/orders"],
+    ["Quotes", String(stats.quotes), "/dashboard/quotes"],
   ];
-  const hasActivity = orders.length + quotes.length + messages.length > 0;
-  const activityCount = [orders, quotes, messages].filter((items) => items.length > 0).length;
   const billingEndsLabel = formatBillingDate(nextBillingDate());
 
   return (
@@ -44,18 +32,14 @@ async function DashboardBody() {
       </div>
 
       <section className="mt-6 overflow-hidden rounded-3xl border border-line bg-card">
-        <dl className="grid grid-cols-2 divide-x divide-y divide-line sm:grid-cols-3">
-          {summary.map(([label, value]) => (
-            <div key={label} className="px-4 py-3">
-              <dt className="text-xs uppercase tracking-wide text-muted">{label}</dt>
-              <dd className="mt-1 font-serif text-2xl">{value}</dd>
-            </div>
+        <div className="grid grid-cols-3 divide-x divide-line">
+          {summary.map(([label, value, href]) => (
+            <Link key={label} href={href} className="px-4 py-3 hover:bg-paper-deep">
+              <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
+              <p className="mt-1 font-serif text-2xl">{value}</p>
+            </Link>
           ))}
-          <div className="px-4 py-3">
-            <dt className="text-xs uppercase tracking-wide text-muted">{BUCKET_LABEL.available}</dt>
-            <dd className="mt-1 font-serif text-2xl">{formatMoney(books.buckets.available.cents, books.currency)}</dd>
-          </div>
-        </dl>
+        </div>
       </section>
 
       {products.length === 0 ? (
@@ -76,8 +60,6 @@ async function DashboardBody() {
             const badge = product.status === "deactivated" ? "Deactivated" : ending ? "Deactivating" : live ? "Live" : "Draft";
             const endsLabel = product.deactivatesAt ? formatBillingDate(product.deactivatesAt) : billingEndsLabel;
             const deactivatedLabel = product.deactivatedAt ? formatBillingDate(product.deactivatedAt, true) : "";
-            const sources = viewSources.get(product.id) ?? [];
-            const topSource = sources[0]?.count ?? 1;
             const deleteLabel = formatBillingDate(
               addDays(product.status === "deactivated" && product.deactivatedAt ? product.deactivatedAt : product.deactivatesAt || nextBillingDate(), DEACTIVATION_GRACE_DAYS),
               true,
@@ -108,6 +90,12 @@ async function DashboardBody() {
                   {product.status === "deactivated" ? (
                     <p className="mt-2 text-sm text-muted">Deactivated{deactivatedLabel ? ` on ${deactivatedLabel}` : ""}. The link is off. Reactivate before {deleteLabel} or this Twig is permanently deleted.</p>
                   ) : null}
+                  {product.status === "draft" ? (
+                    <p className="mt-2 text-sm text-muted">Platform billing starts when you publish.</p>
+                  ) : null}
+                  {product.status === "published" && !ending ? (
+                    <p className="mt-2 text-sm text-muted">Paid through {billingEndsLabel}.</p>
+                  ) : null}
                   <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
                     <Link href={`/dashboard/products/${product.id}`} className="font-medium text-forest">Edit</Link>
                     {live ? <Link href={`/${user.username}/${product.slug}`} className="font-medium text-forest">Open</Link> : null}
@@ -120,26 +108,6 @@ async function DashboardBody() {
                     ) : null}
                     {product.status === "draft" ? <DeleteTwig productId={product.id} /> : null}
                   </div>
-                  <div className="mt-4">
-                    <p className="text-sm font-medium">Where visits came from</p>
-                    {sources.length === 0 ? (
-                      <p className="mt-1 text-sm text-muted">No visits yet.</p>
-                    ) : (
-                      <ul className="mt-2 max-w-xs space-y-2">
-                        {sources.map((source) => (
-                          <li key={source.src}>
-                            <div className="flex justify-between text-sm">
-                              <span>{srcLabel(source.src)}</span>
-                              <span className="text-muted">{source.count}</span>
-                            </div>
-                            <div className="mt-1 h-2 rounded-full bg-paper-deep">
-                              <div className="h-2 rounded-full bg-forest" style={{ width: `${Math.max(8, (source.count / topSource) * 100)}%` }} />
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
                 </div>
               </article>
             );
@@ -147,150 +115,7 @@ async function DashboardBody() {
         </section>
       )}
 
-      <section className="mt-10">
-        <h2 className="font-serif text-2xl">Platform</h2>
-        <p className="mt-2 max-w-2xl text-sm text-muted">A published Twig is covered until {formatBillingDate(nextBillingDate())}. That is the date your Twigigi fee runs through.</p>
-        <ul className="mt-4 space-y-2 text-sm">
-          {products.filter((product) => product.status !== "draft").length === 0 ? (
-            <li className="text-muted">Platform billing starts when you publish a Twig.</li>
-          ) : products.filter((product) => product.status !== "draft").map((product) => (
-            <li key={product.id} className="flex flex-wrap justify-between gap-2 rounded-2xl border border-line bg-card px-4 py-3">
-              <span>{product.title}</span>
-              <span className="text-muted">
-                {product.status === "deactivated"
-                  ? `Deactivated${product.deactivatedAt ? ` ${formatBillingDate(product.deactivatedAt)}` : ""}`
-                  : product.deactivatesAt
-                    ? `Paid through ${formatBillingDate(product.deactivatesAt)}`
-                    : `Paid through ${formatBillingDate(nextBillingDate())}`}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="mt-10">
-        <h2 className="font-serif text-2xl">Interactions</h2>
-        {interactions.length === 0 ? (
-          <p className="mt-2 text-sm text-muted">Orders and quote requests appear here with an interaction ID.</p>
-        ) : (
-          <ul className="mt-3 space-y-3">
-            {interactions.map((item) => (
-              <li key={item.id} className="rounded-2xl border border-line bg-card p-4 text-sm">
-                <p className="font-medium">{item.publicRef} · {item.productTitle}</p>
-                <p className="text-muted">{item.kind === "quote" ? "Quote" : "Order"} · {item.buyerEmail} · {interactionLabel(item)}</p>
-                {item.sellerConfirmedAt ? null : (
-                  <form action={confirmInteraction} className="mt-2">
-                    <input type="hidden" name="id" value={item.id} />
-                    <input type="hidden" name="side" value="seller" />
-                    <input type="hidden" name="next" value="/dashboard" />
-                    <button className="text-forest">Mark completed</button>
-                  </form>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {hasActivity ? (
-        <section className={`mt-10 grid gap-8 ${activityCount > 2 ? "lg:grid-cols-3" : activityCount > 1 ? "lg:grid-cols-2" : ""}`}>
-          {orders.length > 0 ? (
-            <LeadColumn title="Orders">
-              {orders.map((order) => (
-                <article key={order.id} className="rounded-2xl border border-line bg-card p-3 text-sm">
-                  <p className="font-medium">{order.publicRef ? order.publicRef : order.buyerName}</p>
-                  <p className="text-muted">{order.buyerName}</p>
-                  <p className="text-muted">{order.productTitle}{order.variantLabel ? ` · ${order.variantLabel}` : ""} · {order.quantity} · {order.fulfillment}</p>
-                  <p className="mt-1">{formatMoney(order.amountCents, order.currency)}</p>
-                  <p className="text-muted">{order.email} · {order.phone}</p>
-                  {order.address ? <p className="text-muted">{order.address}</p> : null}
-                  <p className="text-muted">{srcLabel(order.src)} · {formatDate(order.createdAt)}</p>
-                  <StatusForm kind="order" id={order.id} status={order.status} options={["unpaid", "paid", "fulfilled", "canceled"]} />
-                </article>
-              ))}
-            </LeadColumn>
-          ) : null}
-          {quotes.length > 0 ? (
-            <LeadColumn title="Quotes">
-              {quotes.map((quote) => (
-                <article key={quote.id} className="rounded-2xl border border-line bg-card p-3 text-sm">
-                  <p className="font-medium">{quote.name}</p>
-                  <p className="text-muted">{quote.productTitle} · qty {quote.quantity}</p>
-                  {quote.projectDetails ? <p className="mt-1">{quote.projectDetails}</p> : null}
-                  {quote.message ? <p className="text-muted">{quote.message}</p> : null}
-                  {quote.documents.length > 0 ? (
-                    <ul className="mt-1 space-y-1">
-                      {quote.documents.map((file) => (
-                        <li key={file.path}>
-                          <a href={file.path} target="_blank" rel="noreferrer" className="text-forest">
-                            {file.name}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <p className="text-muted">{quote.email} · {quote.phone}</p>
-                  <p className="text-muted">{srcLabel(quote.src)} · {formatDate(quote.createdAt)}</p>
-                  <StatusForm kind="quote" id={quote.id} status={quote.status} options={["new", "contacted", "closed"]} />
-                </article>
-              ))}
-            </LeadColumn>
-          ) : null}
-          {messages.length > 0 ? (
-            <LeadColumn title="Messages">
-              {messages.map((message) => (
-                <article key={message.id} className="rounded-2xl border border-line bg-card p-3 text-sm">
-                  <p className="font-medium">{message.name}</p>
-                  <p className="text-muted">{message.productTitle}</p>
-                  <p className="mt-1">{message.message}</p>
-                  <p className="text-muted">{message.email} · {message.phone}</p>
-                  <p className="text-muted">{srcLabel(message.src)} · {formatDate(message.createdAt)}</p>
-                  <StatusForm kind="message" id={message.id} status={message.status} options={["new", "read", "closed"]} />
-                </article>
-              ))}
-            </LeadColumn>
-          ) : null}
-        </section>
-      ) : (
-        <p className="mt-10 text-sm text-muted">Orders, quotes, and messages will show up here.</p>
-      )}
     </main>
-  );
-}
-
-function LeadColumn({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h2 className="font-serif text-2xl">{title}</h2>
-      <div className="mt-3 space-y-3">{children}</div>
-    </section>
-  );
-}
-
-function StatusForm({
-  kind,
-  id,
-  status,
-  options,
-}: {
-  kind: string;
-  id: string;
-  status: string;
-  options: string[];
-}) {
-  return (
-    <form action={setLeadStatus} className="mt-2 flex items-center gap-2">
-      <input type="hidden" name="kind" value={kind} />
-      <input type="hidden" name="id" value={id} />
-      <select name="status" defaultValue={status} className="h-9 rounded-lg border border-line bg-white px-2 text-sm">
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
-      <button className="text-sm text-forest">Save</button>
-    </form>
   );
 }
 
