@@ -1,9 +1,15 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { signIn, signUp } from "@/lib/actions";
 import type { FormState } from "@/lib/types";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
+
+function useContinue(next?: string) {
+  useEffect(() => {
+    if (next) window.location.assign(next);
+  }, [next]);
+}
 
 function ErrorText({ message }: { message?: string }) {
   if (!message) return null;
@@ -38,6 +44,7 @@ export function LoginHelp() {
 
 export function LoginForm({ nextPath }: { nextPath: string }) {
   const [state, action, pending] = useActionState(signIn, {} as FormState);
+  useContinue(state.next);
   return (
     <form action={action} noValidate className="space-y-4">
       <input type="hidden" name="next" value={nextPath} />
@@ -62,6 +69,7 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
 
 export function SignupForm({ cta, initialRole = "seller" }: { cta?: string; initialRole?: "seller" | "buyer" }) {
   const [state, action, pending] = useActionState(signUp, {} as FormState);
+  useContinue(state.next);
   const [role, setRole] = useState<"seller" | "buyer">(initialRole);
   return (
     <form action={action} noValidate className="space-y-4">

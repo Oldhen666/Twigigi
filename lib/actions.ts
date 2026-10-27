@@ -110,6 +110,16 @@ const signupSchema = z.object({
 
 type OpenedAccount = FormState & { ok?: boolean; userId?: string };
 
+async function startSession(userId: string): Promise<string | null> {
+  if (!process.env.AUTH_SECRET) return "Sign-in is not set up yet.";
+  try {
+    await setSession(userId);
+    return null;
+  } catch {
+    return "Could not sign you in.";
+  }
+}
+
 async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
   const parsed = signupSchema.safeParse({
     displayName: text(formData, "displayName"),
@@ -139,7 +149,8 @@ async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
     if (message.includes("users.username")) return { fieldErrors: { username: "That username is taken." } };
     return { error: "Could not create the account." };
   }
-  await setSession(id);
+  const sessionError = await startSession(id);
+  if (sessionError) return { error: sessionError };
   return { ok: true, userId: id };
 }
 
@@ -173,7 +184,8 @@ async function createBuyerAccount(formData: FormData): Promise<OpenedAccount> {
     return { error: "Could not create the account." };
   }
   claimBuyerOrders(id, parsed.data.email);
-  await setSession(id);
+  const sessionError = await startSession(id);
+  if (sessionError) return { error: sessionError };
   return { ok: true, userId: id };
 }
 
@@ -184,7 +196,8 @@ async function signInAccount(formData: FormData): Promise<OpenedAccount> {
   if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
     return { error: "Email or password is incorrect." };
   }
-  await setSession(user.id);
+  const sessionError = await startSession(user.id);
+  if (sessionError) return { error: sessionError };
   return { ok: true, userId: user.id };
 }
 
@@ -197,9 +210,9 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
   const buyer = text(formData, "role") === "buyer";
   const created = buyer ? await createBuyerAccount(formData) : await createSellerAccount(formData);
   if (!created.ok) return created;
-  if (buyer) redirect("/orders");
+  if (buyer) return { next: "/orders" };
   const cta = readCta(text(formData, "cta"));
-  redirect(cta ? `/dashboard/products/new?cta=${cta}` : "/start");
+  return { next: cta ? `/dashboard/products/new?cta=${cta}` : "/start" };
 }
 
 export async function signIn(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -209,9 +222,9 @@ export async function signIn(_prev: FormState, formData: FormData): Promise<Form
   const requested = text(formData, "next");
   if (user?.role === "buyer") {
     claimBuyerOrders(user.id, user.email);
-    redirect(!requested || requested === "/dashboard" ? "/orders" : safeNext(requested));
+    return { next: !requested || requested === "/dashboard" ? "/orders" : safeNext(requested) };
   }
-  redirect(requested ? safeNext(requested) : "/dashboard");
+  return { next: requested ? safeNext(requested) : "/dashboard" };
 }
 
 export async function requestPasswordReset(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -241,9 +254,10 @@ export async function resetPassword(_prev: FormState, formData: FormData): Promi
   const userId = token ? takePasswordReset(tokenHash) : null;
   if (!userId) return { error: "This reset link is invalid or expired." };
   updatePassword(userId, bcrypt.hashSync(password, 10));
-  await setSession(userId);
+  const sessionError = await startSession(userId);
+  if (sessionError) return { error: sessionError };
   const user = findUserById(userId);
-  redirect(user?.role === "buyer" ? "/orders" : "/dashboard");
+  return { next: user?.role === "buyer" ? "/orders" : "/dashboard" };
 }
 
 export async function signOut() {

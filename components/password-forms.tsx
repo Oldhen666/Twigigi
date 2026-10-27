@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { requestPasswordReset, resetPassword } from "@/lib/actions";
 import type { FormState } from "@/lib/types";
 import { buttonClass, inputClass, labelClass } from "@/components/ui";
@@ -32,6 +32,9 @@ export function ForgotForm() {
 
 export function ResetForm({ token }: { token: string }) {
   const [state, action, pending] = useActionState(resetPassword, {} as FormState);
+  useEffect(() => {
+    if (state.next) window.location.assign(state.next);
+  }, [state.next]);
   return (
     <form action={action} noValidate className="space-y-4">
       <input type="hidden" name="token" value={token} />

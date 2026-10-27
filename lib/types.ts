@@ -19,6 +19,7 @@ export type FormState = {
   savedAt?: number;
   signedIn?: boolean;
   displayName?: string;
+  next?: string;
 };
 
 export type User = {
