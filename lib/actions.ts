@@ -44,6 +44,7 @@ import {
   replacePasswordReset,
   takePasswordReset,
   toggleFavorite,
+  toggleLike,
   uniqueSlug,
   listUsers,
   updatePassword,
@@ -970,6 +971,15 @@ export async function toggleSaved(formData: FormData) {
   const next = safeNext(text(formData, "next"));
   if (!product || !isTwigLive(product) || product.userId === user.id) redirect(next);
   toggleFavorite(user.id, product.id);
+  redirect(next);
+}
+
+export async function toggleLikeAction(formData: FormData) {
+  const user = await requireUser();
+  const product = getProductById(text(formData, "productId"));
+  const next = safeNext(text(formData, "next"));
+  if (!product || !isTwigLive(product) || product.userId === user.id) redirect(next);
+  toggleLike(user.id, product.id);
   redirect(next);
 }
 

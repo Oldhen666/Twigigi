@@ -295,6 +295,13 @@ function ensureColumns(database: DatabaseSync) {
       PRIMARY KEY (user_id, product_id)
     );
 
+    CREATE TABLE IF NOT EXISTS likes (
+      user_id TEXT NOT NULL REFERENCES users(id),
+      product_id TEXT NOT NULL REFERENCES products(id),
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, product_id)
+    );
+
   `);
   migrateCommerce(database);
   database.prepare(`UPDATE users SET role = 'user' WHERE role NOT IN ('admin', 'user')`).run();
@@ -648,6 +655,7 @@ export function settleDeactivations(now = new Date().toISOString()) {
 
 function eraseProduct(id: string) {
   db.prepare("DELETE FROM favorites WHERE product_id = ?").run(id);
+  db.prepare("DELETE FROM likes WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM reviews WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM page_views WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM quotes WHERE product_id = ?").run(id);
@@ -1097,6 +1105,7 @@ export function productHasActivity(productId: string) {
 }
 
 export function deleteProduct(id: string, userId: string) {
+  db.prepare("DELETE FROM likes WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM page_views WHERE product_id = ?").run(id);
   const result = db.prepare("DELETE FROM products WHERE id = ? AND user_id = ?").run(id, userId);
   return result.changes > 0;
@@ -1301,6 +1310,23 @@ export function listOrders(userId: string) {
 
 export function listBuyerOrders(userId: string) {
   return many(`${ORDER_SELECT} WHERE o.buyer_id = ? ORDER BY o.created_at DESC LIMIT 50`, userId).map(mapOrder);
+}
+
+export function likeCount(productId: string) {
+  return num(one("SELECT COUNT(*) AS n FROM likes WHERE product_id = ?", productId)?.n);
+}
+
+export function isLiked(userId: string, productId: string) {
+  return Boolean(one("SELECT 1 AS n FROM likes WHERE user_id = ? AND product_id = ?", userId, productId));
+}
+
+export function toggleLike(userId: string, productId: string) {
+  if (isLiked(userId, productId)) {
+    db.prepare("DELETE FROM likes WHERE user_id = ? AND product_id = ?").run(userId, productId);
+    return false;
+  }
+  db.prepare("INSERT INTO likes (user_id, product_id, created_at) VALUES (?, ?, ?)").run(userId, productId, new Date().toISOString());
+  return true;
 }
 
 export function isFavorite(userId: string, productId: string) {
