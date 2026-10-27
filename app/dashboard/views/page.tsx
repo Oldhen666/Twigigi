@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { requireSeller } from "@/lib/auth";
 import { sellerProducts, sellerViewSources } from "@/lib/db";
@@ -10,9 +11,8 @@ async function ViewsScreen() {
   return (
     <main className="mx-auto w-full max-w-5xl px-5 pb-16">
       <h1 className="font-serif text-4xl">Views</h1>
-      <p className="mt-2 text-sm text-muted">Where visits to each Twig came from.</p>
-      {products.length === 0 ? (
-        <p className="mt-8 text-sm text-muted">Publish a Twig, then visits show up here.</p>
+      {products.every((product) => product.viewCount === 0) ? (
+        <EmptyRecords message="No view record" />
       ) : (
         <ul className="mt-8 space-y-3">
           {products.map((product) => {
@@ -25,7 +25,7 @@ async function ViewsScreen() {
                   <p className="text-sm text-muted">{product.viewCount} {product.viewCount === 1 ? "view" : "views"}</p>
                 </div>
                 {rows.length === 0 ? (
-                  <p className="mt-2 text-sm text-muted">No visits yet.</p>
+                  <p className="mt-2 text-sm text-muted">No view record</p>
                 ) : (
                   <ul className="mt-3 max-w-md space-y-2">
                     {rows.map((source) => (
@@ -47,6 +47,17 @@ async function ViewsScreen() {
         </ul>
       )}
     </main>
+  );
+}
+
+function EmptyRecords({ message }: { message: string }) {
+  return (
+    <div className="mt-8">
+      <p className="text-sm text-muted">{message}</p>
+      <Link href="/start" className="mt-6 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">
+        Create Twig +
+      </Link>
+    </div>
   );
 }
 

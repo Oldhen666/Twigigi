@@ -10,9 +10,13 @@ async function OrdersScreen() {
   return (
     <main className="mx-auto w-full max-w-5xl px-5 pb-16">
       <h1 className="font-serif text-4xl">Orders</h1>
-      <p className="mt-2 text-sm text-muted">Orders placed on your Twigs.</p>
       {orders.length === 0 ? (
-        <p className="mt-8 text-sm text-muted">Orders will show up here.</p>
+        <div className="mt-8">
+          <p className="text-sm text-muted">No order record</p>
+          <Link href="/start" className="mt-6 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">
+            Create Twig +
+          </Link>
+        </div>
       ) : (
         <ul className="mt-8 space-y-3">
           {orders.map((order) => (
