@@ -52,6 +52,8 @@ export type QuoteFormQuestion = {
   id: string;
   label: string;
   required: boolean;
+  answer: "text" | "checks";
+  choices: string[];
 };
 
 export type QuoteForm = {

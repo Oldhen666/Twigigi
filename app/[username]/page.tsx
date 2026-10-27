@@ -20,9 +20,9 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
   const products = await filterLiveTwigs(seller.products);
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-6">
-      <BackButton />
-      <div className="mt-4">
-        <Logo />
+      <Logo />
+      <div className="mt-3">
+        <BackButton />
       </div>
       <p className="mt-10 text-sm text-muted">Twigger</p>
       <h1 className="mt-2 font-serif text-5xl">{seller.displayName}</h1>

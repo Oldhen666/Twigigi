@@ -243,7 +243,7 @@ function SellerCredit({ username, name, rating }: { username: string; name: stri
         <span className="inline-flex items-center gap-1 text-forest">
           <Stars value={rating.average} />
           <span className="font-medium text-ink">{rating.average.toFixed(1)}</span>
-          <span className="text-muted">{rating.count}</span>
+          <span className="text-muted">({rating.count})</span>
         </span>
       ) : null}
     </p>

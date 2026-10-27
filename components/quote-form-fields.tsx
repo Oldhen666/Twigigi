@@ -6,6 +6,7 @@ import type { QuoteForm } from "@/lib/types";
 import { ghostClass, inputClass } from "@/components/ui";
 
 const MAX_FIELDS = 8;
+const MAX_CHOICES = 12;
 
 export function QuoteFormFields({ value, onChange }: { value?: QuoteForm | null; onChange?: () => void }) {
   const [form, setForm] = useState<QuoteForm>(() => editorForm(value));
@@ -26,6 +27,13 @@ export function QuoteFormFields({ value, onChange }: { value?: QuoteForm | null;
     const id = `q-${seq}`;
     setSeq((current) => current + 1);
     return id;
+  }
+
+  function updateQuestion(id: string, patch: Partial<QuoteForm["questions"][number]>) {
+    setForm({
+      ...form,
+      questions: form.questions.map((row) => (row.id === id ? { ...row, ...patch } : row)),
+    });
   }
 
   const saved = { ...form, items: [], terms: "" };
@@ -72,27 +80,76 @@ export function QuoteFormFields({ value, onChange }: { value?: QuoteForm | null;
                   Remove
                 </button>
               </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={question.required}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      questions: form.questions.map((row) => (row.id === question.id ? { ...row, required: event.target.checked } : row)),
-                    })
-                  }
-                  className="h-5 w-5 accent-forest"
-                />
-                Required
-              </label>
+              <div className="flex flex-wrap gap-x-5 gap-y-2">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={question.required}
+                    onChange={(event) => updateQuestion(question.id, { required: event.target.checked })}
+                    className="h-5 w-5 accent-forest"
+                  />
+                  Required
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={question.answer === "checks"}
+                    onChange={(event) =>
+                      updateQuestion(question.id, {
+                        answer: event.target.checked ? "checks" : "text",
+                        choices: event.target.checked ? (question.choices.length > 0 ? question.choices : [""]) : [],
+                      })
+                    }
+                    className="h-5 w-5 accent-forest"
+                  />
+                  Checkbox answers
+                </label>
+              </div>
+              {question.answer === "checks" ? (
+                <div className="space-y-2 pl-1">
+                  {question.choices.map((choice, choiceIndex) => (
+                    <div key={`${question.id}-${choiceIndex}`} className="flex items-center gap-2">
+                      <input type="checkbox" disabled className="h-5 w-5 accent-forest" />
+                      <input
+                        value={choice}
+                        onChange={(event) =>
+                          updateQuestion(question.id, {
+                            choices: question.choices.map((row, rowIndex) => (rowIndex === choiceIndex ? event.target.value.slice(0, 80) : row)),
+                          })
+                        }
+                        placeholder="Option"
+                        aria-label={`Option ${choiceIndex + 1}`}
+                        className={inputClass}
+                      />
+                      {question.choices.length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => updateQuestion(question.id, { choices: question.choices.filter((_, rowIndex) => rowIndex !== choiceIndex) })}
+                          className="shrink-0 text-sm text-danger"
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                  {question.choices.length < MAX_CHOICES ? (
+                    <button
+                      type="button"
+                      onClick={() => updateQuestion(question.id, { choices: [...question.choices, ""] })}
+                      className="text-sm text-forest"
+                    >
+                      Add new
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
         {form.questions.length < MAX_FIELDS ? (
           <button
             type="button"
-            onClick={() => setForm({ ...form, questions: [...form.questions, { id: nextId(), label: "", required: false }] })}
+            onClick={() => setForm({ ...form, questions: [...form.questions, blankQuestion(nextId())] })}
             className={`${ghostClass} mt-3 w-full bg-card`}
           >
             Add field
@@ -114,7 +171,22 @@ function editorForm(value?: QuoteForm | null): QuoteForm {
     ...base,
     items: [],
     terms: "",
-    questions: base.questions.length > 0 ? base.questions : [{ id: "q-1", label: "", required: false }],
+    questions: base.questions.length > 0 ? base.questions.map(readyQuestion) : [blankQuestion("q-1")],
+  };
+}
+
+function blankQuestion(id: string): QuoteForm["questions"][number] {
+  return { id, label: "", required: false, answer: "text", choices: [] };
+}
+
+function readyQuestion(question: QuoteForm["questions"][number]): QuoteForm["questions"][number] {
+  const choices = Array.isArray(question.choices) ? question.choices : [];
+  return {
+    id: question.id,
+    label: question.label,
+    required: question.required === true,
+    answer: question.answer === "checks" ? "checks" : "text",
+    choices: question.answer === "checks" ? (choices.length > 0 ? choices : [""]) : [],
   };
 }
 

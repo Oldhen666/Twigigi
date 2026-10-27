@@ -57,9 +57,18 @@ function cleanItem(item: unknown, index: number) {
 
 function cleanQuestion(item: unknown, index: number) {
   const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+  const choices = Array.isArray(record.choices)
+    ? record.choices
+        .filter((choice): choice is string => typeof choice === "string")
+        .map((choice) => choice.trim().slice(0, 80))
+        .filter(Boolean)
+        .slice(0, 12)
+    : [];
   return {
     id: typeof record.id === "string" && record.id ? record.id.slice(0, 40) : `q-${index + 1}`,
     label: typeof record.label === "string" ? record.label.trim().slice(0, 120) : "",
     required: record.required === true,
+    answer: record.answer === "checks" && choices.length > 0 ? "checks" as const : "text" as const,
+    choices: record.answer === "checks" ? choices : [],
   };
 }

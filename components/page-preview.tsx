@@ -23,7 +23,7 @@ export type PagePreviewDraft = {
   ctaLabel: string;
   phone: string;
   videoUrl: string;
-  quoteFields: { label: string; required: boolean; upload?: boolean }[];
+  quoteFields: { label: string; required: boolean; upload?: boolean; choices?: string[] }[];
   sellerName: string;
 };
 
@@ -145,6 +145,15 @@ export function PagePreview({ draft }: { draft: PagePreviewDraft }) {
                     <p className="mt-2 text-sm text-muted">No file chosen</p>
                     <p className="mt-1 text-sm text-muted">Gallery or camera. PNG, JPG, Word, or PDF. Up to 4 files, 5 MB each.</p>
                   </>
+                ) : field.choices && field.choices.length > 0 ? (
+                  <div className="space-y-2">
+                    {field.choices.map((choice) => (
+                      <p key={choice} className="flex items-center gap-2 text-sm">
+                        <span className="grid size-5 place-items-center rounded border border-line bg-white" />
+                        {choice}
+                      </p>
+                    ))}
+                  </div>
                 ) : (
                   <div className="h-12 rounded-xl border border-line bg-white" />
                 )}
@@ -165,14 +174,20 @@ function quoteFields(raw: string) {
     parsed = null;
   }
   const form = normalizeQuoteForm(parsed);
-  const fields: { label: string; required: boolean; upload?: boolean }[] = [];
+  const fields: { label: string; required: boolean; upload?: boolean; choices?: string[] }[] = [];
   if (form.askName) fields.push({ label: "Name", required: true });
   fields.push({ label: "Email", required: true });
   if (form.askPhone) fields.push({ label: "Phone", required: true });
   if (form.askCompany) fields.push({ label: "Company", required: false });
   if (form.askAddress) fields.push({ label: "Address", required: true });
   if (form.askQuantity) fields.push({ label: "Quantity", required: true });
-  for (const question of form.questions) fields.push({ label: question.label, required: question.required });
+  for (const question of form.questions) {
+    fields.push({
+      label: question.label,
+      required: question.required,
+      choices: question.answer === "checks" ? question.choices : undefined,
+    });
+  }
   fields.push({ label: "Additional documentation", required: false, upload: true });
   return fields;
 }

@@ -183,11 +183,29 @@ export function CheckoutForm({
               ))}
             </div>
           ) : null}
-          {quoteForm.questions.map((question) => (
-            <Field key={question.id} label={question.label} name={question.id} required={question.required} error={fieldErrors?.[question.id]}>
-              <textarea name={`question_${question.id}`} rows={3} aria-required={question.required || undefined} className={`${inputClass} h-auto py-3`} />
-            </Field>
-          ))}
+          {quoteForm.questions.map((question) =>
+            question.answer === "checks" ? (
+              <fieldset key={question.id}>
+                <legend className={labelClass}>
+                  {question.label}
+                  {question.required ? <span className="text-danger"> *</span> : null}
+                </legend>
+                <div className="space-y-2">
+                  {question.choices.map((choice) => (
+                    <label key={`${question.id}-${choice}`} className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" name={`question_${question.id}`} value={choice} className="h-5 w-5 accent-forest" />
+                      {choice}
+                    </label>
+                  ))}
+                </div>
+                {fieldErrors?.[question.id] ? <p className="mt-1 text-sm text-danger">{fieldErrors[question.id]}</p> : null}
+              </fieldset>
+            ) : (
+              <Field key={question.id} label={question.label} name={question.id} required={question.required} error={fieldErrors?.[question.id]}>
+                <textarea name={`question_${question.id}`} rows={3} aria-required={question.required || undefined} className={`${inputClass} h-auto py-3`} />
+              </Field>
+            ),
+          )}
           {quoteForm.questions.length === 0 ? (
             <Field label="Message" name="message" error={fieldErrors?.message}>
               <textarea name="message" rows={3} placeholder="Optional" className={`${inputClass} h-auto py-3`} />

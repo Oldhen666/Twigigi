@@ -861,6 +861,20 @@ export async function requestQuote(_prev: FormState, formData: FormData): Promis
     });
     if (quoteForm.items.length > 0 && quoteForm.askQuantity) quantity = itemQuantities.reduce((sum, amount) => sum + amount, 0) || 1;
     for (const question of quoteForm.questions) {
+      if (question.answer === "checks") {
+        const picked = [
+          ...new Set(
+            formData
+              .getAll(`question_${question.id}`)
+              .filter((item): item is string => typeof item === "string")
+              .map((item) => item.trim())
+              .filter((item) => question.choices.includes(item)),
+          ),
+        ];
+        if (question.required && picked.length < 1) questionErrors[question.id] = "Choose at least one.";
+        else if (picked.length > 0) lines.push(`${question.label}: ${picked.join(", ")}`);
+        continue;
+      }
       const answer = text(formData, `question_${question.id}`).trim().slice(0, 1000);
       if (question.required && answer.length < 1) questionErrors[question.id] = "This answer is required.";
       else if (answer) lines.push(`${question.label}: ${answer}`);
