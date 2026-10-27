@@ -1001,9 +1001,8 @@ export async function saveReview(_prev: FormState, formData: FormData): Promise<
   const user = await requireUser();
   const interaction = getInteraction(text(formData, "interactionId"));
   const owns = interaction && (interaction.buyerId === user.id || interaction.buyerEmail === user.email.toLowerCase());
-  if (!interaction || !owns || !interaction.buyerConfirmedAt) {
-    return { error: "Confirm the interaction before writing a review." };
-  }
+  if (!interaction || !owns) return { error: "That order is not yours." };
+  if (!interaction.buyerConfirmedAt) confirmInteractionParty(interaction.id, user.id, user.email, "buyer");
   const overall = score(formData, "overall");
   const asDescribed = score(formData, "asDescribed");
   const communication = score(formData, "communication");

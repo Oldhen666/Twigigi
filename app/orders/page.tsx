@@ -2,35 +2,66 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AccountFrame } from "@/components/account-frame";
 import { InteractionLine } from "@/components/interaction-line";
-import { ReviewForm } from "@/components/review-form";
+import { ReviewSeller } from "@/components/review-seller";
 import { requireUser } from "@/lib/auth";
-import { listBuyerInteractions, listBuyerOrders, listReviewableInteractions, listUserReviews } from "@/lib/db";
+import { claimBuyerOrders, getInteraction, getProductById, listBuyerInteractions, listBuyerOrders, listBuyerQuotes, listUserReviews, openInteraction } from "@/lib/db";
 import { formatDate, formatMoney } from "@/lib/format";
 
 async function OrdersScreen() {
   const user = await requireUser();
-  const orders = listBuyerOrders(user.id);
+  claimBuyerOrders(user.id, user.email);
+  const orders = listBuyerOrders(user.id, user.email);
+  const quotes = listBuyerQuotes(user.email);
   const interactions = listBuyerInteractions(user.id, user.email);
   const bySource = new Map(interactions.map((item) => [item.sourceId, item]));
-  const quotes = interactions.filter((item) => item.kind === "quote");
-  const waiting = listReviewableInteractions(user.id, user.email);
-  const reviews = listUserReviews(user.id);
+  const reviewed = new Set(listUserReviews(user.id).map((review) => review.interactionId));
+
+  const ensure = (
+    sourceId: string,
+    kind: "order" | "quote",
+    productId: string,
+    sellerId: string,
+    email: string,
+  ) => {
+    const existing = bySource.get(sourceId);
+    if (existing) return existing;
+    const opened = openInteraction({
+      kind,
+      sourceId,
+      productId,
+      sellerId,
+      buyerId: user.id,
+      buyerEmail: email,
+    });
+    const created = getInteraction(opened.id);
+    if (created) bySource.set(sourceId, created);
+    return created;
+  };
+
   return (
-    <AccountFrame title="Your orders" lede={user.email}>
+    <AccountFrame title="Your orders">
       {orders.length === 0 && quotes.length === 0 ? (
-        <p className="mt-8 text-sm text-muted">Orders and quote requests placed with this account show up here.</p>
+        <p className="mt-8 text-sm text-muted">No order record</p>
       ) : null}
       {orders.length > 0 ? (
         <ul className="mt-8 space-y-3">
           {orders.map((order) => {
-            const interaction = bySource.get(order.id);
+            const interaction = ensure(order.id, "order", order.productId, order.sellerId, order.email || user.email);
             return (
               <li key={order.id} className="rounded-2xl border border-line bg-card p-4">
                 <Link href={`/order/${order.id}`} className="font-medium">{order.publicRef || order.productTitle}</Link>
                 <p className="text-sm text-muted">{order.productTitle} · {order.quantity} · {order.fulfillment}</p>
                 <p className="mt-1">{formatMoney(order.amountCents, order.currency)}</p>
                 <p className="text-sm text-muted">{order.status} · {formatDate(order.createdAt)}</p>
-                {interaction ? <InteractionLine item={interaction} nextPath="/orders" side="buyer" /> : null}
+                {interaction ? <InteractionLine item={interaction} nextPath="/orders" side="buyer" showReview={false} /> : null}
+                {interaction ? (
+                  <ReviewSeller
+                    interactionId={interaction.id}
+                    kind="order"
+                    productTitle={order.productTitle}
+                    reviewed={reviewed.has(interaction.id)}
+                  />
+                ) : null}
               </li>
             );
           })}
@@ -40,43 +71,30 @@ async function OrdersScreen() {
         <section className="mt-10">
           <h2 className="font-serif text-2xl">Quotes</h2>
           <ul className="mt-3 space-y-3">
-            {quotes.map((item) => (
-              <li key={item.id} className="rounded-2xl border border-line bg-card p-4">
-                <Link href={`/quote/${item.sourceId}`} className="font-medium">{item.publicRef}</Link>
-                <p className="text-sm text-muted">{item.productTitle} · {item.sellerName}</p>
-                <InteractionLine item={item} nextPath="/orders" side="buyer" />
-              </li>
-            ))}
+            {quotes.map((quote) => {
+              const product = getProductById(quote.productId);
+              const interaction = product
+                ? ensure(quote.id, "quote", quote.productId, product.userId, quote.email || user.email)
+                : bySource.get(quote.id) ?? null;
+              return (
+                <li key={quote.id} className="rounded-2xl border border-line bg-card p-4">
+                  <Link href={`/quote/${quote.id}`} className="font-medium">{quote.productTitle}</Link>
+                  <p className="text-sm text-muted">qty {quote.quantity} · {quote.status} · {formatDate(quote.createdAt)}</p>
+                  {interaction ? <InteractionLine item={interaction} nextPath="/orders" side="buyer" showReview={false} /> : null}
+                  {interaction ? (
+                    <ReviewSeller
+                      interactionId={interaction.id}
+                      kind="quote"
+                      productTitle={quote.productTitle}
+                      reviewed={reviewed.has(interaction.id)}
+                    />
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
-      <section id="reviews" className="mt-10">
-        <h2 className="font-serif text-2xl">Reviews</h2>
-        <p className="mt-2 text-sm text-muted">A review opens after you mark the interaction completed. Both sides confirming makes it a verified transaction.</p>
-        {waiting.length === 0 ? (
-          <p className="mt-4 text-sm text-muted">No confirmed interactions are waiting for a review.</p>
-        ) : (
-          <ul className="mt-4 space-y-3">
-            {waiting.map((item) => (
-              <li key={item.id}>
-                <ReviewForm interactionId={item.id} kind={item.kind} productTitle={`${item.publicRef} · ${item.productTitle}`} />
-              </li>
-            ))}
-          </ul>
-        )}
-        {reviews.length > 0 ? (
-          <ul className="mt-6 space-y-3">
-            {reviews.map((review) => (
-              <li key={review.id} className="rounded-2xl border border-line bg-card p-4 text-sm">
-                <p className="font-medium">{review.productTitle}</p>
-                <p className="text-muted">{review.publicRef} · {review.overall}/5 overall · {formatDate(review.createdAt)}</p>
-                <p className="mt-1 text-muted">As described {review.asDescribed} · Communication {review.communication} · Reliability {review.reliability}{review.quality != null ? ` · Quality ${review.quality}` : ""}</p>
-                {review.body ? <p className="mt-2">{review.body}</p> : null}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
     </AccountFrame>
   );
 }

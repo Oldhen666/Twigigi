@@ -1308,8 +1308,12 @@ export function listOrders(userId: string) {
   return many(`${ORDER_SELECT} WHERE o.seller_id = ? ORDER BY o.created_at DESC LIMIT 100`, userId).map(mapOrder);
 }
 
-export function listBuyerOrders(userId: string) {
-  return many(`${ORDER_SELECT} WHERE o.buyer_id = ? ORDER BY o.created_at DESC LIMIT 50`, userId).map(mapOrder);
+export function listBuyerOrders(userId: string, email: string) {
+  return many(
+    `${ORDER_SELECT} WHERE o.buyer_id = ? OR lower(o.email) = ? ORDER BY o.created_at DESC LIMIT 100`,
+    userId,
+    email.toLowerCase(),
+  ).map(mapOrder);
 }
 
 export function likeCount(productId: string) {
@@ -1958,6 +1962,10 @@ const QUOTE_SELECT = `
 export function getQuote(id: string) {
   const row = one(`${QUOTE_SELECT} WHERE q.id = ?`, id);
   return row ? mapQuote(row) : null;
+}
+
+export function listBuyerQuotes(email: string) {
+  return many(`${QUOTE_SELECT} WHERE lower(q.email) = ? ORDER BY q.created_at DESC LIMIT 100`, email.toLowerCase()).map(mapQuote);
 }
 
 export function listQuotes(userId: string) {
