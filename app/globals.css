@@ -49,6 +49,24 @@ body {
   background: #d5e6da;
 }
 
+.buyer-theme {
+  --paper: #eef2f6;
+  --paper-deep: #dce4ee;
+  --card: #f8fafc;
+  --line: #d5dee8;
+  --forest: #1d4e89;
+  --forest-2: #2f6cab;
+  --moss: #e3eef8;
+  --background: var(--paper);
+  background:
+    radial-gradient(900px 420px at 50% -120px, #f7fbff, transparent),
+    var(--paper);
+}
+
+.buyer-theme ::selection {
+  background: #d5e4f5;
+}
+
 .qr svg {
   display: block;
   width: 112px;

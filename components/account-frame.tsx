@@ -21,7 +21,7 @@ export async function AccountFrame({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-paper">
+    <div className="buyer-theme min-h-screen">
       <header className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-3 px-5 py-5">
         <Logo />
         <AccountNav current="buyer" />
