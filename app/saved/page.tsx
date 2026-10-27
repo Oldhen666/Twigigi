@@ -13,7 +13,7 @@ async function SavedScreen() {
   const saved = listFavorites(user.id);
   return (
     <AccountFrame title="Saved">
-      <BuyerSection title="Saved">
+      <BuyerSection title="Saved" center={saved.length === 0}>
       {saved.length === 0 ? (
         <p className="text-sm text-muted">Save a Twig from its page. It stays here.</p>
       ) : (

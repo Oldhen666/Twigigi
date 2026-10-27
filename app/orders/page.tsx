@@ -41,7 +41,7 @@ async function OrdersScreen() {
 
   return (
     <AccountFrame title="Your orders">
-      <BuyerSection title="Orders">
+      <BuyerSection title="Orders" center={orders.length === 0}>
       {orders.length === 0 ? (
         <p className="text-sm text-muted">No order record</p>
       ) : (
@@ -69,7 +69,7 @@ async function OrdersScreen() {
         </ul>
       )}
       </BuyerSection>
-      <BuyerSection title="Quotes">
+      <BuyerSection title="Quotes" center={quotes.length === 0}>
       {quotes.length === 0 ? (
         <p className="text-sm text-muted">No quote record</p>
       ) : (

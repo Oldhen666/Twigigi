@@ -12,7 +12,7 @@ async function HistoryScreen() {
   const history = listBrowseHistory(user.id);
   return (
     <AccountFrame title="Browse history">
-      <BuyerSection title="Browse history">
+      <BuyerSection title="Browse history" center={history.length === 0}>
       {history.length === 0 ? (
         <p className="text-sm text-muted">Twigs you open will show up here.</p>
       ) : (
