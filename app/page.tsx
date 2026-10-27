@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { getCurrentUser } from "@/lib/auth";
+import { userHasTwigs } from "@/lib/db";
 
 const demos = [
   {
@@ -24,20 +25,19 @@ const demos = [
 
 async function HomeAuth() {
   const user = await getCurrentUser();
-  if (user?.role === "buyer") {
+  if (!user) {
     return (
-      <Link href="/orders" className="text-sm text-ink hover:text-forest">
-        Your orders
+      <Link href="/login" className="text-sm text-ink hover:text-forest">
+        Sign in
       </Link>
     );
   }
-  return user ? (
-    <Link href="/dashboard" className="text-sm text-ink hover:text-forest">
-      Your Twigs
-    </Link>
-  ) : (
-    <Link href="/login" className="text-sm text-ink hover:text-forest">
-      Sign in
+  const selling = userHasTwigs(user.id);
+  const href = selling ? "/dashboard" : "/orders";
+  const label = selling ? "Your Twigs" : "Your orders";
+  return (
+    <Link href={href} className="text-sm text-ink hover:text-forest">
+      {label}
     </Link>
   );
 }

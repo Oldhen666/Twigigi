@@ -59,7 +59,7 @@ export function PublishAccount({
         <p className="mt-2 text-sm text-muted">
           {mode === "login"
             ? "Log in to save this Twig to your account. What you already filled in stays on this page."
-            : "Create your seller account first. Your name and link are created now, and this Twig is saved to that account."}
+            : "Create your account first. Your name and link are created now, and this Twig is saved to that account."}
         </p>
         <input type="hidden" name="accountMode" value={mode} />
         {state.error ? <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{state.error}</p> : null}

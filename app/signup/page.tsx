@@ -5,6 +5,7 @@ import { SignupForm } from "@/components/auth-forms";
 import { BackButton } from "@/components/back-button";
 import { Logo } from "@/components/logo";
 import { getCurrentUser } from "@/lib/auth";
+import { userHasTwigs } from "@/lib/db";
 import { readCta } from "@/lib/format";
 
 async function SignupScreen({
@@ -14,22 +15,20 @@ async function SignupScreen({
 }) {
   const params = await searchParams;
   const cta = readCta(typeof params.cta === "string" ? params.cta : undefined);
-  const role = params.role === "buyer" ? "buyer" : "seller";
   const user = await getCurrentUser();
-  if (user?.role === "buyer") redirect("/orders");
-  if (user) redirect(cta ? `/dashboard/products/new?cta=${cta}` : "/dashboard");
+  if (user) redirect(cta ? `/dashboard/products/new?cta=${cta}` : userHasTwigs(user.id) ? "/dashboard" : "/orders");
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-6">
       <BackButton />
       <div className="flex flex-1 flex-col justify-center py-6">
       <Logo />
       <h1 className="mt-8 font-serif text-4xl">Create an account</h1>
-      <p className="mt-2 text-muted">Buyers keep their orders. Sellers publish Twigs.</p>
+      <p className="mt-2 text-muted">One account for your orders, saved Twigs, and anything you publish.</p>
       <div className="mt-6">
-        <SignupForm cta={cta ?? undefined} initialRole={role} />
+        <SignupForm cta={cta ?? undefined} />
       </div>
       <p className="mt-4 text-sm text-muted">
-        Already selling? <Link href="/login" className="text-forest">Log in</Link>
+        Already have an account? <Link href="/login" className="text-forest">Log in</Link>
       </p>
       </div>
     </main>

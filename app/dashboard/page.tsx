@@ -8,7 +8,7 @@ import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
 import { listMessages, listOrders, listQuotes, sellerBooks, sellerProducts, sellerStats, sellerViewSources } from "@/lib/db";
 import { BUCKET_LABEL } from "@/lib/ledger";
-import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatDate, formatMoney, isTwigLive, nextBillingDate, productUrl, srcLabel } from "@/lib/format";
+import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatDate, formatMoney, isPrivateUsername, isTwigLive, nextBillingDate, productUrl, srcLabel } from "@/lib/format";
 
 async function DashboardBody() {
   const user = await requireSeller();
@@ -35,7 +35,7 @@ async function DashboardBody() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-serif text-4xl">Your Twigs</h1>
-          <p className="mt-1 text-sm text-muted">twigigi.com/{user.username}</p>
+          <p className="mt-1 text-sm text-muted">{isPrivateUsername(user.username) ? "Your public link is created when you publish." : `twigigi.com/${user.username}`}</p>
         </div>
         <Link href="/start" className="inline-flex h-10 shrink-0 items-center rounded-full bg-forest px-4 text-sm text-card">
           New Twig +

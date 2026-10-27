@@ -286,6 +286,25 @@ function ensureColumns(database: DatabaseSync) {
       used_at TEXT
     );
   `);
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS favorites (
+      user_id TEXT NOT NULL REFERENCES users(id),
+      product_id TEXT NOT NULL REFERENCES products(id),
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, product_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS reviews (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      product_id TEXT NOT NULL REFERENCES products(id),
+      order_id TEXT NOT NULL UNIQUE REFERENCES orders(id),
+      rating INTEGER NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+  `);
+  database.prepare(`UPDATE users SET role = 'user' WHERE role NOT IN ('admin', 'user')`).run();
   promoteAdmins(database);
   const paid = database.prepare(`SELECT id FROM orders WHERE payment_status = 'paid' OR status IN ('paid', 'fulfilled')`).all() as Array<{ id: string }>;
   for (const row of paid) postPaymentLedger(database, row.id);
@@ -548,6 +567,8 @@ export function settleDeactivations(now = new Date().toISOString()) {
 }
 
 function eraseProduct(id: string) {
+  db.prepare("DELETE FROM favorites WHERE product_id = ?").run(id);
+  db.prepare("DELETE FROM reviews WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM page_views WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM quotes WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM messages WHERE product_id = ?").run(id);
@@ -559,7 +580,7 @@ function mapPublic(row: Row): PublicProduct {
 }
 
 function mapUser(row: Row): User {
-  const role: UserRole = row.role === "admin" ? "admin" : row.role === "buyer" ? "buyer" : "seller";
+  const role: UserRole = row.role === "admin" ? "admin" : "user";
   return {
     id: str(row.id),
     email: str(row.email),
@@ -717,28 +738,28 @@ export function createUser(input: {
   passwordHash: string;
   username: string;
   displayName: string;
-  role?: "seller" | "buyer";
 }) {
   db.prepare(
-    "INSERT INTO users (id, email, password_hash, username, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run(
-    input.id,
-    input.email.toLowerCase(),
-    input.passwordHash,
-    input.username,
-    input.displayName,
-    input.role === "buyer" ? "buyer" : "seller",
-    new Date().toISOString(),
-  );
+    "INSERT INTO users (id, email, password_hash, username, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, 'user', ?)",
+  ).run(input.id, input.email.toLowerCase(), input.passwordHash, input.username, input.displayName, new Date().toISOString());
+}
+
+export function updateUsername(id: string, username: string) {
+  db.prepare("UPDATE users SET username = ? WHERE id = ?").run(username, id);
+}
+
+export function userHasTwigs(userId: string) {
+  return Boolean(one("SELECT 1 AS n FROM products WHERE user_id = ? LIMIT 1", userId));
 }
 
 export function listUsers() {
   return many(
     `SELECT u.*,
-      (SELECT COUNT(*) FROM products p WHERE p.user_id = u.id) AS product_count
+      (SELECT COUNT(*) FROM products p WHERE p.user_id = u.id) AS product_count,
+      (SELECT COUNT(*) FROM orders o WHERE o.buyer_id = u.id) AS order_count
      FROM users u
      ORDER BY u.created_at ASC`,
-  ).map((row) => ({ ...mapUser(row), productCount: num(row.product_count) }));
+  ).map((row) => ({ ...mapUser(row), productCount: num(row.product_count), orderCount: num(row.order_count) }));
 }
 
 export function updateUserRole(id: string, role: UserRole) {
@@ -785,7 +806,7 @@ export function getPublishedProduct(username: string, slug: string) {
 
 export function getSellerWithProducts(username: string): PublicSeller | null {
   const user = one("SELECT id, username, display_name, role FROM users WHERE username = ?", username);
-  if (!user || str(user.role) === "buyer") return null;
+  if (!user || /^[ub][0-9a-f]{12}$/.test(str(user.username))) return null;
   const products = many(
     `SELECT p.*, u.username, u.display_name
      FROM products p JOIN users u ON u.id = p.user_id
@@ -1199,6 +1220,90 @@ export function listOrders(userId: string) {
 
 export function listBuyerOrders(userId: string) {
   return many(`${ORDER_SELECT} WHERE o.buyer_id = ? ORDER BY o.created_at DESC LIMIT 50`, userId).map(mapOrder);
+}
+
+export function isFavorite(userId: string, productId: string) {
+  return Boolean(one("SELECT 1 AS n FROM favorites WHERE user_id = ? AND product_id = ?", userId, productId));
+}
+
+export function toggleFavorite(userId: string, productId: string) {
+  if (isFavorite(userId, productId)) {
+    db.prepare("DELETE FROM favorites WHERE user_id = ? AND product_id = ?").run(userId, productId);
+    return false;
+  }
+  db.prepare("INSERT INTO favorites (user_id, product_id, created_at) VALUES (?, ?, ?)").run(userId, productId, new Date().toISOString());
+  return true;
+}
+
+export function listFavorites(userId: string) {
+  return many(
+    `SELECT p.*, u.username, u.display_name
+     FROM favorites f
+     JOIN products p ON p.id = f.product_id
+     JOIN users u ON u.id = p.user_id
+     WHERE f.user_id = ?
+     ORDER BY f.created_at DESC`,
+    userId,
+  ).map(mapPublic);
+}
+
+export type ReviewRecord = {
+  id: string;
+  userId: string;
+  productId: string;
+  orderId: string;
+  rating: number;
+  body: string;
+  createdAt: string;
+  displayName: string;
+  productTitle: string;
+};
+
+function mapReview(row: Row): ReviewRecord {
+  return {
+    id: str(row.id),
+    userId: str(row.user_id),
+    productId: str(row.product_id),
+    orderId: str(row.order_id),
+    rating: num(row.rating),
+    body: str(row.body),
+    createdAt: str(row.created_at),
+    displayName: str(row.display_name),
+    productTitle: str(row.product_title),
+  };
+}
+
+const REVIEW_SELECT = `
+  SELECT r.*, u.display_name, COALESCE(p.title, '') AS product_title
+  FROM reviews r
+  JOIN users u ON u.id = r.user_id
+  LEFT JOIN products p ON p.id = r.product_id
+`;
+
+export function listProductReviews(productId: string) {
+  return many(`${REVIEW_SELECT} WHERE r.product_id = ? ORDER BY r.created_at DESC`, productId).map(mapReview);
+}
+
+export function listUserReviews(userId: string) {
+  return many(`${REVIEW_SELECT} WHERE r.user_id = ? ORDER BY r.created_at DESC`, userId).map(mapReview);
+}
+
+export function listReviewableOrders(userId: string) {
+  return many(
+    `SELECT o.id, o.public_ref, COALESCE(p.title, 'Removed Twig') AS product_title
+     FROM orders o
+     LEFT JOIN products p ON p.id = o.product_id
+     WHERE o.buyer_id = ? AND o.status = 'fulfilled'
+       AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.order_id = o.id)
+     ORDER BY o.created_at DESC`,
+    userId,
+  ).map((row) => ({ id: str(row.id), publicRef: str(row.public_ref), productTitle: str(row.product_title) }));
+}
+
+export function insertReview(input: { id: string; userId: string; productId: string; orderId: string; rating: number; body: string }) {
+  db.prepare(
+    "INSERT INTO reviews (id, user_id, product_id, order_id, rating, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(input.id, input.userId, input.productId, input.orderId, input.rating, input.body, new Date().toISOString());
 }
 
 export type StoredLedgerEntry = {

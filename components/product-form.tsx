@@ -21,6 +21,7 @@ export function ProductForm({
   cta,
   sellerName,
   guest = false,
+  needsUsername = false,
 }: {
   action: Action;
   product?: Product;
@@ -28,6 +29,7 @@ export function ProductForm({
   cta: Cta;
   sellerName: string;
   guest?: boolean;
+  needsUsername?: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const refreshRef = useRef<(form: HTMLFormElement) => void>(() => {});
@@ -695,6 +697,12 @@ export function ProductForm({
         </div>
       ) : null}
 
+      {needsUsername ? (
+        <Field label="Username" required error={visibleErrors.username}>
+          <input name="username" autoCapitalize="none" autoCorrect="off" placeholder="ava" className={inputClass} />
+          <span className="mt-1 block text-xs text-muted">Your link will be twigigi.com/username/product</span>
+        </Field>
+      ) : null}
       <div className={stepped && step !== 1 ? "hidden" : undefined}>
       <Section title={cta === "quote" ? "Product/Service Title" : cta === "contact" ? "What can they ask about?" : ""} required={cta === "quote"}>
         <Field label={cta === "quote" ? "" : "Product Title"} required={cta !== "quote"} error={visibleErrors.title}>

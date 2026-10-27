@@ -56,10 +56,13 @@ async function OrderView({
         ) : null}
         {product?.cta === "buy" ? <SellerReach mode={product.sellerContactMode} contact={product.sellerContact} name={order.displayName} /> : null}
         {account && account.id === order.buyerId ? (
-          <p className="mt-6 text-sm"><Link href="/orders" className="text-forest">Your orders</Link></p>
+          <p className="mt-6 text-sm">
+            <Link href="/orders" className="text-forest">Your orders</Link>
+            {order.status === "fulfilled" ? <> · <Link href="/reviews" className="text-forest">Write a review</Link></> : null}
+          </p>
         ) : !order.buyerId ? (
           <p className="mt-6 text-sm text-muted">
-            <Link href="/signup?role=buyer" className="text-forest">Create a buyer account</Link> with this email to keep this order.
+            <Link href="/signup" className="text-forest">Create an account</Link> with this email to keep this order.
           </p>
         ) : null}
         <Link href={`/${order.username}/${order.productSlug}`} className="mt-8 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">

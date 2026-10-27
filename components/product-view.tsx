@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import QRCode from "qrcode";
 import { getPublicProduct, requireLiveTwig } from "@/lib/catalog";
 import { BuyPicker } from "@/components/buy-picker";
@@ -10,16 +11,24 @@ import { ViewTracker } from "@/components/view-tracker";
 import { Logo } from "@/components/logo";
 import { BackButton } from "@/components/back-button";
 import { PayMethods } from "@/components/pay-methods";
-import { appUrl, ctaCopy, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
+import { toggleSaved } from "@/lib/actions";
+import { getCurrentUser } from "@/lib/auth";
+import { isFavorite, listProductReviews } from "@/lib/db";
+import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
 
 export async function ProductView({
   params,
 }: {
   params: Promise<{ username: string; product: string }>;
 }) {
+  await connection();
   const { username, product: slug } = await params;
   const product = await requireLiveTwig(await getPublicProduct(username, slug));
   if (!product) notFound();
+  const account = await getCurrentUser();
+  const saved = account ? isFavorite(account.id, product.id) : false;
+  const reviews = listProductReviews(product.id);
+  const ownTwig = account?.username === product.username;
 
   const canonical = productUrl(product.username, product.slug);
   const qr = (await QRCode.toString(withSrc(canonical, "qr"), {
@@ -124,6 +133,7 @@ export async function ProductView({
                   {product.displayName}
                 </Link>
               </p>
+              <SaveControl productId={product.id} path={`/${product.username}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} />
               {product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </BuyPicker>
           ) : (
@@ -146,6 +156,7 @@ export async function ProductView({
                   {product.displayName}
                 </Link>
               </p>
+              <SaveControl productId={product.id} path={`/${product.username}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} />
               {product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </>
           )}
@@ -163,6 +174,20 @@ export async function ProductView({
         )}
         <div className="space-y-5 px-5 py-5">
           <p className="whitespace-pre-wrap text-[15px] leading-7">{product.description}</p>
+          {reviews.length > 0 ? (
+            <section>
+              <h2 className="font-serif text-2xl">Reviews</h2>
+              <ul className="mt-3 space-y-3">
+                {reviews.map((review) => (
+                  <li key={review.id}>
+                    <p className="text-sm font-medium">{review.displayName} · {review.rating}/5</p>
+                    {review.body ? <p className="mt-1 text-sm">{review.body}</p> : null}
+                    <p className="text-xs text-muted">{formatDate(review.createdAt)}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           {embed ? (
             <div className="relative aspect-video overflow-hidden rounded-2xl bg-paper-deep">
               <iframe src={embed} title={`${product.title} video`} className="absolute inset-0 h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
@@ -191,5 +216,35 @@ export async function ProductView({
       <ViewTracker productId={product.id} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
     </Stage>
+  );
+}
+
+function SaveControl({
+  productId,
+  path,
+  signedIn,
+  ownTwig,
+  saved,
+}: {
+  productId: string;
+  path: string;
+  signedIn: boolean;
+  ownTwig: boolean;
+  saved: boolean;
+}) {
+  if (ownTwig) return null;
+  if (!signedIn) {
+    return (
+      <p className="mt-3 text-sm">
+        <Link href={`/login?next=${encodeURIComponent(path)}`} className="text-forest">Save</Link>
+      </p>
+    );
+  }
+  return (
+    <form action={toggleSaved} className="mt-3">
+      <input type="hidden" name="productId" value={productId} />
+      <input type="hidden" name="next" value={path} />
+      <button className="text-sm text-forest">{saved ? "Saved" : "Save"}</button>
+    </form>
   );
 }

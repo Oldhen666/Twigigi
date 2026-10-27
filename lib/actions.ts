@@ -10,7 +10,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, interacEmailProblem, isTransferMethod, methodsForFulfillment, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
-import { clearSession, getCurrentUser, requireAdmin, requireSeller, setSession } from "@/lib/auth";
+import { clearSession, getCurrentUser, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import {
   claimBuyerOrders,
@@ -27,6 +27,7 @@ import {
   insertOrder,
   insertProduct,
   insertQuote,
+  insertReview,
   productHasActivity,
   releaseStock,
   reserveStock,
@@ -34,10 +35,13 @@ import {
   reactivateProduct,
   replacePasswordReset,
   takePasswordReset,
+  toggleFavorite,
   uniqueSlug,
   listUsers,
   updatePassword,
+  updateUsername,
   updateUserRole,
+  userHasTwigs,
   updateMessageStatus,
   completePayout,
   setDispute,
@@ -50,6 +54,7 @@ import {
   appUrl,
   formatMoney,
   fulfillmentOptions,
+  isPrivateUsername,
   isTwigLive,
   nextBillingDate,
   normalizeSrc,
@@ -156,7 +161,7 @@ async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
   return { ok: true, userId: id };
 }
 
-async function createBuyerAccount(formData: FormData): Promise<OpenedAccount> {
+async function createAccount(formData: FormData): Promise<OpenedAccount> {
   const parsed = z
     .object({
       displayName: signupSchema.shape.displayName,
@@ -170,7 +175,7 @@ async function createBuyerAccount(formData: FormData): Promise<OpenedAccount> {
     });
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
   const id = newId("usr");
-  const username = `b${randomBytes(6).toString("hex")}`;
+  const username = `u${randomBytes(6).toString("hex")}`;
   try {
     createUser({
       id,
@@ -178,7 +183,6 @@ async function createBuyerAccount(formData: FormData): Promise<OpenedAccount> {
       passwordHash: bcrypt.hashSync(parsed.data.password, 10),
       username,
       displayName: parsed.data.displayName,
-      role: "buyer",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
@@ -189,6 +193,22 @@ async function createBuyerAccount(formData: FormData): Promise<OpenedAccount> {
   const sessionError = await startSession(id);
   if (sessionError) return { error: sessionError };
   return { ok: true, userId: id };
+}
+
+function accountHome(userId: string) {
+  return userHasTwigs(userId) ? "/dashboard" : "/orders";
+}
+
+function claimPublicUsername(userId: string, raw: string): FormState {
+  const parsed = signupSchema.shape.username.safeParse(raw);
+  if (!parsed.success) return { fieldErrors: { username: "Use 3–30 letters, numbers, or hyphens." } };
+  if (RESERVED_USERNAMES.has(parsed.data) || isPrivateUsername(parsed.data)) {
+    return { fieldErrors: { username: "That username is reserved." } };
+  }
+  const taken = findUserByUsername(parsed.data);
+  if (taken && taken !== userId) return { fieldErrors: { username: "That username is taken." } };
+  updateUsername(userId, parsed.data);
+  return {};
 }
 
 async function signInAccount(formData: FormData): Promise<OpenedAccount> {
@@ -209,24 +229,19 @@ async function openAccount(formData: FormData) {
 }
 
 export async function signUp(_prev: FormState, formData: FormData): Promise<FormState> {
-  const buyer = text(formData, "role") === "buyer";
-  const created = buyer ? await createBuyerAccount(formData) : await createSellerAccount(formData);
+  const created = await createAccount(formData);
   if (!created.ok) return created;
-  if (buyer) return { next: "/orders" };
   const cta = readCta(text(formData, "cta"));
-  return { next: cta ? `/dashboard/products/new?cta=${cta}` : "/start" };
+  return { next: cta ? `/dashboard/products/new?cta=${cta}` : "/orders" };
 }
 
 export async function signIn(_prev: FormState, formData: FormData): Promise<FormState> {
   const opened = await signInAccount(formData);
   if (!opened.ok || !opened.userId) return opened;
   const user = findUserById(opened.userId);
+  if (user) claimBuyerOrders(user.id, user.email);
   const requested = text(formData, "next");
-  if (user?.role === "buyer") {
-    claimBuyerOrders(user.id, user.email);
-    return { next: !requested || requested === "/dashboard" ? "/orders" : safeNext(requested) };
-  }
-  return { next: requested ? safeNext(requested) : "/dashboard" };
+  return { next: requested ? safeNext(requested) : accountHome(opened.userId) };
 }
 
 export async function requestPasswordReset(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -258,8 +273,7 @@ export async function resetPassword(_prev: FormState, formData: FormData): Promi
   updatePassword(userId, bcrypt.hashSync(password, 10));
   const sessionError = await startSession(userId);
   if (sessionError) return { error: sessionError };
-  const user = findUserById(userId);
-  return { next: user?.role === "buyer" ? "/orders" : "/dashboard" };
+  return { next: accountHome(userId) };
 }
 
 export async function signOut() {
@@ -517,8 +531,13 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     if (!user) return { error: "Could not open the account." };
     sessionStamp = { signedIn: true, displayName: user.displayName };
   }
-  if (user.role === "buyer") {
-    return { error: "This account is for buying. Use a seller account to publish a Twig.", ...sessionStamp };
+  const previousUsername = user.username;
+  if (isPrivateUsername(user.username)) {
+    const claimed = claimPublicUsername(user.id, text(formData, "username"));
+    if (claimed.fieldErrors || claimed.error) return { ...claimed, ...sessionStamp };
+    const refreshed = findUserById(user.id);
+    if (!refreshed) return { error: "Could not save the username.", ...sessionStamp };
+    user = refreshed;
   }
   if (id && (!existing || existing.userId !== user.id)) {
     return { error: "That Twig was not found.", ...sessionStamp };
@@ -598,6 +617,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     return { error: "Could not save this Twig. Try a different link name.", ...sessionStamp };
   }
 
+  if (previousUsername !== user.username) {
+    updateTag(sellerTag(previousUsername));
+    if (existing) updateTag(productTag(previousUsername, existing.slug));
+  }
   if (existing && existing.slug !== slug) updateTag(productTag(user.username, existing.slug));
   updateTag(productTag(user.username, slug));
   updateTag(sellerTag(user.username));
@@ -702,7 +725,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   const orderId = newId("ord");
   const sessionUser = await getCurrentUser();
   const emailMatch = findUserByEmail(parsed.data.email);
-  const buyerId = sessionUser ? sessionUser.id : emailMatch?.role === "buyer" ? emailMatch.id : null;
+  const buyerId = sessionUser ? sessionUser.id : emailMatch?.id ?? null;
   try {
     insertOrder({
       id: orderId,
@@ -897,13 +920,10 @@ async function recordMoneyAction(formData: FormData, run: (id: string) => { ok: 
 export async function setUserRole(formData: FormData) {
   const admin = await requireAdmin();
   const id = text(formData, "id");
-  const role = text(formData, "role");
+  const role = text(formData, "role") === "admin" ? "admin" : "user";
   const next = "/admin/users";
-  if (role !== "admin" && role !== "seller" && role !== "buyer") {
-    redirect(`${next}?error=${encodeURIComponent("Choose a role.")}`);
-  }
   if (id === admin.id) {
-    redirect(`${next}?error=${encodeURIComponent("You can't change your own role.")}`);
+    redirect(`${next}?error=${encodeURIComponent("You can't change your own access.")}`);
   }
   const user = findUserById(id);
   if (!user) redirect(`${next}?error=${encodeURIComponent("That account was not found.")}`);
@@ -913,6 +933,32 @@ export async function setUserRole(formData: FormData) {
   updateUserRole(user.id, role);
   updateTag(sellerTag(user.username.toLowerCase()));
   redirect(next);
+}
+
+export async function toggleSaved(formData: FormData) {
+  const user = await requireUser();
+  const product = getProductById(text(formData, "productId"));
+  const next = safeNext(text(formData, "next"));
+  if (!product || !isTwigLive(product) || product.userId === user.id) redirect(next);
+  toggleFavorite(user.id, product.id);
+  redirect(next);
+}
+
+export async function saveReview(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireUser();
+  const order = getOrder(text(formData, "orderId"));
+  const rating = Number(text(formData, "rating"));
+  const body = text(formData, "body").trim().slice(0, 500);
+  if (!order || order.buyerId !== user.id || order.status !== "fulfilled") {
+    return { error: "You can review a Twig after that order is fulfilled." };
+  }
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) return { fieldErrors: { rating: "Choose a rating from 1 to 5." } };
+  try {
+    insertReview({ id: newId("rev"), userId: user.id, productId: order.productId, orderId: order.id, rating, body });
+  } catch {
+    return { error: "This order already has a review." };
+  }
+  return { saved: true };
 }
 
 export async function startSellerPayout(formData: FormData) {

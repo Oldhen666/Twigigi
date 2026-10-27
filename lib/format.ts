@@ -27,8 +27,17 @@ export const RESERVED_USERNAMES = new Set([
   "signup",
   "static",
   "uploads",
+  "forgot",
+  "reset",
+  "reviews",
+  "saved",
+  "start",
   "www",
 ]);
+
+export function isPrivateUsername(username: string) {
+  return /^[ub][0-9a-f]{12}$/.test(username);
+}
 
 const SRC_LABELS: Record<string, string> = {
   direct: "Direct",

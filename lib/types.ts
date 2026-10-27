@@ -5,7 +5,7 @@ export type OrderStatus = "unpaid" | "paid" | "fulfilled" | "canceled";
 export type PaymentStatus = "unpaid" | "paid";
 export type ProtectionStatus = "pending" | "active";
 export type PayoutStatus = "none" | "held" | "processing" | "paid";
-export type UserRole = "seller" | "buyer" | "admin";
+export type UserRole = "user" | "admin";
 
 export const PROTECTION_DAYS = 21;
 
