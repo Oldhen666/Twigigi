@@ -12,11 +12,11 @@ export async function AccountFrame({
 }) {
   return (
     <div className="buyer-theme min-h-screen">
-      <header className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-5 py-5">
+      <header className="page-frame flex flex-wrap items-center justify-between gap-3 py-5">
         <Logo />
         <AccountNav current="buyer" />
       </header>
-      <main className="mx-auto w-full max-w-5xl px-5 pb-16">
+      <main className="page-frame pb-16">
         <h1 className="font-serif text-4xl">{title}</h1>
         {lede ? <p className="mt-2 text-sm text-muted">{lede}</p> : null}
         {children}

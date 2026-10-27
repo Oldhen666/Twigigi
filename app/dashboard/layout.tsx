@@ -7,7 +7,7 @@ import { Logo } from "@/components/logo";
 async function Header() {
   await requireSeller();
   return (
-    <header className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-5 py-5">
+    <header className="page-frame flex items-center justify-between gap-3 py-5">
       <Logo />
       <AccountNav current="seller" />
     </header>
@@ -20,7 +20,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={<div className="h-16" />}>
         <Header />
       </Suspense>
-      <div className="mx-auto w-full max-w-5xl px-5 pt-2">
+      <div className="page-frame pt-2">
         <BackButton />
       </div>
       {children}

@@ -20,7 +20,7 @@ async function DashboardBody() {
   const billingEndsLabel = formatBillingDate(nextBillingDate());
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-5 pb-16">
+    <main className="page-frame pb-16">
       <div className="mt-6">
         <h1 className="font-serif text-4xl">Your Twigs</h1>
         <p className="mt-2 text-sm text-muted">Hi, {user.displayName}</p>

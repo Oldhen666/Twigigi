@@ -8,7 +8,7 @@ async function OrdersScreen() {
   const user = await requireSeller();
   const orders = listOrders(user.id);
   return (
-    <main className="mx-auto w-full max-w-5xl px-5 pb-16">
+    <main className="page-frame pb-16">
       <h1 className="font-serif text-4xl">Orders</h1>
       {orders.length === 0 ? (
         <div className="mt-8">

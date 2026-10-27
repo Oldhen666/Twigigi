@@ -9,7 +9,7 @@ async function ViewsScreen() {
   const products = sellerProducts(user.id);
   const sources = sellerViewSources(user.id);
   return (
-    <main className="mx-auto w-full max-w-5xl px-5 pb-16">
+    <main className="page-frame pb-16">
       <h1 className="font-serif text-4xl">Views</h1>
       {products.every((product) => product.viewCount === 0) ? (
         <EmptyRecords message="No view record" />

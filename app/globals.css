@@ -83,6 +83,13 @@ body {
   background: #d4e4f4;
 }
 
+.page-frame {
+  width: 100%;
+  max-width: 64rem;
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+}
+
 .qr svg {
   display: block;
   width: 112px;
