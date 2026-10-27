@@ -66,21 +66,21 @@ body {
 }
 
 .buyer-theme {
-  --paper: #eef2f6;
-  --paper-deep: #dce4ee;
-  --card: #f8fafc;
-  --line: #d5dee8;
-  --forest: #1d4e89;
-  --forest-2: #2f6cab;
-  --moss: #e3eef8;
+  --paper: #e4eef8;
+  --paper-deep: #cfdff0;
+  --card: #f7fbfe;
+  --line: #c3d6ea;
+  --forest: #1a4574;
+  --forest-2: #2a6398;
+  --moss: #d7e6f5;
   --background: var(--paper);
   background:
-    radial-gradient(900px 420px at 50% -120px, #f7fbff, transparent),
+    radial-gradient(900px 420px at 50% -120px, #f4f9fd, transparent),
     var(--paper);
 }
 
 .buyer-theme ::selection {
-  background: #d5e4f5;
+  background: #d4e4f4;
 }
 
 .qr svg {

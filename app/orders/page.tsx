@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { AccountFrame } from "@/components/account-frame";
+import { BuyerSection } from "@/components/buyer-section";
 import { InteractionLine } from "@/components/interaction-line";
 import { ReviewSeller } from "@/components/review-seller";
 import { requireUser } from "@/lib/auth";
@@ -40,11 +41,11 @@ async function OrdersScreen() {
 
   return (
     <AccountFrame title="Your orders">
-      {orders.length === 0 && quotes.length === 0 ? (
-        <p className="mt-8 text-sm text-muted">No order record</p>
-      ) : null}
-      {orders.length > 0 ? (
-        <ul className="mt-8 space-y-3">
+      <BuyerSection title="Orders">
+      {orders.length === 0 ? (
+        <p className="text-sm text-muted">No order record</p>
+      ) : (
+        <ul className="space-y-3">
           {orders.map((order) => {
             const interaction = ensure(order.id, "order", order.productId, order.sellerId, order.email || user.email);
             return (
@@ -66,11 +67,13 @@ async function OrdersScreen() {
             );
           })}
         </ul>
-      ) : null}
-      {quotes.length > 0 ? (
-        <section className="mt-10">
-          <h2 className="font-serif text-2xl">Quotes</h2>
-          <ul className="mt-3 space-y-3">
+      )}
+      </BuyerSection>
+      <BuyerSection title="Quotes">
+      {quotes.length === 0 ? (
+        <p className="text-sm text-muted">No quote record</p>
+      ) : (
+          <ul className="space-y-3">
             {quotes.map((quote) => {
               const product = getProductById(quote.productId);
               const interaction = product
@@ -93,8 +96,8 @@ async function OrdersScreen() {
               );
             })}
           </ul>
-        </section>
-      ) : null}
+      )}
+      </BuyerSection>
     </AccountFrame>
   );
 }

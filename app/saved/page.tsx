@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { toggleSaved } from "@/lib/actions";
 import { AccountFrame } from "@/components/account-frame";
+import { BuyerSection } from "@/components/buyer-section";
 import { requireUser } from "@/lib/auth";
 import { listFavorites } from "@/lib/db";
 import { formatMoney } from "@/lib/format";
@@ -11,11 +12,12 @@ async function SavedScreen() {
   const user = await requireUser();
   const saved = listFavorites(user.id);
   return (
-    <AccountFrame title="Saved" lede="Twigs you want to come back to.">
+    <AccountFrame title="Saved">
+      <BuyerSection title="Saved">
       {saved.length === 0 ? (
-        <p className="mt-8 text-sm text-muted">Save a Twig from its page. It stays here.</p>
+        <p className="text-sm text-muted">Save a Twig from its page. It stays here.</p>
       ) : (
-        <ul className="mt-8 space-y-3">
+        <ul className="space-y-3">
           {saved.map((product) => (
             <li key={product.id} className="flex gap-4 rounded-2xl border border-line bg-card p-4">
               <Link href={`/${product.username}/${product.slug}`} className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-paper-deep">
@@ -35,6 +37,7 @@ async function SavedScreen() {
           ))}
         </ul>
       )}
+      </BuyerSection>
     </AccountFrame>
   );
 }

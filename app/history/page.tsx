@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AccountFrame } from "@/components/account-frame";
+import { BuyerSection } from "@/components/buyer-section";
 import { requireUser } from "@/lib/auth";
 import { listBrowseHistory } from "@/lib/db";
 import { formatDate, formatMoney } from "@/lib/format";
@@ -10,11 +11,12 @@ async function HistoryScreen() {
   const user = await requireUser();
   const history = listBrowseHistory(user.id);
   return (
-    <AccountFrame title="Browse history" lede="Twigs you opened while signed in.">
+    <AccountFrame title="Browse history">
+      <BuyerSection title="Browse history">
       {history.length === 0 ? (
-        <p className="mt-8 text-sm text-muted">Twigs you open will show up here.</p>
+        <p className="text-sm text-muted">Twigs you open will show up here.</p>
       ) : (
-        <ul className="mt-8 space-y-3">
+        <ul className="space-y-3">
           {history.map(({ product, seenAt }) => (
             <li key={product.id}>
               <Link href={`/${product.username}/${product.slug}`} className="flex gap-4 rounded-2xl border border-line bg-card p-4">
@@ -32,6 +34,7 @@ async function HistoryScreen() {
           ))}
         </ul>
       )}
+      </BuyerSection>
     </AccountFrame>
   );
 }
