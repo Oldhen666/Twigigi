@@ -26,7 +26,7 @@ export function DeactivateTwig({
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={`font-medium ${reactivating ? "text-forest" : "text-danger"}`}>
+      <button type="button" onClick={() => setOpen(true)} className={`ml-auto font-medium ${reactivating ? "text-forest" : "text-danger"}`}>
         {reactivating ? "Reactivate" : "Deactivate"}
       </button>
       {open ? (
