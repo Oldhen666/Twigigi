@@ -28,7 +28,7 @@ async function DashboardBody() {
         <p className="mt-2 text-sm text-muted">Hi, {user.displayName}</p>
         {user.billingMethod ? null : (
           <p className="mt-3 text-sm">
-            <Link href="/billing?next=/dashboard" className="font-medium text-forest">Add a credit card, PayPal, or Stripe</Link>
+            <Link href="/billing?next=/dashboard" className="font-medium text-forest">Add a payment method</Link>
             <span className="text-muted"> before a Twig can be published.</span>
           </p>
         )}

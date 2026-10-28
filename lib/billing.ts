@@ -19,9 +19,8 @@ export function isBillingMethod(value: string): value is BillingMethod {
 }
 
 export function billingMethodLabel(method: string) {
-  if (method === "card") return "Credit card";
+  if (method === "card" || method === "stripe") return "Credit or debit card";
   if (method === "paypal") return "PayPal";
-  if (method === "stripe") return "Stripe";
   return "";
 }
 

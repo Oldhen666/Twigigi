@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { saveBillingMethod } from "@/lib/actions";
-import { billingMethodLabel } from "@/lib/billing";
+import { LISTING_CENTS, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { requireUser } from "@/lib/auth";
 import { BackButton } from "@/components/back-button";
 import { Logo } from "@/components/logo";
 import { buttonClass } from "@/components/ui";
-import { nextBillingDate, safeNext, formatBillingDate } from "@/lib/format";
+import { formatMoney, safeNext } from "@/lib/format";
 
 async function BillingScreen({
   searchParams,
@@ -16,36 +16,53 @@ async function BillingScreen({
   const params = await searchParams;
   const next = safeNext(typeof params.next === "string" ? params.next : "/dashboard");
   const user = await requireUser();
-  const chargeLabel = formatBillingDate(nextBillingDate());
-  const methods = [
-    ["card", "Credit card"],
-    ["paypal", "PayPal"],
-    ["stripe", "Stripe"],
-  ] as const;
+  const listing = formatMoney(LISTING_CENTS);
+  const quoteRequest = formatMoney(QUOTE_SUBMISSION_CENTS);
+  const cardSelected = user.billingMethod !== "paypal";
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-6">
       <BackButton />
       <div className="flex flex-1 flex-col justify-center py-6">
         <Logo />
-        <h1 className="mt-8 font-serif text-4xl">Pay Twigigi</h1>
-        <p className="mt-2 text-muted">
-          Choose how this account pays Twigigi. A Buy now listing and a quote listing are $1.00 a month, in CAD for Canada and USD for the United States. Each quote a customer sends is $0.25 in that same currency. The next listing charge is {chargeLabel}.
-        </p>
-        {user.billingMethod ? (
-          <p className="mt-4 text-sm text-forest">Current method: {billingMethodLabel(user.billingMethod)}</p>
-        ) : null}
-        <form action={saveBillingMethod} className="mt-6 space-y-3">
+        <h1 className="mt-8 font-serif text-4xl">Billing & Payment</h1>
+        <p className="mt-2 text-muted">Add a payment method for your Twigigi fees.</p>
+        <div className="mt-6 space-y-2 text-sm">
+          <div className="flex items-baseline justify-between gap-6">
+            <span>Active Buy Now listing</span>
+            <span>{listing} / month</span>
+          </div>
+          <p className="text-muted">or</p>
+          <div className="flex items-baseline justify-between gap-6">
+            <span>Active Quote listing</span>
+            <span>{listing} / month</span>
+          </div>
+          <div className="flex items-baseline justify-between gap-6">
+            <span>Quote request</span>
+            <span>{quoteRequest} each</span>
+          </div>
+        </div>
+        <form action={saveBillingMethod} className="mt-8">
           <input type="hidden" name="next" value={next} />
-          {methods.map(([value, label]) => (
-            <button key={value} name="method" value={value} className={`${buttonClass} w-full`}>
-              {label}
-            </button>
-          ))}
+          <fieldset>
+            <legend className="text-sm font-medium">Payment method</legend>
+            <label className="mt-4 flex cursor-pointer gap-3">
+              <input type="radio" name="method" value="card" defaultChecked={cardSelected} className="mt-1 accent-forest" />
+              <span>
+                <span className="block">Credit or debit card</span>
+                <span className="mt-0.5 block text-sm text-muted">Visa · Mastercard · Amex</span>
+              </span>
+            </label>
+            <label className="mt-4 flex cursor-pointer items-center gap-3">
+              <input type="radio" name="method" value="paypal" defaultChecked={!cardSelected} className="accent-forest" />
+              <span>PayPal</span>
+            </label>
+          </fieldset>
+          <p className="mt-4 text-sm text-muted">
+            Card payments are securely processed by Stripe. Twigigi does not store your card number.
+          </p>
+          <button className={`${buttonClass} mt-6 w-full`}>Continue</button>
         </form>
-        <p className="mt-4 text-sm text-muted">
-          Card numbers are not stored here. Credit card and Stripe charge through the Twigigi Stripe account when it is connected. PayPal is saved as the method for this account.
-        </p>
         <p className="mt-4 text-sm">
           <Link href={next} className="text-forest">Continue without changing</Link>
         </p>
@@ -66,4 +83,4 @@ export default function Page({
   );
 }
 
-export const metadata = { title: "Pay Twigigi", robots: { index: false, follow: false } };
+export const metadata = { title: "Billing & Payment", robots: { index: false, follow: false } };
