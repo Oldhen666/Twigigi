@@ -40,6 +40,7 @@ import {
   releaseStock,
   reserveStock,
   deactivateNow,
+  resumePublished,
   publishDraft,
   setBillingMethod,
   setBillingStarted,
@@ -79,7 +80,7 @@ import {
 } from "@/lib/format";
 import type { Cta, FormState, Fulfillment, OrderStatus, ProductInput } from "@/lib/types";
 import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
-import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
+import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { getStripe } from "@/lib/stripe";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
@@ -697,6 +698,12 @@ export async function payAndPublish(formData: FormData) {
   const user = await requireSeller();
   const product = getProductById(text(formData, "id"));
   if (!product || product.userId !== user.id || product.status === "published") redirect("/dashboard");
+  if (product.status === "deactivated" && listingStillPaid(product)) {
+    resumePublished(product.id, user.id);
+    updateTag(productTag(user.username, product.slug));
+    updateTag(sellerTag(user.username));
+    redirect("/dashboard");
+  }
   if (!user.billingMethod) redirect(`/billing?next=${encodeURIComponent("/dashboard")}`);
   if (product.status === "draft" && (product.title.trim().length < 2 || product.images.length < 1)) {
     redirect(`/dashboard/products/${product.id}`);
@@ -759,8 +766,10 @@ export async function reactivateTwig(formData: FormData) {
   const user = await requireSeller();
   const product = getProductById(text(formData, "id"));
   if (!product || product.userId !== user.id) redirect("/dashboard");
-  if (product.status === "deactivated") reactivateProduct(product.id, user.id);
-  else if (product.status === "published") clearDeactivatesAt(product.id, user.id);
+  if (product.status === "deactivated") {
+    if (!listingStillPaid(product)) redirect("/dashboard");
+    resumePublished(product.id, user.id);
+  } else if (product.status === "published") clearDeactivatesAt(product.id, user.id);
   updateTag(productTag(user.username, product.slug));
   updateTag(sellerTag(user.username));
   redirect("/dashboard");

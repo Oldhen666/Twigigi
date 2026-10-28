@@ -24,6 +24,16 @@ export function billingMethodLabel(method: string) {
   return "";
 }
 
+export function listingStillPaid(
+  product: { cta: string; deactivatedAt: string | null; billingStartedAt: string | null; createdAt: string },
+  now = new Date(),
+) {
+  if (listingFeeCents(product.cta) === 0) return true;
+  const anchor = product.deactivatedAt || product.billingStartedAt || product.createdAt;
+  const until = Date.parse(nextBillingDate(new Date(anchor)));
+  return Number.isFinite(until) && until > now.getTime();
+}
+
 export function activeWindow(startedAt: string | null, now = new Date()) {
   const end = nextBillingDate(now);
   const monthStart = periodStart(now);

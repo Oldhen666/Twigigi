@@ -2,8 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { requireSeller } from "@/lib/auth";
-import { payAndPublish } from "@/lib/actions";
-import { activeWindow, billingCurrency, listingFeeCents, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
+import { payAndPublish, reactivateTwig } from "@/lib/actions";
+import { activeWindow, billingCurrency, listingFeeCents, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
@@ -115,10 +115,16 @@ async function DashboardBody() {
                     {product.status === "deactivated" ? (
                       <>
                         <p>Inactive{deactivatedLabel ? ` since ${deactivatedLabel}` : ""}</p>
-                        <p>Next charge none</p>
-                        {listingFeeCents(product.cta) > 0 ? <p>Reactivate for {listingLabel} / month</p> : <p>No listing fee</p>}
+                        {listingStillPaid(product) ? (
+                          <p>Paid through {billingEndsLabel}. Next charge {billingEndsLabel}.</p>
+                        ) : (
+                          <>
+                            <p>Next charge none</p>
+                            {listingFeeCents(product.cta) > 0 ? <p>Reactivate for {listingLabel} / month</p> : <p>No listing fee</p>}
+                          </>
+                        )}
                         {product.cta === "quote" ? <p>Each quote {quoteEach}</p> : null}
-                        <p>Pay again before {deleteLabel} or this Twig is permanently deleted.</p>
+                        <p>{listingStillPaid(product) ? "Turn it back on" : "Pay again"} before {deleteLabel} or this Twig is permanently deleted.</p>
                       </>
                     ) : null}
                     {product.status === "draft" ? (
@@ -137,10 +143,17 @@ async function DashboardBody() {
                       <DeactivateTwig productId={product.id} mode={ending ? "ending" : "live"} endsLabel={endsLabel} deleteLabel={deleteLabel} />
                     ) : null}
                     {product.status === "deactivated" ? (
-                      <form action={payAndPublish}>
-                        <input type="hidden" name="id" value={product.id} />
-                        <button className="font-medium text-forest">Pay and reactivate</button>
-                      </form>
+                      listingStillPaid(product) ? (
+                        <form action={reactivateTwig}>
+                          <input type="hidden" name="id" value={product.id} />
+                          <button className="font-medium text-forest">Reactivate</button>
+                        </form>
+                      ) : (
+                        <form action={payAndPublish}>
+                          <input type="hidden" name="id" value={product.id} />
+                          <button className="font-medium text-forest">Pay and reactivate</button>
+                        </form>
+                      )
                     ) : null}
                     {product.status === "draft" ? (
                       <>

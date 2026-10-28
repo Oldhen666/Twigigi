@@ -1101,6 +1101,15 @@ export function clearDeactivatedAt(id: string, userId: string) {
   db.prepare("UPDATE products SET deactivated_at = NULL WHERE id = ? AND user_id = ?").run(id, userId);
 }
 
+export function resumePublished(id: string, userId: string) {
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE products
+     SET status = 'published', deactivates_at = NULL, deactivated_at = NULL, updated_at = ?
+     WHERE id = ? AND user_id = ? AND status = 'deactivated'`,
+  ).run(now, id, userId);
+}
+
 export function reactivateProduct(id: string, userId: string) {
   const now = new Date().toISOString();
   db.prepare(

@@ -42,7 +42,7 @@ async function Editor({
       ) : (
         <p className="mt-6 text-sm text-muted">
           {product.status === "published"
-            ? "This Twig is live, so it cannot be deleted. Deactivate it from the dashboard. The next charge is canceled and the page becomes inactive. Pay again to publish it. If you do not reactivate, it is permanently deleted 30 days after it deactivates."
+            ? "This Twig is live, so it cannot be deleted. Deactivate it from the dashboard. The page becomes inactive. Turn it back on before the next charge date and you will not be charged again. If you do not reactivate, it is permanently deleted 30 days after it deactivates."
             : product.deactivatedAt
               ? "This Twig is deactivated. Reactivate it from the dashboard before the permanent deletion date."
               : "This Twig is deactivated. Reactivate it from the dashboard, or it is permanently deleted 30 days after it was deactivated."}
