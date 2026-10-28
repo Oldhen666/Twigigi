@@ -47,6 +47,7 @@ async function CompleteScreen({
   updateTag(productTag(user.username, product.slug));
   updateTag(sellerTag(user.username));
   redirect("/dashboard");
+  return null;
 }
 
 export default function Page({
