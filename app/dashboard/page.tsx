@@ -137,7 +137,6 @@ async function DashboardBody() {
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
                     <Link href={`/dashboard/products/${product.id}`} className="font-medium text-forest">Edit</Link>
-                    {live ? <Link href={`/${user.username}/${product.slug}`} className="font-medium text-forest">Open</Link> : null}
                     {live ? <CopyLink url={url} /> : null}
                     {product.status === "published" ? (
                       <DeactivateTwig productId={product.id} mode={ending ? "ending" : "live"} endsLabel={endsLabel} deleteLabel={deleteLabel} />
