@@ -140,17 +140,10 @@ export function HomeDemo({ slides }: { slides: HomeSlide[] }) {
   const mail = `mailto:?subject=${encodeURIComponent(slide.title)}&body=${encodeURIComponent(text)}`;
 
   return (
-    <div className="relative z-0 mx-auto w-full max-w-[440px] px-3 pt-8 pb-2 sm:px-6">
-      <div className="pointer-events-none absolute -top-2 -right-6 size-64 rounded-full bg-[#d5eadc] blur-2xl" />
-      <div className="pointer-events-none absolute top-24 -left-10 size-40 rounded-full bg-[#e7f4ea]" />
-      <div className="pointer-events-none absolute right-0 bottom-16 size-28 rounded-full bg-[#cfe3d4]/80" />
-      <p className="absolute top-0 right-2 z-20 max-w-[9rem] text-right font-serif text-lg leading-tight text-forest italic">
-        Share the link anywhere
-        <svg className="mt-1 ml-auto block text-forest" width="54" height="28" viewBox="0 0 54 28" fill="none" aria-hidden="true">
-          <path d="M48 4c-8 2-22 8-28 16" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-          <path d="M22 16c2.5-1 6-1.2 8 .4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-        </svg>
-      </p>
+    <div className="relative z-0 mx-auto w-full max-w-[460px] px-3 pt-6 pb-8 sm:px-4">
+      <div className="pointer-events-none absolute top-4 -right-10 h-[740px] w-80 rounded-[999px] bg-[#d7ebdd]" />
+      <div className="pointer-events-none absolute top-16 -left-8 size-48 rounded-full bg-[#e7f4ea] blur-2xl" />
+      <div className="pointer-events-none absolute right-2 bottom-0 h-52 w-44 rounded-full bg-[#cfe6d6]/90 blur-xl" />
 
       <div className="relative mt-10 pr-5 pt-4">
         {behind ? (
@@ -180,8 +173,13 @@ export function HomeDemo({ slides }: { slides: HomeSlide[] }) {
         </button>
       </div>
 
-      <div className="relative z-10 mt-4 ml-auto flex w-full max-w-[20rem] flex-col items-stretch gap-2">
-        <div className="flex items-center gap-2 rounded-full border border-line bg-card px-3 py-2 shadow-[0_10px_30px_rgba(70,48,16,0.08)]">
+      <div className="relative z-10 mt-5 ml-auto flex w-[18.5rem] max-w-full -translate-y-2 flex-col items-end">
+        <p className="mb-3 origin-right -rotate-6 text-right font-serif text-xl leading-tight text-forest italic">
+          Share the link
+          <br />
+          anywhere
+        </p>
+        <div className="flex w-full -rotate-2 items-center gap-2 rounded-full border border-white/80 bg-card px-3.5 py-2.5 shadow-[0_16px_40px_rgba(70,48,16,0.12)]">
           <span className="text-forest">
             <Glyph kind="link" />
           </span>
@@ -190,29 +188,29 @@ export function HomeDemo({ slides }: { slides: HomeSlide[] }) {
             <Glyph kind="copy" />
           </button>
         </div>
-        <div className="relative ml-auto flex items-center gap-1.5 rounded-full border border-line bg-card px-2 py-1.5 shadow-[0_10px_30px_rgba(70,48,16,0.08)]">
-          <button type="button" aria-label="Copy link for Instagram" onClick={copyLink} className="grid size-8 place-items-center rounded-full bg-[radial-gradient(circle_at_30%_30%,#f9ce34,#ee2a7b_55%,#6228d7)] text-white">
+        <div className="relative z-10 mt-[-0.65rem] mr-1 flex rotate-[2.5deg] items-center gap-2 rounded-[22px] border border-white/80 bg-card px-3 py-2 shadow-[0_18px_40px_rgba(70,48,16,0.14)]">
+          <button type="button" aria-label="Copy link for Instagram" onClick={copyLink} className="grid size-9 place-items-center rounded-full bg-[radial-gradient(circle_at_30%_30%,#f9ce34,#ee2a7b_55%,#6228d7)] text-white">
             <Glyph kind="instagram" />
           </button>
-          <a href={facebook} target="_blank" rel="noreferrer" aria-label="Share on Facebook" className="grid size-8 place-items-center rounded-full bg-[#1877f2] text-white">
+          <a href={facebook} target="_blank" rel="noreferrer" aria-label="Share on Facebook" className="grid size-9 place-items-center rounded-full bg-[#1877f2] text-white">
             <Glyph kind="facebook" />
           </a>
-          <a href={whatsapp} target="_blank" rel="noreferrer" aria-label="Share on WhatsApp" className="grid size-8 place-items-center rounded-full bg-[#25d366] text-white">
+          <a href={whatsapp} target="_blank" rel="noreferrer" aria-label="Share on WhatsApp" className="grid size-9 place-items-center rounded-full bg-[#25d366] text-white">
             <Glyph kind="whatsapp" />
           </a>
-          <a href={mail} aria-label="Share by email" className="grid size-8 place-items-center rounded-full bg-[#e8e4dc] text-ink">
+          <a href={mail} aria-label="Share by email" className="grid size-9 place-items-center rounded-full bg-[#e8e4dc] text-ink">
             <Glyph kind="mail" />
           </a>
-          <button type="button" aria-label="Show QR code" aria-expanded={qrOpen} onClick={() => setQrOpen((open) => !open)} className="grid size-8 place-items-center rounded-full bg-paper-deep text-forest">
+          <button type="button" aria-label="Show QR code" aria-expanded={qrOpen} onClick={() => setQrOpen((open) => !open)} className="grid size-9 place-items-center rounded-full bg-paper-deep text-forest">
             <Glyph kind="qr" />
           </button>
           {qrOpen ? (
-            <div className="absolute right-0 bottom-12 rounded-2xl border border-line bg-card p-3 shadow-lg">
+            <div className="absolute right-0 bottom-14 rounded-2xl border border-line bg-card p-3 shadow-lg">
               <div className="qr" dangerouslySetInnerHTML={{ __html: slide.qr }} />
             </div>
           ) : null}
         </div>
-        {copied ? <p className="text-right text-xs text-forest">Copied</p> : null}
+        {copied ? <p className="mt-2 text-right text-xs text-forest">Copied</p> : null}
       </div>
     </div>
   );
