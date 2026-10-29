@@ -24,26 +24,22 @@ const lines = groups.flatMap((group) => group.map((line) => ({ lead: line[0], ta
 
 export function HomeTicker() {
   const [index, setIndex] = useState(0);
-  const [visible, setVisible] = useState(true);
+  const [fromRight, setFromRight] = useState(true);
 
   useEffect(() => {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     if (motion.matches) return;
-    const fade = window.setTimeout(() => setVisible(false), 1100);
     const next = window.setTimeout(() => {
+      setFromRight((current) => !current);
       setIndex((current) => (current + 1) % lines.length);
-      setVisible(true);
-    }, 1500);
-    return () => {
-      window.clearTimeout(fade);
-      window.clearTimeout(next);
-    };
+    }, 3000);
+    return () => window.clearTimeout(next);
   }, [index]);
 
   const line = lines[index];
   return (
-    <div className="mt-5 h-12 max-w-md overflow-hidden">
-      <p className={`font-serif text-lg leading-snug text-ink transition duration-300 sm:text-xl ${visible ? "translate-y-0 opacity-100" : "-translate-y-3 opacity-0"}`}>
+    <div className="mt-5 h-8 max-w-md overflow-hidden">
+      <p key={index} className={`font-serif text-lg leading-none text-ink sm:text-xl ${fromRight ? "home-ticker-right" : "home-ticker-left"}`}>
         {line.lead}
         <span className="mx-2 text-muted">→</span>
         <span className="text-forest italic">{line.tail}</span>

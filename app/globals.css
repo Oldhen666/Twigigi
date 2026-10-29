@@ -193,9 +193,37 @@ button:not(.bg-forest):not(.border):not(:disabled):active {
   }
 }
 
+.home-ticker-right {
+  animation: home-ticker-right 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.home-ticker-left {
+  animation: home-ticker-left 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes home-ticker-right {
+  from {
+    transform: translateX(110%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes home-ticker-left {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .home-flip-next,
-  .home-flip-prev {
+  .home-flip-prev,
+  .home-ticker-right,
+  .home-ticker-left {
     animation: none;
   }
 }

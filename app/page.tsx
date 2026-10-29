@@ -208,10 +208,10 @@ async function HomeScreen() {
             <p className="mt-5 max-w-md text-base leading-7 text-muted sm:text-lg">
               Create a simple page, share the link, and let buyers order or request a quote.
             </p>
-            <p className="mt-8 flex max-w-md flex-wrap items-center gap-x-2.5 gap-y-2 font-serif text-lg leading-snug text-ink sm:text-xl">
-              <Link href="/start" className={`${createClass} h-12 px-6 text-base`}>Create a Twig</Link>
-              <span>page for your own product/service quote</span>
-            </p>
+            <Link href="/start" className={`${createClass} mt-8 h-auto min-h-12 w-fit max-w-xl gap-x-2.5 px-5 py-2 text-base sm:h-12 sm:whitespace-nowrap`}>
+              <span>Create a Twig</span>
+              <span className="font-serif font-normal">page for your own product/service quote</span>
+            </Link>
             <HomeTicker />
           </div>
           <HomeDemo slides={[cedar, bench]} />

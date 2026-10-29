@@ -139,7 +139,7 @@ export function HomeDemo({ slides }: { slides: HomeSlide[] }) {
       setQrOpen(false);
       setCopied(false);
       setFront((current) => (current + 1) % slides.length);
-    }, 5000);
+    }, 15000);
     return () => window.clearTimeout(timer);
   }, [front, slides.length]);
 
