@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { Suspense } from "react";
 import { BuyerMenu } from "@/components/buyer-menu";
 import { HomeDemo, type HomeSlide } from "@/components/home-demo";
+import { HomeTicker } from "@/components/home-ticker";
 import { Logo } from "@/components/logo";
 import { getCurrentUser } from "@/lib/auth";
 import { getPublicSeller } from "@/lib/catalog";
@@ -207,12 +208,11 @@ async function HomeScreen() {
             <p className="mt-5 max-w-md text-base leading-7 text-muted sm:text-lg">
               Create a simple page, share the link, and let buyers order or request a quote.
             </p>
-            <Link href="/start" className={`${createClass} mt-8 h-12 px-6 text-base`}>
-              Create a Twig
-            </Link>
-            <p className="mt-8 max-w-md font-serif text-lg leading-snug text-ink sm:text-xl">
-              Create a Twig page for your own product/service quote
+            <p className="mt-8 flex max-w-md flex-wrap items-center gap-x-2.5 gap-y-2 font-serif text-lg leading-snug text-ink sm:text-xl">
+              <Link href="/start" className={`${createClass} h-12 px-6 text-base`}>Create a Twig</Link>
+              <span>page for your own product/service quote</span>
             </p>
+            <HomeTicker />
           </div>
           <HomeDemo slides={[cedar, bench]} />
         </section>

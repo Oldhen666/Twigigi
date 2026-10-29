@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Stars } from "@/components/stars";
 
 export type HomeSlide = {
@@ -129,6 +129,20 @@ export function HomeDemo({ slides }: { slides: HomeSlide[] }) {
   const [qrOpen, setQrOpen] = useState(false);
   const slide = slides[front] ?? slides[0];
   const behind = slides[(front + 1) % slides.length];
+
+  useEffect(() => {
+    if (slides.length < 2) return;
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (motion.matches) return;
+    const timer = window.setTimeout(() => {
+      setDirection(1);
+      setQrOpen(false);
+      setCopied(false);
+      setFront((current) => (current + 1) % slides.length);
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [front, slides.length]);
+
   if (!slide) return null;
 
   function step(next: 1 | -1) {
