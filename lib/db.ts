@@ -231,6 +231,9 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "billing_started_at", "billing_started_at TEXT");
   add("users", "role", "role TEXT NOT NULL DEFAULT 'seller'");
   add("users", "billing_method", "billing_method TEXT NOT NULL DEFAULT ''");
+  add("users", "payout_interac", "payout_interac TEXT NOT NULL DEFAULT ''");
+  add("users", "payout_venmo", "payout_venmo TEXT NOT NULL DEFAULT ''");
+  add("users", "payout_zelle", "payout_zelle TEXT NOT NULL DEFAULT ''");
   database.exec(`CREATE TABLE IF NOT EXISTS twig_bills (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -694,6 +697,9 @@ function mapUser(row: Row): User {
     role,
     createdAt: str(row.created_at),
     billingMethod: row.billing_method === "card" || row.billing_method === "paypal" || row.billing_method === "stripe" ? row.billing_method : "",
+    payoutInterac: str(row.payout_interac),
+    payoutVenmo: str(row.payout_venmo),
+    payoutZelle: str(row.payout_zelle),
   };
 }
 
@@ -1149,6 +1155,37 @@ export function setBillingStarted(id: string, userId: string) {
 
 export function setBillingMethod(userId: string, method: string) {
   db.prepare("UPDATE users SET billing_method = ? WHERE id = ?").run(method, userId);
+}
+
+export function setPayoutDetails(userId: string, input: { interac: string; venmo: string; zelle: string }) {
+  db.prepare("UPDATE users SET payout_interac = ?, payout_venmo = ?, payout_zelle = ? WHERE id = ?").run(
+    input.interac,
+    input.venmo,
+    input.zelle,
+    userId,
+  );
+}
+
+export function listSellerBills(userId: string) {
+  return many(
+    `SELECT b.amount_cents, b.currency, b.method, b.kind, b.status, b.created_at, b.period_start, b.period_end,
+            COALESCE(p.title, 'Removed Twig') AS title
+     FROM twig_bills b
+     LEFT JOIN products p ON p.id = b.product_id
+     WHERE b.user_id = ?
+     ORDER BY b.created_at DESC`,
+    userId,
+  ).map((row) => ({
+    title: str(row.title),
+    amountCents: num(row.amount_cents),
+    currency: str(row.currency) || "CAD",
+    method: str(row.method),
+    kind: str(row.kind),
+    status: str(row.status),
+    createdAt: str(row.created_at),
+    periodStart: str(row.period_start),
+    periodEnd: str(row.period_end),
+  }));
 }
 
 export function recordTwigBill(input: {

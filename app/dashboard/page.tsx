@@ -26,6 +26,9 @@ async function DashboardBody() {
       <div className="mt-6">
         <h1 className="font-serif text-4xl">Selling</h1>
         <p className="mt-2 text-sm text-muted">Hi, {user.displayName}</p>
+        <p className="mt-3">
+          <Link href="/dashboard/payments" className="font-medium text-forest">Payment settings</Link>
+        </p>
         {user.billingMethod ? null : (
           <p className="mt-3 text-sm">
             <Link href="/billing?next=/dashboard" className="font-medium text-forest">Add a payment method</Link>
@@ -57,7 +60,7 @@ async function DashboardBody() {
         <section className="mt-8 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-serif text-2xl">Twigs</h2>
-            <Link href="/start" className="text-sm text-forest">New Twig</Link>
+            <Link href="/start" className="inline-flex h-11 items-center rounded-full bg-forest px-5 text-sm font-medium text-card shadow-[0_8px_18px_rgba(27,67,50,0.18)]">+ New Twig</Link>
           </div>
           {products.map((product) => {
             const live = isTwigLive(product);

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { AccountFrame } from "@/components/account-frame";
+import { BuyerRecordSwitch } from "@/components/buyer-record-switch";
 import { BuyerSection } from "@/components/buyer-section";
 import { InteractionLine } from "@/components/interaction-line";
 import { ReviewSeller } from "@/components/review-seller";
@@ -41,6 +42,8 @@ async function OrdersScreen() {
 
   return (
     <AccountFrame title="Your orders">
+      <BuyerRecordSwitch
+        orders={
       <BuyerSection title="Orders" center={orders.length === 0}>
       {orders.length === 0 ? (
         <p className="text-sm text-muted">No order record</p>
@@ -69,6 +72,8 @@ async function OrdersScreen() {
         </ul>
       )}
       </BuyerSection>
+        }
+        quotes={
       <BuyerSection title="Quotes" center={quotes.length === 0}>
       {quotes.length === 0 ? (
         <p className="text-sm text-muted">No quote record</p>
@@ -98,6 +103,8 @@ async function OrdersScreen() {
           </ul>
       )}
       </BuyerSection>
+        }
+      />
     </AccountFrame>
   );
 }

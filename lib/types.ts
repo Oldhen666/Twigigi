@@ -30,6 +30,9 @@ export type User = {
   role: UserRole;
   createdAt: string;
   billingMethod: "" | "card" | "paypal" | "stripe";
+  payoutInterac: string;
+  payoutVenmo: string;
+  payoutZelle: string;
 };
 
 export type ProductOption = {

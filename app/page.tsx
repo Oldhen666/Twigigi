@@ -3,7 +3,6 @@ import QRCode from "qrcode";
 import { Suspense } from "react";
 import { BuyerMenu } from "@/components/buyer-menu";
 import { HomeDemo, type HomeSlide } from "@/components/home-demo";
-import { HomeTicker } from "@/components/home-ticker";
 import { Logo } from "@/components/logo";
 import { getCurrentUser } from "@/lib/auth";
 import { getPublicSeller } from "@/lib/catalog";
@@ -211,7 +210,9 @@ async function HomeScreen() {
             <Link href="/start" className={`${createClass} mt-8 h-12 px-6 text-base`}>
               Create a Twig
             </Link>
-            <HomeTicker />
+            <p className="mt-8 max-w-md font-serif text-lg leading-snug text-ink sm:text-xl">
+              Create a Twig page for your own product/service quote
+            </p>
           </div>
           <HomeDemo slides={[cedar, bench]} />
         </section>

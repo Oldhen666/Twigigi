@@ -43,6 +43,7 @@ import {
   resumePublished,
   publishDraft,
   setBillingMethod,
+  setPayoutDetails,
   setBillingStarted,
   recordTwigBill,
   reactivateProduct,
@@ -684,6 +685,17 @@ export async function removeProduct(formData: FormData) {
   updateTag(productTag(user.username, product.slug));
   updateTag(sellerTag(user.username));
   redirect("/dashboard");
+}
+
+export async function savePayoutDetails(formData: FormData) {
+  const user = await requireSeller();
+  const clip = (key: string, max: number) => text(formData, key).trim().slice(0, max);
+  setPayoutDetails(user.id, {
+    interac: clip("interac", 120),
+    venmo: clip("venmo", 80),
+    zelle: clip("zelle", 120),
+  });
+  redirect("/dashboard/payments");
 }
 
 export async function saveBillingMethod(formData: FormData) {
