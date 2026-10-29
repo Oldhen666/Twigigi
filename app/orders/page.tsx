@@ -41,7 +41,7 @@ async function OrdersScreen() {
   };
 
   return (
-    <AccountFrame title="Your orders">
+    <AccountFrame title="Your orders/quotes">
       <BuyerRecordSwitch
         orders={
       <BuyerSection title="Orders" center={orders.length === 0}>
@@ -111,10 +111,10 @@ async function OrdersScreen() {
 
 export default function Page() {
   return (
-    <Suspense fallback={<p className="p-8 text-muted">Loading your orders…</p>}>
+    <Suspense fallback={<p className="p-8 text-muted">Loading…</p>}>
       <OrdersScreen />
     </Suspense>
   );
 }
 
-export const metadata = { title: "Your orders", robots: { index: false, follow: false } };
+export const metadata = { title: "Your orders/quotes", robots: { index: false, follow: false } };

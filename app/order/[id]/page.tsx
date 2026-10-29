@@ -65,7 +65,7 @@ async function OrderView({
           <p className="mt-6 text-sm text-muted">{interaction.publicRef} · {interaction.buyerConfirmedAt && interaction.sellerConfirmedAt ? "Verified transaction" : interaction.buyerConfirmedAt ? "Buyer confirmed" : "Open"}</p>
         ) : null}
         {account && account.id === order.buyerId ? (
-          <p className="mt-3 text-sm"><Link href="/orders" className="text-forest">Your orders</Link></p>
+          <p className="mt-3 text-sm"><Link href="/orders" className="text-forest">Your orders/quotes</Link></p>
         ) : !order.buyerId ? (
           <p className="mt-6 text-sm text-muted">
             <Link href="/signup" className="text-forest">Create an account</Link> with this email to keep this order.
