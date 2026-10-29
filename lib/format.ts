@@ -179,6 +179,12 @@ export function formatBillingDate(iso: string, withYear = false) {
   }).format(date);
 }
 
+export function billingYear(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", { timeZone: BILLING_ZONE, year: "numeric" }).format(date);
+}
+
 export function formatDate(iso: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;

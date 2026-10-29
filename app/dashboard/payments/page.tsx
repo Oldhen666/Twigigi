@@ -1,22 +1,25 @@
-import { saveBillingMethod, savePayoutDetails } from "@/lib/actions";
-import { billingMethodLabel } from "@/lib/billing";
+import { connection } from "next/server";
+import { savePayoutDetails } from "@/lib/actions";
+import { BillingMethodForm } from "@/components/billing-method-form";
 import { PaymentSettingsTabs } from "@/components/payment-settings-tabs";
-import { buttonClass, inputClass, labelClass } from "@/components/ui";
+import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { requireSeller } from "@/lib/auth";
 import { listSellerBills } from "@/lib/db";
-import { formatDate, formatMoney } from "@/lib/format";
+import { billingYear, formatDate, formatMoney } from "@/lib/format";
 
 export default async function Page({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await connection();
   const params = await searchParams;
   const user = await requireSeller();
   const bills = listSellerBills(user.id);
-  const cardOnFile = user.billingMethod === "card" || user.billingMethod === "stripe";
-  const paypalOnFile = user.billingMethod === "paypal";
-  const method = billingMethodLabel(user.billingMethod);
+  const years = [...new Set(bills.map((bill) => billingYear(bill.createdAt)).filter(Boolean))];
+  const currentYear = billingYear(new Date().toISOString());
+  if (currentYear && !years.includes(currentYear)) years.unshift(currentYear);
+  years.sort((left, right) => Number(right) - Number(left));
   const initial = params.tab === "receipts" ? "receipts" : "receiving";
 
   return (
@@ -47,37 +50,18 @@ export default async function Page({
         }
         receipts={
           <>
-            <section className="rounded-3xl border border-line bg-card p-5">
-              <h2 className="font-serif text-2xl">Card on file</h2>
-              {cardOnFile ? (
-                <>
-                  <p className="mt-3 font-medium">{method}</p>
-                  <p className="mt-1 font-serif text-2xl tracking-[0.18em]">•••• •••• •••• ••••</p>
-                  <p className="mt-2 text-sm text-muted">This spot is reserved for your card. Twigigi does not keep the full number. Stripe charges it when a listing fee is due.</p>
-                </>
-              ) : paypalOnFile ? (
-                <p className="mt-3">PayPal is the method on file. No card number is saved.</p>
-              ) : (
-                <p className="mt-3 text-muted">No payment method saved yet.</p>
-              )}
-              <form action={saveBillingMethod} className="mt-4 grid gap-3">
-                <input type="hidden" name="next" value="/dashboard/payments?tab=receipts" />
-                <label className="flex cursor-pointer gap-3">
-                  <input type="radio" name="method" value="card" defaultChecked={!paypalOnFile} className="mt-1 accent-forest" />
-                  <span>
-                    <span className="block">Credit or debit card</span>
-                    <span className="mt-0.5 block text-sm text-muted">Visa · Mastercard · Amex, charged through Stripe</span>
-                  </span>
-                </label>
-                <label className="flex cursor-pointer items-center gap-3">
-                  <input type="radio" name="method" value="paypal" defaultChecked={paypalOnFile} className="accent-forest" />
-                  <span>PayPal</span>
-                </label>
-                <button className={`${buttonClass} w-fit`}>{user.billingMethod ? "Save payment method" : "Add a payment method"}</button>
-              </form>
-            </section>
+            <BillingMethodForm saved={user.billingMethod} />
             <section className="mt-6 rounded-3xl border border-line bg-card p-5">
-              <h2 className="font-serif text-2xl">Receipts</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-serif text-2xl">Receipts</h2>
+                <div className="flex flex-wrap gap-2">
+                  {years.map((year) => (
+                    <a key={year} href={`/dashboard/payments/receipts?year=${year}`} className={`${ghostClass} h-10 px-4 text-sm`}>
+                      Download {year} PDF
+                    </a>
+                  ))}
+                </div>
+              </div>
               {bills.length === 0 ? (
                 <p className="mt-3 text-sm text-muted">No receipt yet.</p>
               ) : (
