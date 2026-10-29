@@ -24,7 +24,7 @@ async function DashboardBody() {
   return (
     <main className="page-frame pb-16">
       <div className="mt-6">
-        <h1 className="font-serif text-4xl">Your Twigs</h1>
+        <h1 className="font-serif text-4xl">Selling</h1>
         <p className="mt-2 text-sm text-muted">Hi, {user.displayName}</p>
         {user.billingMethod ? null : (
           <p className="mt-3 text-sm">
@@ -175,11 +175,11 @@ async function DashboardBody() {
   );
 }
 
-export const metadata = { title: "Your Twigs", robots: { index: false, follow: false } };
+export const metadata = { title: "Selling", robots: { index: false, follow: false } };
 
 export default function Page() {
   return (
-    <Suspense fallback={<p className="px-5 text-muted">Loading your Twigs…</p>}>
+    <Suspense fallback={<p className="px-5 text-muted">Loading…</p>}>
       <DashboardBody />
     </Suspense>
   );

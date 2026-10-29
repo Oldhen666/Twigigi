@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { Suspense } from "react";
 import { BuyerMenu } from "@/components/buyer-menu";
 import { HomeDemo, type HomeSlide } from "@/components/home-demo";
+import { HomeTicker } from "@/components/home-ticker";
 import { Logo } from "@/components/logo";
 import { getCurrentUser } from "@/lib/auth";
 import { getPublicSeller } from "@/lib/catalog";
@@ -186,7 +187,7 @@ async function HomeScreen() {
           <a href="#how" className="text-ink hover:text-forest">How it works</a>
           {user ? (
             <>
-              <Link href="/dashboard" className="text-ink hover:text-forest">Your Twigs</Link>
+              <Link href="/dashboard" className="text-ink hover:text-forest">Selling</Link>
               <BuyerMenu active={false} />
             </>
           ) : (
@@ -210,6 +211,7 @@ async function HomeScreen() {
             <Link href="/start" className={`${createClass} mt-8 h-12 px-6 text-base`}>
               Create a Twig
             </Link>
+            <HomeTicker />
           </div>
           <HomeDemo slides={[cedar, bench]} />
         </section>

@@ -8,7 +8,7 @@ export async function AccountNav({ current }: { current: "seller" | "buyer" }) {
   return (
     <nav className="flex flex-wrap items-center justify-end gap-x-6 gap-y-2 text-sm">
       <Link href="/dashboard" className={current === "seller" ? "font-medium text-forest" : "text-ink"}>
-        Your Twigs
+        Selling
       </Link>
       <BuyerMenu active={current === "buyer"} />
       {user.role === "admin" ? <Link href="/admin/users" className="text-ink">Admin</Link> : null}
