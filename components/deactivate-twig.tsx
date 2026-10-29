@@ -17,12 +17,12 @@ export function DeactivateTwig({
 }) {
   const [open, setOpen] = useState(false);
   const reactivating = mode !== "live";
-  const title = reactivating ? "Reactivate this Twig" : "Deactivate this Twig";
+  const title = reactivating ? "Reactivate this Twig" : "Deactivate this Twig?";
   const body = reactivating
     ? mode === "ending"
       ? `This cancels the deactivation set for ${endsLabel}. The Twig stays live, and it will not be deleted on ${deleteLabel}.`
       : `This publishes the Twig again and the link works. The permanent deletion set for ${deleteLabel} is canceled.`
-    : `This page becomes inactive now. Turn it back on before ${endsLabel} and you will not be charged again. The next charge is still ${endsLabel}. If you do not reactivate, it is permanently deleted on ${deleteLabel}.`;
+    : null;
 
   return (
     <>
@@ -33,13 +33,20 @@ export function DeactivateTwig({
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={() => setOpen(false)}>
           <div role="dialog" aria-modal="true" aria-labelledby="deactivate-title" className="w-full max-w-sm rounded-[28px] border border-line bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
             <h2 id="deactivate-title" className="font-serif text-3xl">{title}</h2>
-            <p className="mt-2 text-sm text-muted">{body}</p>
+            {body ? (
+              <p className="mt-2 text-sm text-muted">{body}</p>
+            ) : (
+              <div className="mt-2 space-y-2 text-sm text-muted">
+                <p>Your Twig will become inactive immediately, and the next scheduled charge on {endsLabel} will be canceled.</p>
+                <p>You can reactivate it anytime before {deleteLabel}. After that, it will be permanently deleted.</p>
+              </div>
+            )}
             <form action={reactivating ? reactivateTwig : scheduleDeactivation} className="mt-5">
               <input type="hidden" name="id" value={productId} />
-              <button className={`${buttonClass} w-full`}>{reactivating ? "Reactivate" : "Deactivate"}</button>
+              <button className={`${buttonClass} w-full`}>{reactivating ? "Reactivate" : "Deactivate Twig"}</button>
             </form>
             <button type="button" onClick={() => setOpen(false)} className={`${ghostClass} mt-2 w-full`}>
-              Not now
+              {reactivating ? "Not now" : "Keep Active"}
             </button>
           </div>
         </div>
