@@ -166,3 +166,36 @@ label.cursor-pointer.border:active {
 button:not(.bg-forest):not(.border):not(:disabled):active {
   filter: brightness(0.9);
 }
+
+.home-flip-next {
+  animation: home-flip-next 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.home-flip-prev {
+  animation: home-flip-prev 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes home-flip-next {
+  from {
+    transform: translate3d(36px, 18px, 0) rotate(2.5deg) scale(0.96);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes home-flip-prev {
+  from {
+    transform: translate3d(-36px, 18px, 0) rotate(-2.5deg) scale(0.96);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-flip-next,
+  .home-flip-prev {
+    animation: none;
+  }
+}

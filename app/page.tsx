@@ -1,12 +1,12 @@
-import Image from "next/image";
 import Link from "next/link";
+import QRCode from "qrcode";
 import { Suspense } from "react";
 import { BuyerMenu } from "@/components/buyer-menu";
+import { HomeDemo, type HomeSlide } from "@/components/home-demo";
 import { Logo } from "@/components/logo";
-import { Stars } from "@/components/stars";
 import { getCurrentUser } from "@/lib/auth";
 import { getPublicSeller } from "@/lib/catalog";
-import { ctaCopy, formatMoney } from "@/lib/format";
+import { appUrl, ctaCopy, formatMoney } from "@/lib/format";
 import type { PublicProduct } from "@/lib/types";
 
 const createClass =
@@ -118,58 +118,10 @@ function TrustIcon({ kind }: { kind: "people" | "page" | "reviews" | "lock" }) {
   );
 }
 
-function TwigCard({
-  href,
-  image,
-  title,
-  location,
-  price,
-  seller,
-  ratingAverage,
-  ratingCount,
-  cta,
-  large = false,
-}: {
-  href: string;
-  image: string;
-  title: string;
-  location: string;
-  price: string;
-  seller: string;
-  ratingAverage: number | null;
-  ratingCount: number;
-  cta: string;
-  large?: boolean;
-}) {
-  return (
-    <Link href={href} className="flex h-full flex-col overflow-hidden rounded-[28px] border border-line bg-card shadow-[0_18px_50px_rgba(70,48,16,0.1)] transition hover:-translate-y-0.5">
-      <div className="relative aspect-[4/3] bg-paper-deep">
-        <Image src={image} alt={title} fill sizes={large ? "(min-width: 1024px) 480px, 100vw" : "(min-width: 1024px) 360px, 100vw"} className="object-cover" />
-      </div>
-      <div className="flex flex-1 flex-col px-4 pt-4 pb-4">
-        <p className="text-[11px] tracking-[0.14em] text-muted uppercase">{location}</p>
-        <h3 className={`mt-1 font-serif leading-tight ${large ? "text-3xl" : "text-2xl"}`}>{title}</h3>
-        <p className={`mt-1 font-serif text-forest ${large ? "text-2xl" : "text-xl"}`}>{price}</p>
-        <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
-          <span>{seller}</span>
-          {ratingAverage != null && ratingCount > 0 ? (
-            <span className="inline-flex items-center gap-1 text-forest">
-              <Stars value={ratingAverage} />
-              <span className="font-medium text-ink">
-                {ratingAverage.toFixed(1)} ({ratingCount})
-              </span>
-            </span>
-          ) : null}
-        </p>
-        <span className="mt-4 flex h-12 items-center justify-center rounded-2xl bg-forest text-card">{cta}</span>
-      </div>
-    </Link>
-  );
-}
-
 function cardFromProduct(product: PublicProduct, seller: string, ratingAverage: number | null, ratingCount: number) {
+  const href = `/${product.username}/${product.slug}`;
   return {
-    href: `/${product.username}/${product.slug}`,
+    href,
     image: product.images[0] || "/seed/cedar-1.jpg",
     title: product.title,
     location: product.location,
@@ -178,7 +130,20 @@ function cardFromProduct(product: PublicProduct, seller: string, ratingAverage: 
     ratingAverage,
     ratingCount,
     cta: product.cta === "buy" && product.buttonLabel ? product.buttonLabel : ctaCopy(product.cta).label,
+    linkLabel: `${appUrl().replace(/^https?:\/\//, "")}${href}`,
+    shareHref: `${appUrl()}${href}`,
   };
+}
+
+async function withQr(slide: Omit<HomeSlide, "qr">): Promise<HomeSlide> {
+  const qr = (
+    await QRCode.toString(slide.shareHref, {
+      type: "svg",
+      margin: 1,
+      color: { dark: "#1b4332", light: "#fffdf8" },
+    })
+  ).replace(/<\?xml.*?\?>/, "");
+  return { ...slide, qr };
 }
 
 async function HomeScreen() {
@@ -189,16 +154,33 @@ async function HomeScreen() {
   const live = (slug: string) => seller?.products.find((product) => product.slug === slug) ?? null;
   const cedarProduct = live("cedar-planter");
   const benchProduct = live("garden-bench");
-  const cedar = cedarProduct
-    ? cardFromProduct(cedarProduct, seller?.displayName || "Ava Chen", ratingAverage, ratingCount)
-    : { ...fallbacks[0], ratingAverage, ratingCount };
-  const bench = benchProduct
-    ? cardFromProduct(benchProduct, seller?.displayName || "Ava Chen", ratingAverage, ratingCount)
-    : { ...fallbacks[1], ratingAverage, ratingCount };
+  const cedar = await withQr(
+    cedarProduct
+      ? cardFromProduct(cedarProduct, seller?.displayName || "Ava Chen", ratingAverage, ratingCount)
+      : {
+          ...fallbacks[0],
+          ratingAverage,
+          ratingCount,
+          linkLabel: `${appUrl().replace(/^https?:\/\//, "")}${fallbacks[0].href}`,
+          shareHref: `${appUrl()}${fallbacks[0].href}`,
+        },
+  );
+  const bench = await withQr(
+    benchProduct
+      ? cardFromProduct(benchProduct, seller?.displayName || "Ava Chen", ratingAverage, ratingCount)
+      : {
+          ...fallbacks[1],
+          ratingAverage,
+          ratingCount,
+          linkLabel: `${appUrl().replace(/^https?:\/\//, "")}${fallbacks[1].href}`,
+          shareHref: `${appUrl()}${fallbacks[1].href}`,
+        },
+  );
 
   return (
     <>
-      <header className="page-frame flex flex-wrap items-center justify-between gap-x-6 gap-y-3 py-5">
+      <header className="sticky top-0 z-40 border-b border-line/70 bg-[#f6f1e8]">
+        <div className="page-frame flex flex-wrap items-center justify-between gap-x-6 gap-y-3 py-4">
         <Logo />
         <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <a href="#how" className="text-ink hover:text-forest">How it works</a>
@@ -212,15 +194,15 @@ async function HomeScreen() {
           )}
           <Link href="/start" className={createClass}>Create a Twig</Link>
         </nav>
+        </div>
       </header>
 
       <main>
         <section className="page-frame grid items-center gap-10 py-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] lg:py-14">
           <div>
-            <h1 className="font-serif text-5xl leading-[0.95] tracking-tight sm:text-7xl">
-              One product.
-              <br />
-              One link.
+            <h1 className="font-serif text-5xl tracking-tight sm:text-7xl">
+              <span className="block leading-none">One product.</span>
+              <span className="mt-4 block leading-none sm:mt-6">One link.</span>
             </h1>
             <p className="mt-5 max-w-md text-base leading-7 text-muted sm:text-lg">
               Create a simple page, share the link, and let buyers order or request a quote.
@@ -228,17 +210,11 @@ async function HomeScreen() {
             <Link href="/start" className={`${createClass} mt-8 h-12 px-6 text-base`}>
               Create a Twig
             </Link>
-            <p className="mt-4 max-w-md text-sm leading-6 text-muted">
-              A live Buy now or quote page is $1.00 a month. Each quote request is $0.25. A contact page has no listing fee. Canada is billed in CAD, the United States in USD.
-            </p>
           </div>
-          <div>
-            <TwigCard {...cedar} large />
-            <p className="mt-3 text-center text-sm text-muted">Share the link · twigigi.com{cedar.href}</p>
-          </div>
+          <HomeDemo slides={[cedar, bench]} />
         </section>
 
-        <section id="how" className="scroll-mt-6 border-t border-line/80">
+        <section id="how" className="scroll-mt-24 border-t border-line/80">
           <div className="page-frame py-14">
             <h2 className="text-center font-serif text-4xl">How it works</h2>
             <ol className="mt-10 grid gap-8 md:grid-cols-3">
@@ -257,16 +233,6 @@ async function HomeScreen() {
               ))}
             </ol>
           </div>
-        </section>
-
-        <section className="page-frame grid items-start gap-8 py-4 pb-14 lg:grid-cols-2">
-          <div>
-            <h2 className="font-serif text-4xl">A quote page is its own Twig</h2>
-            <p className="mt-3 max-w-md text-sm leading-6 text-muted">
-              Buy now and quotes stay on separate pages. Each one has its own link, its own price, and its own charge.
-            </p>
-          </div>
-          <TwigCard {...bench} />
         </section>
 
         <section className="page-frame pb-16">
