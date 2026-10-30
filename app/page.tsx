@@ -74,7 +74,7 @@ function StepIcon({ kind }: { kind: "create" | "share" | "sell" }) {
   );
 }
 
-function TrustIcon({ kind }: { kind: "people" | "page" | "reviews" | "lock" }) {
+function TrustIcon({ kind }: { kind: "page" | "reviews" | "lock" }) {
   const common = {
     width: 20,
     height: 20,
@@ -86,16 +86,6 @@ function TrustIcon({ kind }: { kind: "people" | "page" | "reviews" | "lock" }) {
     strokeLinejoin: "round" as const,
     "aria-hidden": true as const,
   };
-  if (kind === "people") {
-    return (
-      <svg {...common}>
-        <circle cx="9" cy="8" r="2.4" />
-        <circle cx="16" cy="9" r="2" />
-        <path d="M4.5 18.5c.6-2.6 2.6-4 4.5-4s3.9 1.4 4.5 4" />
-        <path d="M14 14.7c1.3-.5 2.7-.4 3.8.6 1 1 1.5 2.2 1.7 3.2" />
-      </svg>
-    );
-  }
   if (kind === "page") {
     return (
       <svg {...common}>
@@ -208,9 +198,9 @@ async function HomeScreen() {
             <p className="mt-5 max-w-md text-base leading-7 text-muted sm:text-lg">
               Create a simple page, share the link, and let buyers order or request a quote.
             </p>
-            <Link href="/start" className={`${createClass} mt-8 h-auto min-h-12 w-fit max-w-xl gap-x-2.5 px-5 py-2 text-base sm:h-12 sm:whitespace-nowrap`}>
-              <span>Create a Twig</span>
-              <span className="font-serif font-normal">page for your own product/service quote</span>
+            <Link href="/start" className="mt-8 inline-flex h-auto min-h-14 w-fit max-w-xl items-center rounded-full bg-forest px-6 py-3 text-lg leading-7 text-card transition hover:bg-forest-2 sm:whitespace-nowrap">
+              <span className="font-bold">Create a Twig</span>
+              <span className="font-normal"> page for your own Product/Service Quote</span>
             </Link>
             <HomeTicker />
           </div>
@@ -239,9 +229,8 @@ async function HomeScreen() {
         </section>
 
         <section className="page-frame pb-16">
-          <div className="grid gap-6 rounded-[28px] bg-moss/70 px-5 py-8 sm:grid-cols-2 sm:px-8 lg:grid-cols-4">
+          <div className="grid gap-6 rounded-[28px] bg-moss/70 px-5 py-8 sm:grid-cols-3 sm:px-8">
             {[
-              { kind: "people" as const, title: "Real people", body: "Buy and sell with someone you can actually reach." },
               { kind: "page" as const, title: "One page", body: "The listing, orders, and quotes stay with that Twig." },
               { kind: "reviews" as const, title: "Reviews", body: "A finished order or quote can be reviewed. The score stays with the seller." },
               { kind: "lock" as const, title: "Your details", body: "You choose the contact and how buyers pay you." },

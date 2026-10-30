@@ -75,6 +75,9 @@ export type ProductInput = {
   slug: string;
   title: string;
   brand: string;
+  categoryKind: "" | "product" | "service";
+  categoryGroup: string;
+  category: string;
   description: string;
   priceCents: number | null;
   location: string;

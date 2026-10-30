@@ -1,3 +1,4 @@
+import { categoryLabel } from "@/lib/categories";
 import { ctaCopy, formatMoney, pickupDetail, videoEmbed } from "@/lib/format";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import type { Cta } from "@/lib/types";
@@ -15,6 +16,7 @@ const QUOTE_METHODS = [
 export type PagePreviewDraft = {
   title: string;
   brand: string;
+  category: string;
   description: string;
   location: string;
   images: string[];
@@ -48,6 +50,7 @@ export function readPagePreview(formData: FormData, images: string[], cta: Cta, 
   return {
     title,
     brand: cta === "contact" ? "" : text(formData, "brand"),
+    category: cta === "contact" ? "" : categoryLabel(text(formData, "categoryKind"), text(formData, "categoryGroup"), text(formData, "category")),
     description: text(formData, "description"),
     location: text(formData, "location"),
     images,
@@ -80,6 +83,7 @@ export function PagePreview({ draft }: { draft: PagePreviewDraft }) {
         <div className="px-5 pt-4">
           {draft.location ? <p className="text-xs uppercase tracking-[0.16em] text-muted">{draft.location}</p> : null}
           <h2 className="mt-2 font-serif text-4xl leading-tight">{draft.title}</h2>
+          {draft.category ? <p className="mt-2 text-sm text-muted">{draft.category}</p> : null}
           {draft.brand ? (
             <div className="mt-3">
               <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Brand</p>

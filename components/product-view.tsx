@@ -15,6 +15,7 @@ import { Stars } from "@/components/stars";
 import { toggleLikeAction, toggleSaved } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { isFavorite, isLiked, likeCount, listProductReviews, sellerReviewSummary } from "@/lib/db";
+import { categoryLabel } from "@/lib/categories";
 import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
 
 export async function ProductView({
@@ -46,6 +47,7 @@ export async function ProductView({
   const buyLabel = product.cta === "buy" ? product.buttonLabel || cta.label : cta.label;
   const showOptions = product.cta === "buy" && product.hasOptions && product.options.length > 0 && product.priceCents != null;
   const soldOut = product.cta === "buy" && product.quantityAvailable === 0;
+  const category = categoryLabel(product.categoryKind, product.categoryGroup, product.category);
   const embed = videoEmbed(product.videoUrl);
   const image = product.images[0] ? `${appUrl()}${product.images[0]}` : undefined;
   const jsonLd = {
@@ -104,6 +106,7 @@ export async function ProductView({
         <div className="px-5 pt-4">
           <p className="text-xs uppercase tracking-[0.16em] text-muted">{product.location}</p>
           <h1 className="mt-2 font-serif text-4xl leading-tight">{product.title}</h1>
+          {category ? <p className="mt-2 text-sm text-muted">{category}</p> : null}
           {product.brand ? (
             <div className="mt-3">
               <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Brand</p>

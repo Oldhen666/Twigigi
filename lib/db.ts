@@ -66,6 +66,9 @@ function openDatabase() {
       slug TEXT NOT NULL,
       title TEXT NOT NULL,
       brand TEXT NOT NULL DEFAULT '',
+      category_kind TEXT NOT NULL DEFAULT '',
+      category_group TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL DEFAULT '',
       description TEXT NOT NULL DEFAULT '',
       price_cents INTEGER,
       currency TEXT NOT NULL DEFAULT 'CAD',
@@ -218,6 +221,9 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "at_location_enabled", "at_location_enabled INTEGER NOT NULL DEFAULT 0");
   add("products", "quote_form_json", "quote_form_json TEXT NOT NULL DEFAULT ''");
   add("products", "brand", "brand TEXT NOT NULL DEFAULT ''");
+  add("products", "category_kind", "category_kind TEXT NOT NULL DEFAULT ''");
+  add("products", "category_group", "category_group TEXT NOT NULL DEFAULT ''");
+  add("products", "category", "category TEXT NOT NULL DEFAULT ''");
   add("products", "payment_methods", "payment_methods TEXT NOT NULL DEFAULT '[]'");
   add("products", "card_payment_url", "card_payment_url TEXT NOT NULL DEFAULT ''");
   add("products", "interac_email", "interac_email TEXT NOT NULL DEFAULT ''");
@@ -597,6 +603,9 @@ function mapProduct(row: Row): Product {
     slug: str(row.slug),
     title: str(row.title),
     brand: str(row.brand),
+    categoryKind: row.category_kind === "service" ? "service" : row.category_kind === "product" ? "product" : "",
+    categoryGroup: str(row.category_group),
+    category: str(row.category),
     description: str(row.description),
     priceCents,
     currency: str(row.currency || "CAD"),
@@ -971,8 +980,9 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
       status, images_json, view_count, created_at, updated_at,
       quantity_available, button_label, has_options, same_price, options_json, variants_json,
       require_name, require_email, require_phone, payment_methods, card_payment_url, interac_email,
-      venmo_username, zelle_mode, zelle_contact, seller_contact_mode, seller_contact
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      venmo_username, zelle_mode, zelle_contact, seller_contact_mode, seller_contact,
+      category_kind, category_group, category
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     userId,
@@ -1020,6 +1030,9 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     input.zelleContact,
     input.sellerContactMode,
     input.sellerContact,
+    input.categoryKind,
+    input.categoryGroup,
+    input.category,
   );
 }
 
@@ -1036,7 +1049,8 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
         quantity_available = ?, button_label = ?, has_options = ?, same_price = ?,
         options_json = ?, variants_json = ?, require_name = ?, require_email = ?, require_phone = ?,
         payment_methods = ?, card_payment_url = ?, interac_email = ?,
-        venmo_username = ?, zelle_mode = ?, zelle_contact = ?, seller_contact_mode = ?, seller_contact = ?
+        venmo_username = ?, zelle_mode = ?, zelle_contact = ?, seller_contact_mode = ?, seller_contact = ?,
+        category_kind = ?, category_group = ?, category = ?
        WHERE id = ? AND user_id = ?`,
     )
     .run(
@@ -1083,6 +1097,9 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
       input.zelleContact,
       input.sellerContactMode,
       input.sellerContact,
+      input.categoryKind,
+      input.categoryGroup,
+      input.category,
       id,
       userId,
     );

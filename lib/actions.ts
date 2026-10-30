@@ -84,6 +84,7 @@ import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { getStripe } from "@/lib/stripe";
+import { resolveCategory } from "@/lib/categories";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
 
 function fieldErrors(error: z.ZodError) {
@@ -416,6 +417,12 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
 
   if (title.length < 2) errors.title = "Enter a product name.";
   if (title.length > 80) errors.title = "Keep the name under 80 characters.";
+  const allowService = cta === "quote";
+  const chosenCategory =
+    cta === "contact"
+      ? null
+      : resolveCategory(cta === "buy" ? "product" : text(formData, "categoryKind"), text(formData, "categoryGroup"), text(formData, "category"), allowService);
+  if (cta !== "contact" && !chosenCategory) errors.category = "Choose a category.";
   if (description.length > 2000) {
     errors.description = `Keep the description under 2,000 characters (${description.length.toLocaleString("en-US")} so far).`;
   } else if (description.length < 10) {
@@ -585,6 +592,9 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     slug,
     title,
     brand: cta === "contact" ? "" : text(formData, "brand").trim().slice(0, 80),
+    categoryKind: chosenCategory?.kind === "service" ? "service" : chosenCategory ? "product" : "",
+    categoryGroup: chosenCategory?.groupId ?? "",
+    category: chosenCategory?.itemId ?? "",
     description,
     priceCents: typeof price === "number" ? price : null,
     location,

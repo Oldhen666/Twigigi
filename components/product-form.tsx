@@ -5,10 +5,12 @@ import { useActionState } from "react";
 import { captureDraft, readDraftImage, type DraftImage, type NewPageDraft } from "@/lib/new-page-draft";
 import type { Cta, FormState, Product, QuoteForm } from "@/lib/types";
 import { BuyOfferFields } from "@/components/buy-offer-fields";
+import { CategoryFields } from "@/components/category-fields";
 import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/components/page-preview";
 import { PublishAccount } from "@/components/publish-account";
 import { QuoteFormFields } from "@/components/quote-form-fields";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
+import { resolveCategory } from "@/lib/categories";
 import { PROVINCES, joinLocation, lookupCurrentPlace, placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
 
@@ -87,7 +89,7 @@ export function ProductForm({
     if (productKeys.length === 0) return;
     setAccountOpen(false);
     setPreviewing(false);
-    const details = ["title", "description", "videoUrl", "images"].some((key) => errors[key]);
+    const details = ["title", "description", "videoUrl", "images", "category"].some((key) => errors[key]);
     if (quote) {
       if (details) setStep(1);
       else if (["location", "fulfillment", "contactEmail", "contactPhone", "shippingNote", "sellerContact"].some((key) => errors[key])) setStep(2);
@@ -221,6 +223,11 @@ export function ProductForm({
       if (value.length > 80) return "Keep the name under 80 characters.";
       return null;
     }
+    if (name === "category") {
+      if (cta === "contact") return null;
+      const kind = cta === "buy" ? "product" : fieldValue(form, "categoryKind");
+      return resolveCategory(kind, fieldValue(form, "categoryGroup"), value, cta === "quote") ? null : "Choose a category.";
+    }
     if (name === "description") {
       if (value.length > 2000) return `Keep the description under 2,000 characters (${value.length.toLocaleString("en-US")} so far).`;
       if (value.length < 10) {
@@ -333,7 +340,7 @@ export function ProductForm({
     const form = formRef.current;
     const errors: Record<string, string> = {};
     if (!form) return errors;
-    for (const key of ["title", "description"]) {
+    for (const key of cta === "contact" ? ["title", "description"] : ["title", "description", "category"]) {
       const problem = activeProblem(form, key);
       if (problem) errors[key] = problem;
     }
@@ -709,9 +716,18 @@ export function ProductForm({
           <input name="title" defaultValue={textValue(draft, "title", product?.title)} placeholder="Cedar planter box (at least 2 characters)" aria-label={cta === "quote" ? "Product/Service Title" : undefined} className={inputClass} />
         </Field>
         {cta === "contact" ? null : (
-          <Field label="Brand" optional>
-            <input name="brand" defaultValue={textValue(draft, "brand", product?.brand)} placeholder="(optional)" className={inputClass} />
-          </Field>
+          <>
+            <CategoryFields
+              mode={buy ? "buy" : "quote"}
+              kind={textValue(draft, "categoryKind", product?.categoryKind)}
+              group={textValue(draft, "categoryGroup", product?.categoryGroup)}
+              item={textValue(draft, "category", product?.category)}
+              error={visibleErrors.category}
+            />
+            <Field label="Brand" optional>
+              <input name="brand" defaultValue={textValue(draft, "brand", product?.brand)} placeholder="(optional)" className={inputClass} />
+            </Field>
+          </>
         )}
         <Field label="Short description" required error={visibleErrors.description}>
           <textarea name="description" rows={9} defaultValue={textValue(draft, "description", product?.description)} placeholder={"Description for your product/service:\n-Size / Dimensions\n-Material\n-Color\n-Capacity\n-Weight\n-What's included\n(at least 10 characters)"} className={`${inputClass} h-auto py-3`} />
