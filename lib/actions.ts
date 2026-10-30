@@ -84,7 +84,7 @@ import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { getStripe } from "@/lib/stripe";
-import { resolveCategory } from "@/lib/categories";
+import { categoryProblem, resolveCategory } from "@/lib/categories";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
 
 function fieldErrors(error: z.ZodError) {
@@ -422,7 +422,9 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     cta === "contact"
       ? null
       : resolveCategory(cta === "buy" ? "product" : text(formData, "categoryKind"), text(formData, "categoryGroup"), text(formData, "category"), allowService);
-  if (cta !== "contact" && !chosenCategory) errors.category = "Choose a category.";
+  if (cta !== "contact" && !chosenCategory) {
+    errors.category = categoryProblem(cta === "buy" ? "product" : text(formData, "categoryKind"), text(formData, "categoryGroup"), text(formData, "category"), allowService) ?? "Choose a category.";
+  }
   if (description.length > 2000) {
     errors.description = `Keep the description under 2,000 characters (${description.length.toLocaleString("en-US")} so far).`;
   } else if (description.length < 10) {

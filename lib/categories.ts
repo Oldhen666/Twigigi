@@ -193,3 +193,11 @@ export function categoryLabel(kind: string, groupId: string, itemId: string) {
   const prefix = found.kind === "service" ? "Service" : "Product";
   return `${prefix} · ${found.groupLabel} · ${found.itemLabel}`;
 }
+
+export function categoryProblem(kind: string, groupId: string, itemId: string, allowService: boolean) {
+  if (resolveCategory(kind, groupId, itemId, allowService)) return null;
+  const safeKind: CategoryKind | "" = kind === "service" && allowService ? "service" : kind === "product" ? "product" : "";
+  const group = safeKind ? groupsFor(safeKind).find((row) => row.id === groupId) : undefined;
+  if (!group) return "Choose a category.";
+  return "Choose a subcategory.";
+}

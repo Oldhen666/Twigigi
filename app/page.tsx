@@ -198,9 +198,9 @@ async function HomeScreen() {
             <p className="mt-5 max-w-md text-base leading-7 text-muted sm:text-lg">
               Create a simple page, share the link, and let buyers order or request a quote.
             </p>
-            <Link href="/start" className="mt-8 inline-flex h-auto min-h-14 w-fit max-w-xl items-center rounded-full bg-forest px-6 py-3 text-lg leading-7 text-card transition hover:bg-forest-2 sm:whitespace-nowrap">
+            <Link href="/start" className="mt-8 inline-flex h-auto min-h-14 w-fit max-w-xl items-center gap-2 rounded-full bg-forest px-6 py-3 text-lg leading-7 text-card transition hover:bg-forest-2 sm:whitespace-nowrap">
               <span className="font-bold">Create a Twig</span>
-              <span className="font-normal"> page for your own Product/Service Quote</span>
+              <span className="font-normal">page for your own Product/Service Quote</span>
             </Link>
             <HomeTicker />
           </div>

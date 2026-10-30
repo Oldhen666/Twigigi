@@ -10,7 +10,7 @@ import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/component
 import { PublishAccount } from "@/components/publish-account";
 import { QuoteFormFields } from "@/components/quote-form-fields";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
-import { resolveCategory } from "@/lib/categories";
+import { categoryProblem } from "@/lib/categories";
 import { PROVINCES, joinLocation, lookupCurrentPlace, placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
 
@@ -226,7 +226,7 @@ export function ProductForm({
     if (name === "category") {
       if (cta === "contact") return null;
       const kind = cta === "buy" ? "product" : fieldValue(form, "categoryKind");
-      return resolveCategory(kind, fieldValue(form, "categoryGroup"), value, cta === "quote") ? null : "Choose a category.";
+      return categoryProblem(kind, fieldValue(form, "categoryGroup"), value, cta === "quote");
     }
     if (name === "description") {
       if (value.length > 2000) return `Keep the description under 2,000 characters (${value.length.toLocaleString("en-US")} so far).`;

@@ -74,21 +74,27 @@ export function CategoryFields({
             </option>
           ))}
         </select>
-        <select
-          name="category"
-          value={itemValue}
-          disabled={!groupValue}
-          aria-label="Subcategory"
-          onChange={(event) => setSelectedItem(event.target.value)}
-          className={selectClass}
-        >
-          <option value="">Choose a subcategory</option>
-          {items.map((row) => (
-            <option key={row.id} value={row.id}>
-              {row.label}
-            </option>
-          ))}
-        </select>
+        {groupValue ? (
+          <select
+            key={groupValue}
+            name="category"
+            value={itemValue}
+            aria-label="Subcategory"
+            onChange={(event) => setSelectedItem(event.target.value)}
+            className={selectClass}
+          >
+            <option value="">Choose a subcategory</option>
+            {items.map((row) => (
+              <option key={row.id} value={row.id}>
+                {row.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <select name="category" value="" disabled aria-label="Subcategory" className={selectClass}>
+            <option value="">Choose a subcategory</option>
+          </select>
+        )}
       </div>
       {error ? <span className="mt-1 block text-sm text-danger">{error}</span> : null}
     </div>
