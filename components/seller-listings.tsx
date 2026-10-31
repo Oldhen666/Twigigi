@@ -3,7 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { payAndPublish } from "@/lib/actions";
 import { categoryHref, categoryLabel, groupsFor, isCategoryKind, listingTypes, matchesListing, type CategoryKind } from "@/lib/categories";
+import { DeactivateTwig } from "@/components/deactivate-twig";
 import { inputClass } from "@/components/ui";
 
 export type SellerCard = {
@@ -13,7 +15,16 @@ export type SellerCard = {
   priceLabel: string;
   ctaLabel: string;
   image: string;
+  inactive?: boolean;
   editHref?: string;
+  manage?: {
+    productId: string;
+    mode: "live" | "ending" | "deactivated";
+    endsLabel: string;
+    deleteLabel: string;
+    stillPaid: boolean;
+    next: string;
+  };
   categoryKind: string;
   categoryGroup: string;
   category: string;
@@ -100,15 +111,18 @@ export function SellerListings({ username, listings }: { username: string; listi
       <ul className="mt-6 grid gap-4 sm:grid-cols-2">
         {visible.map((product) => {
           const label = categoryLabel(product.categoryKind, product.categoryGroup, product.category);
-          const href = `/${username}/${product.slug}`;
+          const href = product.inactive ? "" : `/${username}/${product.slug}`;
+          const photo = product.image ? <Image src={product.image} alt={product.title} fill unoptimized={product.image.startsWith("/uploads/")} className="object-cover" sizes="360px" /> : null;
           return (
             <li key={product.slug} className="overflow-hidden rounded-3xl border border-line bg-card">
-              <Link href={href} className="relative block aspect-[4/3] bg-paper-deep">
-                {product.image ? <Image src={product.image} alt={product.title} fill unoptimized={product.image.startsWith("/uploads/")} className="object-cover" sizes="360px" /> : null}
-              </Link>
+              {href ? (
+                <Link href={href} className="relative block aspect-[4/3] bg-paper-deep">{photo}</Link>
+              ) : (
+                <div className="relative aspect-[4/3] bg-paper-deep">{photo}</div>
+              )}
               <div className="p-4">
                 <h2 className="font-serif text-2xl">
-                  <Link href={href}>{product.title}</Link>
+                  {href ? <Link href={href}>{product.title}</Link> : product.title}
                 </h2>
                 {label ? (
                   <p className="mt-1 text-sm text-forest">
@@ -120,10 +134,41 @@ export function SellerListings({ username, listings }: { username: string; listi
                 <p className="mt-1 text-sm text-muted">{product.location}</p>
                 <p className="mt-2 font-serif text-xl text-forest">{product.priceLabel}</p>
                 <p className="mt-2 text-sm text-forest">{product.ctaLabel}</p>
-                {product.editHref ? (
-                  <Link href={product.editHref} className="mt-3 inline-block text-sm font-medium text-forest">
-                    Edit
-                  </Link>
+                {product.inactive ? <p className="mt-2 text-sm text-muted">Inactive</p> : null}
+                {product.editHref || product.manage ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
+                    {product.editHref ? (
+                      <Link href={product.editHref} className="font-medium text-forest">
+                        Edit
+                      </Link>
+                    ) : null}
+                    {product.manage && product.manage.mode !== "deactivated" ? (
+                      <DeactivateTwig
+                        productId={product.manage.productId}
+                        mode={product.manage.mode}
+                        endsLabel={product.manage.endsLabel}
+                        deleteLabel={product.manage.deleteLabel}
+                        next={product.manage.next}
+                      />
+                    ) : null}
+                    {product.manage?.mode === "deactivated" ? (
+                      product.manage.stillPaid ? (
+                        <DeactivateTwig
+                          productId={product.manage.productId}
+                          mode="deactivated"
+                          endsLabel={product.manage.endsLabel}
+                          deleteLabel={product.manage.deleteLabel}
+                          next={product.manage.next}
+                        />
+                      ) : (
+                        <form action={payAndPublish}>
+                          <input type="hidden" name="id" value={product.manage.productId} />
+                          <input type="hidden" name="next" value={product.manage.next} />
+                          <button className="font-medium text-forest">Pay and reactivate</button>
+                        </form>
+                      )
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             </li>

@@ -7,6 +7,7 @@ import { HomeTicker } from "@/components/home-ticker";
 import { Logo } from "@/components/logo";
 import { getCurrentUser } from "@/lib/auth";
 import { getPublicSeller } from "@/lib/catalog";
+import { resolveSellerRoute } from "@/lib/db";
 import { appUrl, ctaCopy, formatMoney } from "@/lib/format";
 import type { PublicProduct } from "@/lib/types";
 
@@ -31,7 +32,7 @@ const fallbacks = [
     location: "Edmonton, Alberta",
     price: "Pricing on request",
     cta: "Get a quote",
-    image: "/seed/consult-1.jpg",
+    image: "/seed/deck-1.jpg",
     seller: "Ava Chen",
   },
 ] as const;
@@ -110,7 +111,7 @@ function TrustIcon({ kind }: { kind: "page" | "reviews" | "lock" }) {
 }
 
 function cardFromProduct(product: PublicProduct, seller: string, ratingAverage: number | null, ratingCount: number) {
-  const href = `/${product.username}/${product.slug}`;
+  const href = `/${product.publicId}/${product.slug}`;
   return {
     href,
     image: product.images[0] || "/seed/cedar-1.jpg",
@@ -139,7 +140,8 @@ async function withQr(slide: Omit<HomeSlide, "qr">): Promise<HomeSlide> {
 
 async function HomeScreen() {
   const user = await getCurrentUser();
-  const seller = await getPublicSeller("ava");
+  const ava = resolveSellerRoute("ava");
+  const seller = ava ? await getPublicSeller(ava.publicId) : null;
   const ratingAverage = seller?.ratingAverage ?? null;
   const ratingCount = seller?.ratingCount ?? 0;
   const live = (slug: string) => seller?.products.find((product) => product.slug === slug) ?? null;

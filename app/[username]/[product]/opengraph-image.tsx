@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ImageResponse } from "next/og";
 import { getPublicProduct, requireLiveTwig, staticProductParams } from "@/lib/catalog";
+import { sellerPath } from "@/lib/seller-route";
 import { formatMoney } from "@/lib/format";
 import { resolveUpload } from "@/lib/uploads";
 
@@ -31,7 +32,8 @@ export default async function Image({
   params: Promise<{ username: string; product: string }>;
 }) {
   const { username, product: slug } = await params;
-  const product = await requireLiveTwig(await getPublicProduct(username, slug));
+  const publicId = sellerPath(username, `/${slug}`);
+  const product = publicId ? await requireLiveTwig(await getPublicProduct(publicId, slug)) : null;
   const title = product?.title ?? "Twigigi";
   const price = product?.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request";
   const location = product?.location ?? "";

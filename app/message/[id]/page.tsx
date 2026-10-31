@@ -18,7 +18,7 @@ async function MessageView({ params }: { params: Promise<{ id: string }> }) {
         <p className="mt-4 text-sm leading-6 text-muted">
           The seller has your message and can reply at {message.email}. No account was created.
         </p>
-        <Link href={`/${message.username}/${message.productSlug}`} className="mt-8 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">
+        <Link href={`/${message.publicId}/${message.productSlug}`} className="mt-8 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">
           Back to the product
         </Link>
       </div>

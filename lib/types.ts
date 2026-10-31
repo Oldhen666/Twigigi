@@ -26,6 +26,7 @@ export type User = {
   id: string;
   email: string;
   username: string;
+  publicId: string;
   displayName: string;
   role: UserRole;
   createdAt: string;
@@ -136,11 +137,13 @@ export type Product = ProductInput & {
 
 export type PublicProduct = Product & {
   username: string;
+  publicId: string;
   displayName: string;
 };
 
 export type PublicSeller = {
   username: string;
+  publicId: string;
   displayName: string;
   products: PublicProduct[];
   ratingAverage: number | null;
@@ -156,6 +159,7 @@ export type OrderRecord = {
   productSlug: string;
   productTitle: string;
   username: string;
+  publicId: string;
   displayName: string;
   buyerName: string;
   email: string;
@@ -199,6 +203,7 @@ export type QuoteRecord = {
   productSlug: string;
   productTitle: string;
   username: string;
+  publicId: string;
   name: string;
   email: string;
   phone: string;
@@ -217,6 +222,7 @@ export type MessageRecord = {
   productSlug: string;
   productTitle: string;
   username: string;
+  publicId: string;
   name: string;
   email: string;
   phone: string;

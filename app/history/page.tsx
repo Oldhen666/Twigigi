@@ -20,7 +20,7 @@ async function HistoryScreen() {
         <ul className="space-y-3">
           {history.map(({ product, seenAt }) => (
             <li key={product.id}>
-              <Link href={`/${product.username}/${product.slug}`} className="flex gap-4 rounded-2xl border border-line bg-card p-4">
+              <Link href={`/${product.publicId}/${product.slug}`} className="flex gap-4 rounded-2xl border border-line bg-card p-4">
                 <span className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-paper-deep">
                   {product.images[0] ? <Image src={product.images[0]} alt="" fill unoptimized={storedUpload(product.images[0])} className="object-cover" sizes="80px" /> : null}
                 </span>

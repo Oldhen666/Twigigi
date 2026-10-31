@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import bcrypt from "bcryptjs";
@@ -17,7 +18,7 @@ import {
 } from "@/lib/ledger";
 import { readStoredFileLinks } from "@/lib/files";
 import { parseQuoteForm } from "@/lib/quote-form";
-import { DEACTIVATION_GRACE_DAYS, addDays } from "@/lib/format";
+import { DEACTIVATION_GRACE_DAYS, RESERVED_USERNAMES, addDays, isPrivateUsername, slugify } from "@/lib/format";
 import { readStoredOptions, readStoredVariants } from "@/lib/variants";
 import {
   PROTECTION_DAYS,
@@ -251,6 +252,7 @@ function ensureColumns(database: DatabaseSync) {
   add("users", "payout_interac", "payout_interac TEXT NOT NULL DEFAULT ''");
   add("users", "payout_venmo", "payout_venmo TEXT NOT NULL DEFAULT ''");
   add("users", "payout_zelle", "payout_zelle TEXT NOT NULL DEFAULT ''");
+  add("users", "public_id", "public_id TEXT NOT NULL DEFAULT ''");
   database.exec(`CREATE TABLE IF NOT EXISTS twig_bills (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -707,7 +709,7 @@ function eraseProduct(id: string) {
 }
 
 function mapPublic(row: Row): PublicProduct {
-  return { ...mapProduct(row), username: str(row.username), displayName: str(row.display_name) };
+  return { ...mapProduct(row), username: str(row.username), publicId: str(row.public_id), displayName: str(row.display_name) };
 }
 
 function mapUser(row: Row): User {
@@ -716,6 +718,7 @@ function mapUser(row: Row): User {
     id: str(row.id),
     email: str(row.email),
     username: str(row.username),
+    publicId: str(row.public_id),
     displayName: str(row.display_name),
     role,
     createdAt: str(row.created_at),
@@ -731,6 +734,7 @@ const ORDER_SELECT = `
     COALESCE(p.title, 'Removed Twig') AS product_title,
     COALESCE(p.slug, '') AS product_slug,
     u.username,
+    u.public_id,
     u.display_name
   FROM orders o
   JOIN users u ON u.id = o.seller_id
@@ -755,6 +759,7 @@ function mapOrder(row: Row): OrderRecord {
     productSlug: str(row.product_slug),
     productTitle: str(row.product_title),
     username: str(row.username),
+    publicId: str(row.public_id),
     displayName: str(row.display_name),
     buyerName: str(row.buyer_name),
     email: str(row.email),
@@ -801,6 +806,7 @@ function mapQuote(row: Row): QuoteRecord {
     productSlug: str(row.product_slug),
     productTitle: str(row.product_title),
     username: str(row.username),
+    publicId: str(row.public_id),
     name: str(row.name),
     email: str(row.email),
     phone: str(row.phone),
@@ -843,6 +849,7 @@ function mapMessage(row: Row): MessageRecord {
     productSlug: str(row.product_slug),
     productTitle: str(row.product_title),
     username: str(row.username),
+    publicId: str(row.public_id),
     name: str(row.name),
     email: str(row.email),
     phone: str(row.phone),
@@ -865,8 +872,27 @@ export function findUserByEmail(email: string) {
 }
 
 export function findUserByUsername(username: string) {
-  const row = one("SELECT id FROM users WHERE lower(username) = ?", username.toLowerCase());
+  const key = username.toLowerCase();
+  const row = one("SELECT id FROM users WHERE lower(username) = ? OR lower(public_id) = ?", key, key);
   return row ? str(row.id) : null;
+}
+
+export function allocatePublicId() {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const id = `u${randomBytes(6).toString("hex")}`;
+    if (!RESERVED_USERNAMES.has(id) && !findUserByUsername(id)) return id;
+  }
+  throw new Error("Could not assign a user ID.");
+}
+
+export function resolveSellerRoute(segment: string) {
+  const key = segment.toLowerCase();
+  const byId = one("SELECT public_id FROM users WHERE lower(public_id) = ?", key);
+  if (byId) return { publicId: str(byId.public_id), redirect: false };
+  const byName = one("SELECT public_id FROM users WHERE lower(username) = ?", key);
+  if (!byName) return null;
+  const publicId = str(byName.public_id);
+  return { publicId, redirect: publicId.toLowerCase() !== key };
 }
 
 export function createUser(input: {
@@ -874,11 +900,12 @@ export function createUser(input: {
   email: string;
   passwordHash: string;
   username: string;
+  publicId: string;
   displayName: string;
 }) {
   db.prepare(
-    "INSERT INTO users (id, email, password_hash, username, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, 'user', ?)",
-  ).run(input.id, input.email.toLowerCase(), input.passwordHash, input.username, input.displayName, new Date().toISOString());
+    "INSERT INTO users (id, email, password_hash, username, public_id, display_name, role, created_at) VALUES (?, ?, ?, ?, ?, ?, 'user', ?)",
+  ).run(input.id, input.email.toLowerCase(), input.passwordHash, input.username, input.publicId, input.displayName, new Date().toISOString());
 }
 
 export function updateUsername(id: string, username: string) {
@@ -932,27 +959,27 @@ export function getProductById(id: string) {
 
 export function getPublishedProduct(username: string, slug: string) {
   const row = one(
-    `SELECT p.*, u.username, u.display_name
+    `SELECT p.*, u.username, u.public_id, u.display_name
      FROM products p JOIN users u ON u.id = p.user_id
-     WHERE u.username = ? AND p.slug = ? AND p.status = 'published'`,
-    username,
+     WHERE lower(u.public_id) = ? AND p.slug = ? AND p.status = 'published'`,
+    username.toLowerCase(),
     slug,
   );
   return row ? mapPublic(row) : null;
 }
 
 export function getSellerWithProducts(username: string): PublicSeller | null {
-  const user = one("SELECT id, username, display_name, role FROM users WHERE username = ?", username);
-  if (!user || /^[ub][0-9a-f]{12}$/.test(str(user.username))) return null;
+  const user = one("SELECT id, username, public_id, display_name, role FROM users WHERE lower(public_id) = ?", username.toLowerCase());
+  if (!user) return null;
   const products = many(
-    `SELECT p.*, u.username, u.display_name
+    `SELECT p.*, u.username, u.public_id, u.display_name
      FROM products p JOIN users u ON u.id = p.user_id
      WHERE p.user_id = ? AND p.status = 'published'
      ORDER BY p.updated_at DESC`,
     str(user.id),
   ).map(mapPublic);
   const rating = sellerReviewSummary(str(user.id));
-  return { username: str(user.username), displayName: str(user.display_name), products, ratingAverage: rating.average, ratingCount: rating.count };
+  return { username: str(user.username), publicId: str(user.public_id), displayName: str(user.display_name), products, ratingAverage: rating.average, ratingCount: rating.count };
 }
 
 export function listPublishedMatching(filter: { kind?: string; category?: string; subcategory?: string; query?: string }) {
@@ -978,7 +1005,7 @@ export function listPublishedMatching(filter: { kind?: string; category?: string
     params.push(like, like, like);
   }
   return many(
-    `SELECT p.*, u.username, u.display_name
+    `SELECT p.*, u.username, u.public_id, u.display_name
      FROM products p JOIN users u ON u.id = p.user_id
      WHERE ${where.join(" AND ")}
      ORDER BY p.updated_at DESC`,
@@ -988,7 +1015,7 @@ export function listPublishedMatching(filter: { kind?: string; category?: string
 
 export function listPublishedParams() {
   return many(
-    `SELECT u.username AS username, p.slug AS product, p.cta AS cta
+    `SELECT u.public_id AS username, p.slug AS product, p.cta AS cta
      FROM products p JOIN users u ON u.id = p.user_id
      WHERE p.status = 'published'`,
   ).map((row) => ({
@@ -1563,7 +1590,7 @@ export function toggleFavorite(userId: string, productId: string) {
 
 export function listFavorites(userId: string) {
   return many(
-    `SELECT p.*, u.username, u.display_name
+    `SELECT p.*, u.username, u.public_id, u.display_name
      FROM favorites f
      JOIN products p ON p.id = f.product_id
      JOIN users u ON u.id = p.user_id
@@ -1825,7 +1852,7 @@ export function updateReview(id: string, input: { overall: number; asDescribed: 
 
 export function reviewPlacement(id: string) {
   const row = one(
-    `SELECT seller.username AS username, COALESCE(p.slug, '') AS slug
+    `SELECT seller.public_id AS username, COALESCE(p.slug, '') AS slug
      FROM reviews r
      JOIN users seller ON seller.id = r.seller_id
      LEFT JOIN products p ON p.id = r.product_id
@@ -1846,7 +1873,7 @@ export function updateDisplayName(id: string, displayName: string) {
 
 export function listBrowseHistory(userId: string) {
   return many(
-    `SELECT p.*, u.username, u.display_name, MAX(v.created_at) AS seen_at
+    `SELECT p.*, u.username, u.public_id, u.display_name, MAX(v.created_at) AS seen_at
      FROM page_views v
      JOIN products p ON p.id = v.product_id
      JOIN users u ON u.id = p.user_id
@@ -1862,8 +1889,8 @@ export function listBrowseHistory(userId: string) {
 export function listAllProducts() {
   settleDeactivations();
   return many(
-    `SELECT p.*, u.username, u.display_name FROM products p JOIN users u ON u.id = p.user_id ORDER BY p.updated_at DESC`,
-  ).map((row) => ({ ...mapProduct(row), username: str(row.username), displayName: str(row.display_name) }));
+    `SELECT p.*, u.username, u.public_id, u.display_name FROM products p JOIN users u ON u.id = p.user_id ORDER BY p.updated_at DESC`,
+  ).map((row) => ({ ...mapProduct(row), username: str(row.username), publicId: str(row.public_id), displayName: str(row.display_name) }));
 }
 
 export type StoredLedgerEntry = {
@@ -2168,7 +2195,7 @@ export function insertQuote(input: {
 }
 
 const QUOTE_SELECT = `
-  SELECT q.*, p.title AS product_title, p.slug AS product_slug, u.username
+  SELECT q.*, p.title AS product_title, p.slug AS product_slug, u.username, u.public_id
   FROM quotes q
   JOIN products p ON p.id = q.product_id
   JOIN users u ON u.id = p.user_id
@@ -2222,7 +2249,7 @@ export function insertMessage(input: {
 }
 
 const MESSAGE_SELECT = `
-  SELECT m.*, p.title AS product_title, p.slug AS product_slug, u.username
+  SELECT m.*, p.title AS product_title, p.slug AS product_slug, u.username, u.public_id
   FROM messages m
   JOIN products p ON p.id = m.product_id
   JOIN users u ON u.id = p.user_id
@@ -2311,7 +2338,7 @@ function seedIfEmpty() {
       "ava@twigigi.demo",
       "780-555-0148",
       "published",
-      JSON.stringify(["/seed/consult-1.jpg"]),
+      JSON.stringify(["/seed/deck-1.jpg"]),
       now,
       "2026-10-08T15:00:00.000Z",
     );
@@ -2578,6 +2605,10 @@ function ensureLandscapeDemo() {
     `UPDATE products SET onsite_enabled = 1, category_kind = 'service', category_group = 'lawn-outdoor-services', category = 'landscaping'
      WHERE id = 'prd_bench' AND slug = 'landscape' AND (category_kind IS NULL OR category_kind = '' OR category_kind = 'product')`,
   ).run();
+  db.prepare(
+    `UPDATE products SET images_json = ?
+     WHERE id = 'prd_bench' AND slug = 'landscape' AND images_json = ?`,
+  ).run(JSON.stringify(["/seed/deck-1.jpg"]), JSON.stringify(["/seed/consult-1.jpg"]));
 }
 
 function ensureDemoCategories() {
@@ -2593,8 +2624,60 @@ function ensureDemoCategories() {
   }
 }
 
+function fitsUsername(value: string) {
+  return /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/.test(value) && !isPrivateUsername(value) && !RESERVED_USERNAMES.has(value);
+}
+
+function freshPublicId(taken: Set<string>) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const id = `u${randomBytes(6).toString("hex")}`;
+    if (!taken.has(id)) {
+      taken.add(id);
+      return id;
+    }
+  }
+  throw new Error("Could not assign a user ID.");
+}
+
+function freshUsername(displayName: string, taken: Set<string>) {
+  const base = slugify(displayName).slice(0, 24);
+  let candidate = fitsUsername(base) ? base : "member";
+  let n = 2;
+  while (taken.has(candidate)) {
+    candidate = `${(fitsUsername(base) ? base : "member").slice(0, 26)}${n}`;
+    n += 1;
+  }
+  taken.add(candidate);
+  return candidate;
+}
+
+function ensurePublicIds() {
+  const rows = many("SELECT id, username, display_name, public_id FROM users");
+  const taken = new Set<string>();
+  for (const row of rows) {
+    const username = str(row.username).toLowerCase();
+    const publicId = str(row.public_id).toLowerCase();
+    if (username) taken.add(username);
+    if (publicId) taken.add(publicId);
+  }
+  for (const row of rows) {
+    if (str(row.public_id)) continue;
+    const id = str(row.id);
+    const username = str(row.username).toLowerCase();
+    if (isPrivateUsername(username)) {
+      const handle = freshUsername(str(row.display_name), taken);
+      db.prepare("UPDATE users SET public_id = ?, username = ? WHERE id = ?").run(username, handle, id);
+    } else {
+      const publicId = freshPublicId(taken);
+      db.prepare("UPDATE users SET public_id = ? WHERE id = ?").run(publicId, id);
+    }
+  }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_public_id_nocase ON users(lower(public_id))");
+}
+
 seedIfEmpty();
 ensureConsultPage();
 ensureLandscapeDemo();
 ensureDemoReviews();
 ensureDemoCategories();
+ensurePublicIds();

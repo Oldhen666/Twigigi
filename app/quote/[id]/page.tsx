@@ -32,7 +32,7 @@ async function QuoteView({ params }: { params: Promise<{ id: string }> }) {
             Interaction {interaction.publicRef}. <Link href="/signup" className="text-forest">Create an account</Link> with this email to mark it completed and review.
           </p>
         ) : null}
-        <Link href={`/${quote.username}/${quote.productSlug}`} className="mt-8 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">
+        <Link href={`/${quote.publicId}/${quote.productSlug}`} className="mt-8 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">
           Back to the product
         </Link>
       </div>

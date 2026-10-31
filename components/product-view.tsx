@@ -17,6 +17,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { isFavorite, isLiked, likeCount, listProductReviews, sellerReviewSummary } from "@/lib/db";
 import { categoryHref, categoryLabel, resolveCategory } from "@/lib/categories";
 import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
+import { sellerPath } from "@/lib/seller-route";
 import { storedUpload } from "@/lib/uploads";
 
 export async function ProductView({
@@ -26,7 +27,9 @@ export async function ProductView({
 }) {
   await connection();
   const { username, product: slug } = await params;
-  const product = await requireLiveTwig(await getPublicProduct(username, slug));
+  const publicId = sellerPath(username, `/${slug}`);
+  if (!publicId) notFound();
+  const product = await requireLiveTwig(await getPublicProduct(publicId, slug));
   if (!product) notFound();
   const account = await getCurrentUser();
   const saved = account ? isFavorite(account.id, product.id) : false;
@@ -35,9 +38,9 @@ export async function ProductView({
   const reviews = listProductReviews(product.id);
   const rating = sellerReviewSummary(product.userId);
   const reviewAverage = reviews.length ? reviews.reduce((sum, review) => sum + review.overall, 0) / reviews.length : null;
-  const ownTwig = account?.username === product.username;
+  const ownTwig = account?.publicId === product.publicId;
 
-  const canonical = productUrl(product.username, product.slug);
+  const canonical = productUrl(product.publicId, product.slug);
   const qr = (await QRCode.toString(withSrc(canonical, "qr"), {
     type: "svg",
     margin: 1,
@@ -139,7 +142,7 @@ export async function ProductView({
           ) : null}
           {showOptions ? (
             <BuyPicker
-              username={product.username}
+              username={product.publicId}
               slug={product.slug}
               currency={product.currency}
               priceCents={product.priceCents ?? 0}
@@ -158,8 +161,8 @@ export async function ProductView({
                   ))}
                 </ul>
               ) : null}
-              <SellerCredit username={product.username} name={product.displayName} rating={rating} />
-              <ProductMarks productId={product.id} path={`/${product.username}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
+              <SellerCredit username={product.publicId} name={product.displayName} rating={rating} />
+              <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
               {product.cta === "buy" || product.cta === "file" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </BuyPicker>
           ) : (
@@ -179,8 +182,8 @@ export async function ProductView({
                   ))}
                 </ul>
               ) : null}
-              <SellerCredit username={product.username} name={product.displayName} rating={rating} />
-              <ProductMarks productId={product.id} path={`/${product.username}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
+              <SellerCredit username={product.publicId} name={product.displayName} rating={rating} />
+              <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
               {product.cta === "buy" || product.cta === "file" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </>
           )}
@@ -190,7 +193,7 @@ export async function ProductView({
           {soldOut ? (
             <span className="flex h-14 items-center justify-center rounded-2xl bg-paper-deep text-lg text-muted">Sold out</span>
           ) : (
-            <Link href={`/${product.username}/${product.slug}/${cta.href}`} className="flex h-14 items-center justify-center rounded-2xl bg-forest text-lg text-card">
+            <Link href={`/${product.publicId}/${product.slug}/${cta.href}`} className="flex h-14 items-center justify-center rounded-2xl bg-forest text-lg text-card">
               {buyLabel}
             </Link>
           )}

@@ -54,6 +54,7 @@ import {
   takePasswordReset,
   toggleFavorite,
   toggleLike,
+  allocatePublicId,
   uniqueSlug,
   listUsers,
   updatePassword,
@@ -158,8 +159,11 @@ async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
   if (RESERVED_USERNAMES.has(parsed.data.username)) {
     return { fieldErrors: { username: "That username is reserved." } };
   }
+  if (isPrivateUsername(parsed.data.username)) {
+    return { fieldErrors: { username: "That username is reserved." } };
+  }
   if (findUserByUsername(parsed.data.username)) {
-    return { fieldErrors: { username: "That username is taken. Each link starts with a unique username." } };
+    return { fieldErrors: { username: "That username is taken." } };
   }
   const id = newId("usr");
   try {
@@ -167,6 +171,7 @@ async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
       id,
       email: parsed.data.email,
       passwordHash: bcrypt.hashSync(parsed.data.password, 10),
+      publicId: allocatePublicId(),
       username: parsed.data.username,
       displayName: parsed.data.displayName,
     });
@@ -182,31 +187,33 @@ async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
 }
 
 async function createAccount(formData: FormData): Promise<OpenedAccount> {
-  const parsed = z
-    .object({
-      displayName: signupSchema.shape.displayName,
-      email: signupSchema.shape.email,
-      password: signupSchema.shape.password,
-    })
-    .safeParse({
-      displayName: text(formData, "displayName"),
-      email: text(formData, "email"),
-      password: text(formData, "password"),
-    });
+  const parsed = signupSchema.safeParse({
+    displayName: text(formData, "displayName"),
+    username: text(formData, "username"),
+    email: text(formData, "email"),
+    password: text(formData, "password"),
+  });
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
+  if (RESERVED_USERNAMES.has(parsed.data.username) || isPrivateUsername(parsed.data.username)) {
+    return { fieldErrors: { username: "That username is reserved." } };
+  }
+  if (findUserByUsername(parsed.data.username)) {
+    return { fieldErrors: { username: "That username is taken." } };
+  }
   const id = newId("usr");
-  const username = `u${randomBytes(6).toString("hex")}`;
   try {
     createUser({
       id,
       email: parsed.data.email,
       passwordHash: bcrypt.hashSync(parsed.data.password, 10),
-      username,
+      publicId: allocatePublicId(),
+      username: parsed.data.username,
       displayName: parsed.data.displayName,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message.includes("users.email")) return { fieldErrors: { email: "An account with that email already exists." } };
+    if (message.includes("users.username")) return { fieldErrors: { username: "That username is taken." } };
     return { error: "Could not create the account." };
   }
   claimBuyerOrders(id, parsed.data.email);
@@ -573,19 +580,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     sessionStamp = { signedIn: true, displayName: user.displayName };
   }
   const adminEdit = Boolean(existing && user.role === "admin" && existing.userId !== user.id);
-  const usernameBefore = user.username;
-  if (!adminEdit && isPrivateUsername(user.username)) {
-    const claimed = claimPublicUsername(user.id, text(formData, "username"));
-    if (claimed.fieldErrors || claimed.error) return { ...claimed, ...sessionStamp };
-    const refreshed = findUserById(user.id);
-    if (!refreshed) return { error: "Could not save the username.", ...sessionStamp };
-    user = refreshed;
-  }
   const owner = adminEdit && existing ? findUserById(existing.userId) : user;
   if (!owner || (id && (!existing || existing.userId !== owner.id))) {
     return { error: "That Twig was not found.", ...sessionStamp };
   }
-  const previousUsername = adminEdit ? owner.username : usernameBefore;
   if (existing && existing.status !== "draft" && intent === "draft") {
     return {
       error:
@@ -669,13 +667,9 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     return { error: "Could not save this Twig. Try a different link name.", ...sessionStamp };
   }
 
-  if (previousUsername !== owner.username) {
-    updateTag(sellerTag(previousUsername));
-    if (existing) updateTag(productTag(previousUsername, existing.slug));
-  }
-  if (existing && existing.slug !== slug) updateTag(productTag(owner.username, existing.slug));
-  updateTag(productTag(owner.username, slug));
-  updateTag(sellerTag(owner.username));
+  if (existing && existing.slug !== slug) updateTag(productTag(owner.publicId, existing.slug));
+  updateTag(productTag(owner.publicId, slug));
+  updateTag(sellerTag(owner.publicId));
 
   if (needsBilling) redirect(`/billing?next=${encodeURIComponent(`/dashboard/products/${savedProductId}`)}`);
   if (input.status === "published" && (!existing || existing.status !== "published")) {
@@ -697,7 +691,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       });
     }
   }
-  if (input.status === "published") redirect(`/${owner.username}/${slug}`);
+  if (input.status === "published") redirect(`/${owner.publicId}/${slug}`);
   if (existing?.status === "published") redirect(`/dashboard/products/${savedProductId}?saved=1`);
   return { saved: true, productId: savedProductId, slug, images, savedAt: Date.now() };
 }
@@ -712,8 +706,8 @@ export async function removeProduct(formData: FormData) {
     redirect(`/dashboard/products/${product.id}?blocked=1`);
   }
   deleteProduct(product.id, user.id);
-  updateTag(productTag(user.username, product.slug));
-  updateTag(sellerTag(user.username));
+  updateTag(productTag(user.publicId, product.slug));
+  updateTag(sellerTag(user.publicId));
   redirect("/dashboard");
 }
 
@@ -739,14 +733,15 @@ export async function saveBillingMethod(formData: FormData) {
 export async function payAndPublish(formData: FormData) {
   const user = await requireSeller();
   const product = getProductById(text(formData, "id"));
-  if (!product || product.userId !== user.id || product.status === "published") redirect("/dashboard");
+  const back = safeNext(text(formData, "next"));
+  if (!product || product.userId !== user.id || product.status === "published") redirect(back);
   if (product.status === "deactivated" && listingStillPaid(product)) {
     resumePublished(product.id, user.id);
-    updateTag(productTag(user.username, product.slug));
-    updateTag(sellerTag(user.username));
-    redirect("/dashboard");
+    updateTag(productTag(user.publicId, product.slug));
+    updateTag(sellerTag(user.publicId));
+    redirect(back);
   }
-  if (!user.billingMethod) redirect(`/billing?next=${encodeURIComponent("/dashboard")}`);
+  if (!user.billingMethod) redirect(`/billing?next=${encodeURIComponent(back)}`);
   if (product.status === "draft" && (product.title.trim().length < 2 || product.images.length < 1)) {
     redirect(`/dashboard/products/${product.id}`);
   }
@@ -789,32 +784,34 @@ export async function payAndPublish(formData: FormData) {
       status: "recorded",
     });
   }
-  updateTag(productTag(user.username, product.slug));
-  updateTag(sellerTag(user.username));
-  redirect("/dashboard");
+  updateTag(productTag(user.publicId, product.slug));
+  updateTag(sellerTag(user.publicId));
+  redirect(back);
 }
 
 export async function scheduleDeactivation(formData: FormData) {
   const user = await requireSeller();
+  const back = safeNext(text(formData, "next"));
   const product = getProductById(text(formData, "id"));
-  if (!product || product.userId !== user.id || product.status !== "published") redirect("/dashboard");
+  if (!product || product.userId !== user.id || product.status !== "published") redirect(back);
   deactivateNow(product.id, user.id);
-  updateTag(productTag(user.username, product.slug));
-  updateTag(sellerTag(user.username));
-  redirect("/dashboard");
+  updateTag(productTag(user.publicId, product.slug));
+  updateTag(sellerTag(user.publicId));
+  redirect(back);
 }
 
 export async function reactivateTwig(formData: FormData) {
   const user = await requireSeller();
+  const back = safeNext(text(formData, "next"));
   const product = getProductById(text(formData, "id"));
-  if (!product || product.userId !== user.id) redirect("/dashboard");
+  if (!product || product.userId !== user.id) redirect(back);
   if (product.status === "deactivated") {
-    if (!listingStillPaid(product)) redirect("/dashboard");
+    if (!listingStillPaid(product)) redirect(back);
     resumePublished(product.id, user.id);
   } else if (product.status === "published") clearDeactivatesAt(product.id, user.id);
-  updateTag(productTag(user.username, product.slug));
-  updateTag(sellerTag(user.username));
-  redirect("/dashboard");
+  updateTag(productTag(user.publicId, product.slug));
+  updateTag(sellerTag(user.publicId));
+  redirect(back);
 }
 
 const personSchema = {
@@ -1135,7 +1132,7 @@ export async function setUserRole(formData: FormData) {
     redirect(`${next}?error=${encodeURIComponent("Keep at least one admin.")}`);
   }
   updateUserRole(user.id, role);
-  updateTag(sellerTag(user.username.toLowerCase()));
+  updateTag(sellerTag(user.publicId.toLowerCase()));
   redirect(next);
 }
 
@@ -1212,9 +1209,9 @@ export async function saveReview(_prev: FormState, formData: FormData): Promise<
     return { error: "This interaction already has a review." };
   }
   const seller = findUserById(interaction.sellerId);
-  if (seller) updateTag(sellerTag(seller.username.toLowerCase()));
+  if (seller) updateTag(sellerTag(seller.publicId));
   const product = getProductById(interaction.productId);
-  if (product && seller) updateTag(productTag(seller.username.toLowerCase(), product.slug));
+  if (product && seller) updateTag(productTag(seller.publicId, product.slug));
   return { saved: true };
 }
 
@@ -1268,6 +1265,14 @@ function refreshReviewTags(placement: { username: string; slug: string }) {
   if (placement.slug) updateTag(productTag(placement.username, placement.slug));
 }
 
+export async function updateAccountUsername(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireUser();
+  const claimed = claimPublicUsername(user.id, text(formData, "username"));
+  if (claimed.fieldErrors || claimed.error) return claimed;
+  updateTag(sellerTag(user.publicId));
+  redirect(safeNext(text(formData, "next")));
+}
+
 export async function adminRenameUser(formData: FormData) {
   await requireAdmin();
   const name = text(formData, "displayName").trim();
@@ -1288,8 +1293,8 @@ export async function adminSetTwig(formData: FormData) {
   }
   const seller = findUserById(product.userId);
   if (seller) {
-    updateTag(productTag(seller.username.toLowerCase(), product.slug));
-    updateTag(sellerTag(seller.username.toLowerCase()));
+    updateTag(productTag(seller.publicId, product.slug));
+    updateTag(sellerTag(seller.publicId));
   }
   redirect("/admin/twigs");
 }

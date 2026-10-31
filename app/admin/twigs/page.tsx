@@ -19,7 +19,7 @@ export default async function Page() {
             </div>
             <div className="flex items-center gap-3">
               <Link href={`/dashboard/products/${product.id}`} className="text-forest">Edit</Link>
-              {product.status === "published" ? <Link href={`/${product.username}/${product.slug}`} className="text-forest">Open</Link> : null}
+              {product.status === "published" ? <Link href={`/${product.publicId}/${product.slug}`} className="text-forest">Open</Link> : null}
               {product.status === "published" && !product.deactivatesAt ? (
                 <form action={adminSetTwig}>
                   <input type="hidden" name="id" value={product.id} />

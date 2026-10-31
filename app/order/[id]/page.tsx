@@ -89,7 +89,7 @@ async function OrderView({
             <Link href="/signup" className="text-forest">Create an account</Link> with this email to keep this order.
           </p>
         ) : null}
-        <Link href={`/${order.username}/${order.productSlug}`} className="mt-8 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">
+        <Link href={`/${order.publicId}/${order.productSlug}`} className="mt-8 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">
           Back to the product
         </Link>
       </div>

@@ -5,7 +5,6 @@ import { requireSeller } from "@/lib/auth";
 import { DeleteTwig } from "@/components/delete-twig";
 import { ProductForm } from "@/components/product-form";
 import { findUserById, getProductById } from "@/lib/db";
-import { isPrivateUsername } from "@/lib/format";
 
 async function Editor({
   params,
@@ -34,7 +33,7 @@ async function Editor({
           A live or deactivated Twig cannot be deleted. Deactivate it from the dashboard, then reactivate before it is permanently deleted.
         </p>
       ) : null}
-      <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} cta={product.cta} needsUsername={isPrivateUsername(owner.username)} />
+      <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} cta={product.cta} />
       {product.status === "draft" ? (
         <div className="mt-2">
           <DeleteTwig productId={product.id} />

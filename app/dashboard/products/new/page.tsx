@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { saveProduct } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { ProductForm } from "@/components/product-form";
-import { isPrivateUsername, readCta } from "@/lib/format";
+import { readCta } from "@/lib/format";
 
 async function NewProduct({
   searchParams,
@@ -18,7 +18,7 @@ async function NewProduct({
   return (
     <main className="mx-auto w-full max-w-xl px-5 py-6">
       <h1 className="font-serif text-4xl">{title}</h1>
-      <ProductForm action={saveProduct} defaultEmail={user.email} sellerName={user.displayName} cta={cta} needsUsername={isPrivateUsername(user.username)} />
+      <ProductForm action={saveProduct} defaultEmail={user.email} sellerName={user.displayName} cta={cta} />
     </main>
   );
 }

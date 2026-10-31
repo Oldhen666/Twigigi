@@ -2,7 +2,7 @@ import Link from "next/link";
 import { adminRenameUser, setUserRole } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { listUsers } from "@/lib/db";
-import { formatDate, isPrivateUsername } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const admin = await requireAdmin();
@@ -41,11 +41,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                       <input name="displayName" defaultValue={user.displayName} className="h-9 w-40 rounded-xl border border-line bg-white px-2 text-sm" />
                       <button className="text-forest">Save name</button>
                     </form>
-                    {isPrivateUsername(user.username) ? (
-                      <p className="text-muted">No public link yet</p>
-                    ) : (
-                      <Link href={`/${user.username}`} className="text-forest">twigigi.com/{user.username}</Link>
-                    )}
+                    <p className="text-muted">{user.username}</p>
+                    <Link href={`/${user.publicId}`} className="text-forest">twigigi.com/{user.publicId}</Link>
                   </td>
                   <td className="px-4 py-3 text-muted">{formatDate(user.createdAt)}</td>
                   <td className="px-4 py-3">{user.productCount}</td>

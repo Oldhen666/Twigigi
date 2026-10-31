@@ -71,7 +71,7 @@ export function PublishAccount({
               </Field>
               <Field label="Username" error={accountError?.username}>
                 <input name="username" autoCapitalize="none" autoCorrect="off" placeholder="ava" defaultValue={values.current.username} onInput={remember} className={inputClass} />
-                <span className="mt-1 block text-xs text-muted">Your link will be twigigi.com/username/product</span>
+                <span className="mt-1 block text-xs text-muted">Shown on your page. The link uses a permanent ID.</span>
               </Field>
             </>
           ) : null}

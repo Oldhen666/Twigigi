@@ -8,7 +8,8 @@ import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
 import { quoteChargesSince, sellerProducts, sellerStats } from "@/lib/db";
-import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isPrivateUsername, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
+import { UsernameForm } from "@/components/username-form";
+import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
 import { storedUpload } from "@/lib/uploads";
 
 async function DashboardBody() {
@@ -27,11 +28,12 @@ async function DashboardBody() {
       <div className="mt-6">
         <h1 className="font-serif text-4xl">Selling</h1>
         <p className="mt-2 text-sm text-muted">Hi, {user.displayName}</p>
+        <div className="mt-3">
+          <UsernameForm username={user.username} next="/dashboard" />
+        </div>
         <p className="mt-3 flex flex-wrap gap-x-4">
           <Link href="/dashboard/payments" className="font-medium text-forest">Payment settings</Link>
-          {isPrivateUsername(user.username) ? null : (
-            <Link href={`/${user.username}`} className="font-medium text-forest">Your page</Link>
-          )}
+          <Link href={`/${user.publicId}`} className="font-medium text-forest">Your page</Link>
         </p>
         {user.billingMethod ? null : (
           <p className="mt-3 text-sm">
@@ -69,7 +71,7 @@ async function DashboardBody() {
           {products.map((product) => {
             const live = isTwigLive(product);
             const ending = live && Boolean(product.deactivatesAt);
-            const url = productUrl(user.username, product.slug);
+            const url = productUrl(user.publicId, product.slug);
             const badge = product.status === "deactivated" ? "Deactivated" : ending ? "Deactivating" : live ? "Live" : "Draft";
             const period = activeWindow(product.billingStartedAt || product.createdAt);
             const activeLabel = `${formatBillingDate(period.start)} – ${formatBillingDate(period.end)}`;

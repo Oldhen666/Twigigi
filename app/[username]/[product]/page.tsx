@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { ProductView } from "@/components/product-view";
 import { ProductFallback } from "@/components/stage";
 import { getPublicProduct, requireLiveTwig, staticProductParams } from "@/lib/catalog";
+import { sellerPath } from "@/lib/seller-route";
 import { formatMoney } from "@/lib/format";
 
 export function generateStaticParams() {
@@ -15,7 +16,8 @@ export async function generateMetadata({
   params: Promise<{ username: string; product: string }>;
 }): Promise<Metadata> {
   const { username, product } = await params;
-  const item = await requireLiveTwig(await getPublicProduct(username, product));
+  const publicId = sellerPath(username, `/${product}`);
+  const item = publicId ? await requireLiveTwig(await getPublicProduct(publicId, product)) : null;
   if (!item) return { title: "Twig" };
   const description = item.description.slice(0, 180);
   const price = item.priceCents != null ? formatMoney(item.priceCents, item.currency) : null;
@@ -23,11 +25,11 @@ export async function generateMetadata({
   return {
     title: item.title,
     description,
-    alternates: { canonical: `/${item.username}/${item.slug}` },
+    alternates: { canonical: `/${item.publicId}/${item.slug}` },
     openGraph: {
       title: socialTitle,
       description,
-      url: `/${item.username}/${item.slug}`,
+      url: `/${item.publicId}/${item.slug}`,
       type: "website",
     },
     twitter: {

@@ -9,11 +9,13 @@ export function DeactivateTwig({
   mode,
   endsLabel,
   deleteLabel,
+  next = "",
 }: {
   productId: string;
   mode: "live" | "ending" | "deactivated";
   endsLabel: string;
   deleteLabel: string;
+  next?: string;
 }) {
   const [open, setOpen] = useState(false);
   const reactivating = mode !== "live";
@@ -43,6 +45,7 @@ export function DeactivateTwig({
             )}
             <form action={reactivating ? reactivateTwig : scheduleDeactivation} className="mt-5">
               <input type="hidden" name="id" value={productId} />
+              {next ? <input type="hidden" name="next" value={next} /> : null}
               <button className={`${buttonClass} w-full`}>{reactivating ? "Reactivate" : "Deactivate Twig"}</button>
             </form>
             <button type="button" onClick={() => setOpen(false)} className={`${ghostClass} mt-2 w-full`}>

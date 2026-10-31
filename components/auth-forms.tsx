@@ -80,6 +80,12 @@ export function SignupForm({ cta }: { cta?: string }) {
         <ErrorText message={state.fieldErrors?.displayName} />
       </label>
       <label className="block">
+        <span className={labelClass}>Username</span>
+        <input name="username" autoCapitalize="none" autoCorrect="off" placeholder="ava" className={inputClass} />
+        <span className="mt-1 block text-xs text-muted">Shown on your page. The link uses a permanent ID.</span>
+        <ErrorText message={state.fieldErrors?.username} />
+      </label>
+      <label className="block">
         <span className={labelClass}>Email</span>
         <input name="email" type="email" autoComplete="email" className={inputClass} />
         <ErrorText message={state.fieldErrors?.email} />

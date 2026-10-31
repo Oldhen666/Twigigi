@@ -143,7 +143,7 @@ export default async function Page({
           <ul className="mt-8 grid gap-4 sm:grid-cols-2">
             {products.map((product) => (
               <li key={product.id}>
-                <Link href={`/${product.username}/${product.slug}`} className="block overflow-hidden rounded-3xl border border-line bg-card">
+                <Link href={`/${product.publicId}/${product.slug}`} className="block overflow-hidden rounded-3xl border border-line bg-card">
                   <div className="relative aspect-[4/3] bg-paper-deep">
                     {product.images[0] ? <Image src={product.images[0]} alt={product.title} fill unoptimized={storedUpload(product.images[0])} className="object-cover" sizes="360px" /> : null}
                   </div>

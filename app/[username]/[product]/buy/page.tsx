@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { placeOrder } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { getPublicProduct, requireLiveTwig, staticProductParams } from "@/lib/catalog";
+import { sellerPath } from "@/lib/seller-route";
 import { CheckoutForm } from "@/components/checkout-form";
 import { ProductFallback, Stage } from "@/components/stage";
 import { formatMoney, fulfillmentOptions } from "@/lib/format";
@@ -17,7 +18,8 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: { params: Promise<{ username: string; product: string }> }) {
   const { username, product } = await params;
-  const item = await requireLiveTwig(await getPublicProduct(username, product));
+  const publicId = sellerPath(username, `/${product}/buy`);
+  const item = publicId ? await requireLiveTwig(await getPublicProduct(publicId, product)) : null;
   return { title: item ? (item.cta === "file" ? `Get ${item.title}` : `Buy ${item.title}`) : "Buy", robots: { index: false, follow: false } };
 }
 
@@ -40,7 +42,8 @@ async function BuyDetails({
 }) {
   const { username, product: slug } = await params;
   const query = await searchParams;
-  const product = await requireLiveTwig(await getPublicProduct(username, slug));
+  const publicId = sellerPath(username, `/${slug}/buy`);
+  const product = publicId ? await requireLiveTwig(await getPublicProduct(publicId, slug)) : null;
   if (!product || (product.cta !== "buy" && product.cta !== "file") || product.priceCents == null) notFound();
   const variantKey = typeof query.v === "string" ? query.v : "";
   const selection = resolveSelection(product, variantKey);
@@ -53,7 +56,7 @@ async function BuyDetails({
   return (
     <Stage>
       <div className="bg-card px-5 py-6 sm:rounded-[28px] sm:shadow-[0_24px_80px_rgba(70,48,16,0.08)]">
-        <Link href={`/${product.username}/${product.slug}`} className="text-sm text-muted">
+        <Link href={`/${product.publicId}/${product.slug}`} className="text-sm text-muted">
           ← {product.title}
         </Link>
         <h1 className="mt-3 font-serif text-4xl">{product.cta === "file" ? product.buttonLabel || "Get the file" : product.buttonLabel || "Buy now"}</h1>
@@ -63,7 +66,7 @@ async function BuyDetails({
           <p className="mt-6 rounded-xl bg-paper-deep px-3 py-2 text-sm text-muted">This product is sold out.</p>
         ) : missingOption || (selection && !selection.available) ? (
           <p className="mt-6 text-sm text-muted">
-            <Link href={`/${product.username}/${product.slug}`} className="text-forest">
+            <Link href={`/${product.publicId}/${product.slug}`} className="text-forest">
               Choose an available option
             </Link>{" "}
             on the Twig.
