@@ -12,6 +12,8 @@ import { placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, interacEmailProblem, isTransferMethod, methodsForFulfillment, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
 import { clearSession, getCurrentUser, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
+import { deliverPaidFile } from "@/lib/file-delivery";
+import { parseFileLinks } from "@/lib/files";
 import {
   claimBuyerOrders,
   createUser,
@@ -84,7 +86,7 @@ import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { getStripe } from "@/lib/stripe";
-import { categoryProblem, resolveCategory } from "@/lib/categories";
+import { DIGITAL_FILE_CATEGORY, categoryProblem, resolveCategory } from "@/lib/categories";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
 
 function fieldErrors(error: z.ZodError) {
@@ -407,7 +409,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const description = text(formData, "description").trim();
   const location = text(formData, "location").trim();
   const ctaValue = text(formData, "cta");
-  const cta: Cta = ctaValue === "buy" || ctaValue === "contact" ? ctaValue : "quote";
+  const cta: Cta = ctaValue === "buy" || ctaValue === "contact" || ctaValue === "file" ? ctaValue : "quote";
+  const priced = cta === "buy" || cta === "file";
   const price = parseMoney(text(formData, "price"));
   const deliveryRadius = parseWhole(text(formData, "deliveryRadiusKm"));
   const deliveryFee = parseMoney(text(formData, "deliveryFee"));
@@ -417,13 +420,16 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
 
   if (title.length < 2) errors.title = "Enter a product name.";
   if (title.length > 80) errors.title = "Keep the name under 80 characters.";
-  const allowService = cta === "quote";
+  const allowService = cta === "buy" || cta === "quote";
+  const categoryKindInput = text(formData, "categoryKind");
   const chosenCategory =
-    cta === "contact"
-      ? null
-      : resolveCategory(cta === "buy" ? "product" : text(formData, "categoryKind"), text(formData, "categoryGroup"), text(formData, "category"), allowService);
-  if (cta !== "contact" && !chosenCategory) {
-    errors.category = categoryProblem(cta === "buy" ? "product" : text(formData, "categoryKind"), text(formData, "categoryGroup"), text(formData, "category"), allowService) ?? "Choose a category.";
+    cta === "file"
+      ? DIGITAL_FILE_CATEGORY
+      : cta === "contact"
+        ? null
+        : resolveCategory(categoryKindInput, text(formData, "categoryGroup"), text(formData, "category"), allowService);
+  if (cta !== "contact" && cta !== "file" && !chosenCategory) {
+    errors.category = categoryProblem(categoryKindInput, text(formData, "categoryGroup"), text(formData, "category"), allowService) ?? "Choose a category.";
   }
   if (description.length > 2000) {
     errors.description = `Keep the description under 2,000 characters (${description.length.toLocaleString("en-US")} so far).`;
@@ -465,7 +471,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const quantityMode = text(formData, "quantityMode");
   const quantityRaw = parseWhole(text(formData, "quantityAvailable"));
   let quantityAvailable: number | null = null;
-  if (cta === "buy" && quantityMode === "limited") {
+  if (priced && quantityMode === "limited") {
     if (quantityRaw === "invalid" || quantityRaw == null) errors.quantityAvailable = "Enter how many you can sell, or choose Unlimited.";
     else quantityAvailable = quantityRaw;
   }
@@ -483,15 +489,15 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   Object.assign(errors, offer.errors);
   if (buttonLabel.length > 40) errors.buttonLabel = "Keep the button text under 40 characters.";
 
-  if (cta === "buy" && price !== "invalid" && (typeof price !== "number" || price < 50)) {
+  if (priced && price !== "invalid" && (typeof price !== "number" || price < 50)) {
     errors.price = "Enter a price of at least $0.50.";
   }
-  if (cta === "buy") {
+  if (priced) {
     const place = placeProblem(location);
     if (place) errors.location = place;
   }
   const payCountry = splitLocation(location).country;
-  const paymentMethods = cta === "buy" ? parsePaymentMethods(text(formData, "paymentMethods"), payCountry) : [];
+  const paymentMethods = priced ? parsePaymentMethods(text(formData, "paymentMethods"), payCountry) : [];
   const cardPaymentUrl = text(formData, "cardPaymentUrl").trim().slice(0, 500);
   const interacEmail = text(formData, "interacEmail").trim().slice(0, 80);
   const venmoUsername = text(formData, "venmoUsername").trim().replace(/^@/, "").slice(0, 30);
@@ -499,7 +505,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const zelleContact = text(formData, "zelleContact").trim().slice(0, 80);
   const sellerContactMode = text(formData, "sellerContactMode") === "phone" ? "phone" : "email";
   const sellerContact = text(formData, "sellerContact").trim().slice(0, 80);
-  if (cta === "buy" && intent === "publish") {
+  if (priced && intent === "publish") {
     if (paymentMethods.length === 0) {
       errors.paymentMethods = payCountry ? "Choose at least one way buyers can pay." : "Choose a country before choosing how buyers pay.";
     }
@@ -526,9 +532,12 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     if (contactProblem) errors.sellerContact = contactProblem;
   }
 
+  const parsedLinks = cta === "file" ? parseFileLinks(text(formData, "fileLinksJson")) : { links: [] as string[], error: null };
+  const filePassword = cta === "file" ? text(formData, "filePassword").trim().slice(0, 80) : "";
   if (intent === "publish") {
-    if (cta !== "buy" && location.length < 2) errors.location = "Add a public location, such as a city.";
+    if (!priced && location.length < 2) errors.location = "Add a public location, such as a city.";
     if (kept.length + files.length < 1) errors.images = "Add at least one photo.";
+    if (cta === "file" && parsedLinks.error) errors.fileLinks = parsedLinks.error;
     if (cta === "buy" && pickupEnabled && text(formData, "pickupNote").trim().length < 2) {
       errors.pickupNote = "Add the pickup address.";
     }
@@ -618,15 +627,15 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     contactPhone: contactPhone.slice(0, 40),
     status: intent === "publish" ? "published" : "draft",
     images,
-    quantityAvailable: cta === "buy" ? quantityAvailable : null,
-    buttonLabel: cta === "buy" ? buttonLabel : "Buy now",
+    quantityAvailable: priced ? quantityAvailable : null,
+    buttonLabel: cta === "file" ? "Get the file" : cta === "buy" ? buttonLabel : "Buy now",
     hasOptions: cta === "buy" && offer.hasOptions,
     samePrice: cta === "buy" ? offer.samePrice : true,
     options: cta === "buy" ? offer.options : [],
     variants: cta === "buy" && offer.hasOptions ? offer.variants : [],
-    requireName: cta !== "buy" || formData.get("requireName") === "on",
+    requireName: !priced || formData.get("requireName") === "on",
     requireEmail: true,
-    requirePhone: cta !== "buy" || formData.get("requirePhone") === "on",
+    requirePhone: !priced || formData.get("requirePhone") === "on",
     quoteForm: cta === "quote" ? normalizeQuoteForm(readJson(text(formData, "quoteFormJson"))) : null,
     paymentMethods,
     cardPaymentUrl,
@@ -634,8 +643,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     venmoUsername,
     zelleMode,
     zelleContact,
-    sellerContactMode: cta === "buy" ? sellerContactMode : "email",
-    sellerContact: cta === "buy" ? sellerContact : "",
+    sellerContactMode: priced ? sellerContactMode : "email",
+    sellerContact: priced ? sellerContact : "",
+    fileLinks: parsedLinks.links,
+    filePassword,
   };
 
   const savedProductId = existing?.id ?? newId("prd");
@@ -808,11 +819,13 @@ const personSchema = {
 export async function placeOrder(_prev: FormState, formData: FormData): Promise<FormState> {
   const productId = text(formData, "productId");
   const product = getProductById(productId);
-  if (!product || !isTwigLive(product) || product.cta !== "buy" || product.priceCents == null) {
+  if (!product || !isTwigLive(product) || product.priceCents == null || (product.cta !== "buy" && product.cta !== "file")) {
     return { error: "This Twig is not available to buy." };
   }
+  if (product.cta === "file" && product.fileLinks.length === 0) return { error: "This file is not ready yet." };
   if (product.quantityAvailable === 0) return { error: "This product is sold out." };
 
+  const digital = product.cta === "file";
   const cap = product.quantityAvailable == null ? 20 : Math.min(20, product.quantityAvailable);
   const parsed = z
     .object({
@@ -820,7 +833,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       email: personSchema.email,
       phone: product.requirePhone ? personSchema.phone : z.string().trim().max(30),
       quantity: z.coerce.number().int().min(1).max(Math.max(cap, 1)),
-      fulfillment: z.enum(["pickup", "delivery", "shipping"]),
+      fulfillment: digital ? z.literal("digital") : z.enum(["pickup", "delivery", "shipping"]),
       address: z.string().trim().max(300),
     })
     .safeParse({
@@ -828,8 +841,8 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       email: text(formData, "email"),
       phone: text(formData, "phone"),
       quantity: text(formData, "quantity") || "1",
-      fulfillment: text(formData, "fulfillment"),
-      address: text(formData, "address"),
+      fulfillment: digital ? "digital" : text(formData, "fulfillment"),
+      address: digital ? "" : text(formData, "address"),
     });
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
   if (parsed.data.quantity > cap) return { fieldErrors: { quantity: `Only ${cap} available.` } };
@@ -838,16 +851,18 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   if (!selection || selection.priceCents == null) return { error: "Choose an available option on the Twig." };
   if (!selection.available) return { error: "That combination is unavailable." };
 
-  const allowed = fulfillmentOptions(product).some((option) => option.id === parsed.data.fulfillment);
-  if (!allowed) return { fieldErrors: { fulfillment: "Choose how you want to receive it." } };
-  if (parsed.data.fulfillment !== "pickup" && methodsForFulfillment(product.paymentMethods, parsed.data.fulfillment).length === 0) {
-    return { error: "Delivery and shipping have to be paid by transfer first. This seller has not set one up." };
-  }
-  if (parsed.data.fulfillment !== "pickup" && parsed.data.address.length < 4) {
-    return { fieldErrors: { address: "Enter an address for delivery or shipping." } };
+  if (!digital) {
+    const allowed = fulfillmentOptions(product).some((option) => option.id === parsed.data.fulfillment);
+    if (!allowed) return { fieldErrors: { fulfillment: "Choose how you want to receive it." } };
+    if (parsed.data.fulfillment !== "pickup" && parsed.data.fulfillment !== "digital" && methodsForFulfillment(product.paymentMethods, parsed.data.fulfillment).length === 0) {
+      return { error: "Delivery and shipping have to be paid by transfer first. This seller has not set one up." };
+    }
+    if (parsed.data.fulfillment !== "pickup" && parsed.data.address.length < 4) {
+      return { fieldErrors: { address: "Enter an address for delivery or shipping." } };
+    }
   }
   const subtotal = selection.priceCents * parsed.data.quantity;
-  const amount = orderAmount(selection.priceCents, parsed.data.quantity, parsed.data.fulfillment, product);
+  const amount = digital ? subtotal : orderAmount(selection.priceCents, parsed.data.quantity, parsed.data.fulfillment, product);
   if (amount == null) return { error: "Could not calculate the total." };
   const shipping = amount - subtotal;
   const tax = 0;
@@ -870,7 +885,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       phone: parsed.data.phone,
       quantity: parsed.data.quantity,
       fulfillment: parsed.data.fulfillment as Fulfillment,
-      address: parsed.data.fulfillment === "pickup" ? "" : parsed.data.address,
+      address: parsed.data.fulfillment === "pickup" || parsed.data.fulfillment === "digital" ? "" : parsed.data.address,
       subtotalCents: subtotal,
       shippingCents: shipping,
       taxCents: tax,
@@ -878,6 +893,8 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       currency: product.currency,
       src: await trafficSource(),
       variantLabel: selection.label,
+      fileLinks: digital ? product.fileLinks : [],
+      filePassword: digital ? product.filePassword : "",
     });
     openInteraction({
       kind: "order",
@@ -906,10 +923,11 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       `Email: ${parsed.data.email}`,
       parsed.data.phone ? `Phone: ${parsed.data.phone}` : null,
       `Quantity: ${parsed.data.quantity}`,
-      `Fulfillment: ${parsed.data.fulfillment}`,
-      parsed.data.fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
+      digital ? "Delivery: emailed after you mark the order paid" : `Fulfillment: ${parsed.data.fulfillment}`,
+      !digital && parsed.data.fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
       `Total: ${formatMoney(total, product.currency)}`,
       order?.publicRef ? `Order: ${order.publicRef}` : null,
+      digital ? "Do not send the file link yourself. Twigigi emails it when you mark this order paid." : null,
       "",
       `Open the order: ${appUrl()}/order/${orderId}`,
     ].filter((line): line is string => line !== null);
@@ -1291,7 +1309,8 @@ export async function setLeadStatus(formData: FormData) {
   const id = text(formData, "id");
   const status = text(formData, "status");
   if (kind === "order" && ["unpaid", "paid", "fulfilled", "canceled"].includes(status)) {
-    updateOrderStatus(id, user.id, status as OrderStatus);
+    const result = updateOrderStatus(id, user.id, status as OrderStatus);
+    if (result.justPaid) await deliverPaidFile(id);
   } else if (kind === "quote" && ["new", "contacted", "closed"].includes(status)) {
     updateQuoteStatus(id, user.id, status as "new" | "contacted" | "closed");
   } else if (kind === "message" && ["new", "read", "closed"].includes(status)) {

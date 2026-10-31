@@ -1,10 +1,9 @@
-import Image from "next/image";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { Logo } from "@/components/logo";
 import { Stars } from "@/components/stars";
 import { BackButton } from "@/components/back-button";
+import { SellerListings } from "@/components/seller-listings";
 import { filterLiveTwigs, getPublicSeller, staticProductParams } from "@/lib/catalog";
 import { ctaCopy, formatMoney } from "@/lib/format";
 
@@ -35,28 +34,24 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
           </span>
         ) : null}
       </p>
-      {products.length === 0 ? <p className="mt-6 text-muted">Nothing is published yet.</p> : null}
-      <ul className="mt-8 grid gap-4 sm:grid-cols-2">
-        {products.map((product) => (
-          <li key={product.id}>
-            <Link href={`/${seller.username}/${product.slug}`} className="block overflow-hidden rounded-3xl border border-line bg-card">
-              <div className="relative aspect-[4/3] bg-paper-deep">
-                {product.images[0] ? (
-                  <Image src={product.images[0]} alt={product.title} fill className="object-cover" sizes="360px" />
-                ) : null}
-              </div>
-              <div className="p-4">
-                <h2 className="font-serif text-2xl">{product.title}</h2>
-                <p className="mt-1 text-sm text-muted">{product.location}</p>
-                <p className="mt-2 font-serif text-xl text-forest">
-                  {product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}
-                </p>
-                <p className="mt-2 text-sm text-forest">{ctaCopy(product.cta).label}</p>
-              </div>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      {products.length === 0 ? (
+        <p className="mt-6 text-muted">Nothing is published yet.</p>
+      ) : (
+        <SellerListings
+          username={seller.username}
+          listings={products.map((product) => ({
+            slug: product.slug,
+            title: product.title,
+            location: product.location,
+            priceLabel: product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request",
+            ctaLabel: ctaCopy(product.cta).label,
+            image: product.images[0] ?? "",
+            categoryKind: product.categoryKind,
+            categoryGroup: product.categoryGroup,
+            category: product.category,
+          }))}
+        />
+      )}
     </main>
   );
 }

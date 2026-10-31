@@ -17,10 +17,17 @@ async function OrderScreen({ params }: { params: Promise<{ id: string }> }) {
       <h1 className="mt-1 font-serif text-4xl">{order.productTitle}</h1>
       {order.variantLabel ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
       <p className="mt-4 font-serif text-2xl">{formatMoney(order.amountCents, order.currency)}</p>
-      <p className="mt-2 text-sm text-muted">{order.quantity} · {order.fulfillment} · {order.status}</p>
+      <p className="mt-2 text-sm text-muted">{order.quantity} · {order.fulfillment === "digital" ? "digital file" : order.fulfillment} · {order.status}</p>
       <p className="mt-4 text-sm">{order.buyerName}</p>
       <p className="text-sm text-muted">{order.email}{order.phone ? ` · ${order.phone}` : ""}</p>
       {order.address ? <p className="text-sm text-muted">{order.address}</p> : null}
+      {order.fulfillment === "digital" ? (
+        <p className="mt-3 text-sm text-muted">
+          {order.status === "paid" || order.status === "fulfilled"
+            ? "Twigigi emailed the file link and password to the buyer."
+            : "Mark this order paid after you receive the money. Twigigi then emails the file link and password."}
+        </p>
+      ) : null}
       <p className="mt-2 text-sm text-muted">{srcLabel(order.src)} · {formatDate(order.createdAt)}</p>
       <form action={setLeadStatus} className="mt-4 flex items-center gap-2">
         <input type="hidden" name="kind" value="order" />

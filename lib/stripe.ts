@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { markOrderPaid } from "@/lib/db";
+import { deliverPaidFile } from "@/lib/file-delivery";
 
 export function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -19,7 +20,9 @@ export async function confirmStripeSession(orderId: string, sessionId: string) {
     if (session.metadata?.orderId !== orderId) return;
     if (session.payment_status === "paid") {
       const intent = session.payment_intent;
-      markOrderPaid(orderId, session.id, typeof intent === "string" ? intent : session.id);
+      if (markOrderPaid(orderId, session.id, typeof intent === "string" ? intent : session.id)) {
+        await deliverPaidFile(orderId);
+      }
     }
   } catch {
     return;

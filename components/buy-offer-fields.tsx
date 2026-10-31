@@ -41,11 +41,13 @@ export function BuyOfferFields({
   errors,
   seed = null,
   onChange,
+  digital = false,
 }: {
   product?: Product;
   errors?: Record<string, string>;
   seed?: NewPageDraft | null;
   onChange?: () => void;
+  digital?: boolean;
 }) {
   const seededOptions = readOptions(seed, product);
   const [price, setPrice] = useState(seed?.fields.price ?? centsToInput(product?.priceCents ?? null));
@@ -213,6 +215,15 @@ export function BuyOfferFields({
 
         <PlaceFields location={initialLocation} error={errors?.location} onCountry={setPayCountry} />
 
+        {digital ? (
+          <>
+            <input type="hidden" name="hasOptions" value="0" />
+            <input type="hidden" name="samePrice" value="1" />
+            <input type="hidden" name="optionsJson" value="[]" />
+            <input type="hidden" name="variantsJson" value="[]" />
+            <p className="text-sm text-muted">There is no pickup or shipping. Twigigi emails the file link and password after you mark the order paid.</p>
+          </>
+        ) : (
         <div>
           <div className="grid grid-cols-2 gap-2 rounded-full bg-paper-deep p-1">
             <button type="button" onClick={() => setVariable(false)} className={`h-11 rounded-full text-sm font-medium ${variable ? "text-muted" : "bg-forest text-card"}`}>
@@ -308,8 +319,11 @@ export function BuyOfferFields({
           </div>
           ) : null}
         </div>
+        )}
       </div>
 
+      {digital ? null : (
+      <>
       <h2 className="mt-8 font-serif text-2xl">Delivery Method</h2>
       <div className="mt-4 space-y-3">
         {errors?.fulfillment ? <p className="text-sm text-danger">{errors.fulfillment}</p> : null}
@@ -355,6 +369,8 @@ export function BuyOfferFields({
           )}
         </div>
       </div>
+      </>
+      )}
 
       <h2 className="mt-8 font-serif text-2xl">Buyer information required</h2>
       <div className="mt-4 space-y-3">
@@ -362,7 +378,11 @@ export function BuyOfferFields({
         <Check name="requireEmail" defaultChecked disabled label="Email" />
         <Check name="requirePhone" defaultChecked={seed ? seed.checks.requirePhone !== false : (product?.requirePhone ?? true)} label="Phone" />
         <p className="text-sm text-muted">
-          {needsAddress ? "Address is required when Delivery/Shipping is turned on." : "Address is asked only when the buyer chooses Delivery/Shipping."}
+          {digital
+            ? "Email is required. The file link and password are sent there after payment."
+            : needsAddress
+              ? "Address is required when Delivery/Shipping is turned on."
+              : "Address is asked only when the buyer chooses Delivery/Shipping."}
         </p>
       </div>
 

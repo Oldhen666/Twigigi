@@ -29,6 +29,8 @@ async function OrderView({
   const interaction = getInteractionBySource(order.id);
   const product = getProductById(order.productId);
   const paid = order.status === "paid" || order.status === "fulfilled";
+  const digital = product?.cta === "file" || order.fulfillment === "digital";
+  const fileReady = paid && order.fileLinks.length > 0;
   return (
     <Stage>
       <div className="bg-card px-6 py-10 sm:rounded-[28px]">
@@ -36,18 +38,34 @@ async function OrderView({
         <h1 className="mt-2 font-serif text-4xl">{order.productTitle}</h1>
         {order.variantLabel ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
         <p className="mt-4 text-muted">
-          {order.quantity} × {order.fulfillment} · {formatMoney(order.amountCents, order.currency)}
+          {order.quantity} × {digital ? "digital file" : order.fulfillment} · {formatMoney(order.amountCents, order.currency)}
         </p>
         <p className="mt-3 text-sm leading-6 text-muted">
-          {paid
-            ? `${order.displayName} has your payment. They will follow up at ${order.email}.`
-            : order.fulfillment === "pickup"
-              ? `Pay ${order.displayName} when you pick up. They will follow up at ${order.email}.`
-              : `Transfer the payment to ${order.displayName} first. They confirm it, then ship. They will follow up at ${order.email}.`}
+          {digital
+            ? fileReady
+              ? `Payment received. The file link and password were emailed to ${order.email}. They are also listed below.`
+              : `Pay ${order.displayName} first. After they confirm payment, Twigigi emails the file link and password to ${order.email}.`
+            : paid
+              ? `${order.displayName} has your payment. They will follow up at ${order.email}.`
+              : order.fulfillment === "pickup"
+                ? `Pay ${order.displayName} when you pick up. They will follow up at ${order.email}.`
+                : `Transfer the payment to ${order.displayName} first. They confirm it, then ship. They will follow up at ${order.email}.`}
         </p>
-        {!paid && product?.cta === "buy" ? (
+        {fileReady ? (
+          <div className="mt-4 space-y-2 rounded-2xl bg-paper-deep px-4 py-3 text-sm">
+            {order.fileLinks.map((link) => (
+              <p key={link}>
+                <a href={link} className="break-all text-forest" target="_blank" rel="noreferrer">
+                  {link}
+                </a>
+              </p>
+            ))}
+            {order.filePassword ? <p>Password: {order.filePassword}</p> : null}
+          </div>
+        ) : null}
+        {!paid && (product?.cta === "buy" || product?.cta === "file") ? (
           <PayMethods
-            methods={methodsForFulfillment(product.paymentMethods, order.fulfillment)}
+            methods={methodsForFulfillment(product.paymentMethods, order.fulfillment === "digital" ? "pickup" : order.fulfillment)}
             cardPaymentUrl={product.cardPaymentUrl}
             interacEmail={product.interacEmail}
             venmoUsername={product.venmoUsername}

@@ -11,7 +11,7 @@ export function billingCurrency(location: string) {
 }
 
 export function listingFeeCents(cta: string) {
-  return cta === "buy" || cta === "quote" ? LISTING_CENTS : 0;
+  return cta === "buy" || cta === "quote" || cta === "file" ? LISTING_CENTS : 0;
 }
 
 export function isBillingMethod(value: string): value is BillingMethod {

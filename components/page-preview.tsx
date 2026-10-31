@@ -34,7 +34,9 @@ export function readPagePreview(formData: FormData, images: string[], cta: Cta, 
   const price = text(formData, "price");
   const amount = Number(price);
   const methods =
-    cta === "buy"
+    cta === "file"
+      ? [{ label: "Digital file", detail: "Link and password are emailed after payment." }]
+      : cta === "buy"
       ? [
           formData.get("pickupEnabled") === "on" ? { label: "Local pickup", detail: pickupDetail(text(formData, "pickupNote"), text(formData, "pickupTime")) } : null,
           formData.get("shippingEnabled") === "on"
@@ -54,7 +56,7 @@ export function readPagePreview(formData: FormData, images: string[], cta: Cta, 
     description: text(formData, "description"),
     location: text(formData, "location"),
     images,
-    priceLabel: cta === "buy" && price && Number.isFinite(amount) ? formatMoney(Math.round(amount * 100), "CAD") : cta === "buy" ? "Add a price" : "Pricing on request",
+    priceLabel: (cta === "buy" || cta === "file") && price && Number.isFinite(amount) ? formatMoney(Math.round(amount * 100), "CAD") : cta === "buy" || cta === "file" ? "Add a price" : "Pricing on request",
     methods,
     ctaLabel: ctaCopy(cta).label,
     phone: text(formData, "contactPhone"),

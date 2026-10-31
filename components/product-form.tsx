@@ -6,11 +6,13 @@ import { captureDraft, readDraftImage, type DraftImage, type NewPageDraft } from
 import type { Cta, FormState, Product, QuoteForm } from "@/lib/types";
 import { BuyOfferFields } from "@/components/buy-offer-fields";
 import { CategoryFields } from "@/components/category-fields";
+import { FileLinkFields } from "@/components/file-link-fields";
 import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/components/page-preview";
 import { PublishAccount } from "@/components/publish-account";
 import { QuoteFormFields } from "@/components/quote-form-fields";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { categoryProblem } from "@/lib/categories";
+import { parseFileLinks } from "@/lib/files";
 import { PROVINCES, joinLocation, lookupCurrentPlace, placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
 
@@ -77,8 +79,10 @@ export function ProductForm({
   const retired = product?.status === "deactivated";
   const [reactivateOpen, setReactivateOpen] = useState(false);
   const buy = cta === "buy";
+  const file = cta === "file";
+  const priced = buy || file;
   const quote = cta === "quote";
-  const stepped = buy || quote;
+  const stepped = priced || quote;
   const fresh = !product;
   keptCount.current = kept.length;
 
@@ -89,17 +93,17 @@ export function ProductForm({
     if (productKeys.length === 0) return;
     setAccountOpen(false);
     setPreviewing(false);
-    const details = ["title", "description", "videoUrl", "images", "category"].some((key) => errors[key]);
+    const details = ["title", "description", "videoUrl", "images", "category", "fileLinks"].some((key) => errors[key]);
     if (quote) {
       if (details) setStep(1);
       else if (["location", "fulfillment", "contactEmail", "contactPhone", "shippingNote", "sellerContact"].some((key) => errors[key])) setStep(2);
       else setStep(3);
       return;
     }
-    if (!buy) return;
+    if (!priced) return;
     if (details) setStep(1);
     else setStep(2);
-  }, [buy, quote, state.fieldErrors]);
+  }, [priced, quote, state.fieldErrors]);
 
   useEffect(() => {
     if (state.displayName) setSeller(state.displayName);
@@ -224,9 +228,9 @@ export function ProductForm({
       return null;
     }
     if (name === "category") {
-      if (cta === "contact") return null;
-      const kind = cta === "buy" ? "product" : fieldValue(form, "categoryKind");
-      return categoryProblem(kind, fieldValue(form, "categoryGroup"), value, cta === "quote");
+      if (cta === "contact" || cta === "file") return null;
+      const kind = fieldValue(form, "categoryKind");
+      return categoryProblem(kind, fieldValue(form, "categoryGroup"), value, cta === "buy" || cta === "quote");
     }
     if (name === "description") {
       if (value.length > 2000) return `Keep the description under 2,000 characters (${value.length.toLocaleString("en-US")} so far).`;
@@ -248,15 +252,19 @@ export function ProductForm({
       }
       return "Enter a full http(s) video link.";
     }
+    if (name === "fileLinks" || name === "fileLinksJson") {
+      if (cta !== "file") return null;
+      return parseFileLinks(fieldValue(form, "fileLinksJson")).error;
+    }
     if (name === "price") {
       if (!value) return "Enter a price of at least $0.50.";
       if (!/^\d+(\.\d{1,2})?$/.test(value)) return "Enter a price like 128 or 128.50.";
       if (Math.round(Number(value) * 100) < 50) return "Enter a price of at least $0.50.";
       return null;
     }
-    if (name === "location") return cta === "buy" ? placeProblem(value) : value.length >= 2 ? null : "Add a public location, such as a city.";
+    if (name === "location") return cta === "buy" || cta === "file" ? placeProblem(value) : value.length >= 2 ? null : "Add a public location, such as a city.";
     if (name === "paymentMethods") {
-      if (cta !== "buy") return null;
+      if (cta !== "buy" && cta !== "file") return null;
       const country = splitLocation(fieldValue(form, "location")).country;
       if (!country) return "Choose a country before choosing how buyers pay.";
       const methods = parsePaymentMethods(value || "[]", country);
@@ -271,31 +279,31 @@ export function ProductForm({
       return null;
     }
     if (name === "cardPaymentUrl") {
-      if (cta !== "buy") return null;
+      if (cta !== "buy" && cta !== "file") return null;
       const methods = parsePaymentMethods(fieldValue(form, "paymentMethods") || "[]", splitLocation(fieldValue(form, "location")).country);
       if (!methods.includes("card")) return null;
       return cardLinkProblem(value);
     }
     if (name === "interacEmail") {
-      if (cta !== "buy") return null;
+      if (cta !== "buy" && cta !== "file") return null;
       const methods = parsePaymentMethods(fieldValue(form, "paymentMethods") || "[]", splitLocation(fieldValue(form, "location")).country);
       if (!methods.includes("interac")) return null;
       return interacEmailProblem(value);
     }
     if (name === "venmoUsername") {
-      if (cta !== "buy") return null;
+      if (cta !== "buy" && cta !== "file") return null;
       const methods = parsePaymentMethods(fieldValue(form, "paymentMethods") || "[]", splitLocation(fieldValue(form, "location")).country);
       if (!methods.includes("venmo")) return null;
       return venmoUsernameProblem(value);
     }
     if (name === "zelleContact") {
-      if (cta !== "buy") return null;
+      if (cta !== "buy" && cta !== "file") return null;
       const methods = parsePaymentMethods(fieldValue(form, "paymentMethods") || "[]", splitLocation(fieldValue(form, "location")).country);
       if (!methods.includes("zelle")) return null;
       return zelleContactProblem(fieldValue(form, "zelleMode") || "phone", value);
     }
     if (name === "sellerContact") {
-      if (cta !== "buy") return null;
+      if (cta !== "buy" && cta !== "file") return null;
       return sellerContactProblem(fieldValue(form, "sellerContactMode") || "email", value);
     }
     if (name === "contactEmail") {
@@ -340,7 +348,7 @@ export function ProductForm({
     const form = formRef.current;
     const errors: Record<string, string> = {};
     if (!form) return errors;
-    for (const key of cta === "contact" ? ["title", "description"] : ["title", "description", "category"]) {
+    for (const key of cta === "contact" ? ["title", "description"] : cta === "file" ? ["title", "description", "fileLinks"] : ["title", "description", "category"]) {
       const problem = activeProblem(form, key);
       if (problem) errors[key] = problem;
     }
@@ -374,6 +382,16 @@ export function ProductForm({
       refreshHints(event.currentTarget, "paymentMethods");
       refreshHints(event.currentTarget, "shippingNote");
     }
+    if (name === "categoryKind" || name === "categoryGroup") {
+      setLocalErrors((current) => {
+        if (!current.category) return current;
+        const next = { ...current };
+        delete next.category;
+        return next;
+      });
+      setLive((current) => (current.category ? { ...current, category: "" } : current));
+    }
+    if (name === "category") refreshHints(event.currentTarget, "category");
     refreshHints(event.currentTarget, name);
   }
   refreshRef.current = refreshHints;
@@ -445,7 +463,7 @@ export function ProductForm({
 
   function blockedOffer() {
     const form = formRef.current;
-    if (!form || cta !== "buy") return false;
+    if (!form || (cta !== "buy" && cta !== "file")) return false;
     const problems: Record<string, string> = {};
     for (const key of ["price", "location"]) {
       const problem = activeProblem(form, key);
@@ -461,7 +479,7 @@ export function ProductForm({
 
   function blockedPayments() {
     const form = formRef.current;
-    if (!form || cta !== "buy") return false;
+    if (!form || (cta !== "buy" && cta !== "file")) return false;
     const problems: Record<string, string> = {};
     for (const key of ["paymentMethods", "cardPaymentUrl", "interacEmail", "venmoUsername", "zelleContact", "sellerContact", "shippingNote"]) {
       const problem = activeProblem(form, key);
@@ -598,7 +616,7 @@ export function ProductForm({
       onSubmit={onSubmit}
       onInput={hintFrom}
       onChange={hintFrom}
-      className="pb-24"
+      className="pb-36"
     >
       {photoOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={() => setPhotoOpen(false)}>
@@ -686,7 +704,7 @@ export function ProductForm({
         </div>
       ) : null}
       <div key={resetKey} className={previewing ? "hidden" : undefined}>
-      {buy ? (
+      {priced ? (
         <div className="mt-6 grid grid-cols-2 gap-2 rounded-full bg-paper-deep p-1">
           <button type="button" onClick={() => showStep(1)} className={`h-11 rounded-full text-sm font-medium ${step === 1 ? "bg-forest text-card" : "text-muted"}`}>
             1 · Details
@@ -715,10 +733,20 @@ export function ProductForm({
         <Field label={cta === "quote" ? "" : "Product Title"} required={cta !== "quote"} error={visibleErrors.title}>
           <input name="title" defaultValue={textValue(draft, "title", product?.title)} placeholder="Cedar planter box (at least 2 characters)" aria-label={cta === "quote" ? "Product/Service Title" : undefined} className={inputClass} />
         </Field>
-        {cta === "contact" ? null : (
+        {cta === "contact" ? null : file ? (
+          <div>
+            <span className={labelClass}>Product category</span>
+            <input value="Digital file" disabled aria-label="Product category" className={`${inputClass} disabled:cursor-not-allowed disabled:bg-paper-deep disabled:opacity-70`} />
+            <input type="hidden" name="categoryKind" value="product" />
+            <input type="hidden" name="categoryGroup" value="digital-file" />
+            <input type="hidden" name="category" value="digital-file" />
+            <Field label="Brand" optional>
+              <input name="brand" defaultValue={textValue(draft, "brand", product?.brand)} placeholder="(optional)" className={inputClass} />
+            </Field>
+          </div>
+        ) : (
           <>
             <CategoryFields
-              mode={buy ? "buy" : "quote"}
               kind={textValue(draft, "categoryKind", product?.categoryKind)}
               group={textValue(draft, "categoryGroup", product?.categoryGroup)}
               item={textValue(draft, "category", product?.category)}
@@ -730,15 +758,15 @@ export function ProductForm({
           </>
         )}
         <Field label="Short description" required error={visibleErrors.description}>
-          <textarea name="description" rows={9} defaultValue={textValue(draft, "description", product?.description)} placeholder={"Description for your product/service:\n-Size / Dimensions\n-Material\n-Color\n-Capacity\n-Weight\n-What's included\n(at least 10 characters)"} className={`${inputClass} h-auto py-3`} />
+          <textarea name="description" rows={9} defaultValue={textValue(draft, "description", product?.description)} placeholder={file ? "What the buyer is getting:\n- File types, such as STL, 3MF, or STEP\n- Layer height, material, supports\n(at least 10 characters)" : "Description for your product/service:\n-Size / Dimensions\n-Material\n-Color\n-Capacity\n-Weight\n-What's included\n(at least 10 characters)"} className={`${inputClass} h-auto py-3`} />
         </Field>
         <Field label="Video link" error={visibleErrors.videoUrl}>
           <input name="videoUrl" defaultValue={textValue(draft, "videoUrl", product?.videoUrl ?? "")} placeholder="https://youtu.be/… (http or https)" className={inputClass} />
         </Field>
       </Section>
 
-      <Section title="Photos">
-        <p className="text-sm text-muted">The first photo is the cover and the social preview. Up to 6.</p>
+      <Section title={file ? "Display photos" : "Photos"}>
+        <p className="text-sm text-muted">{file ? "Preview photos only. The file link stays hidden until the order is paid. The first photo is the cover. Up to 6." : "The first photo is the cover and the social preview. Up to 6."}</p>
         {visibleErrors.images ? <p className="text-sm text-danger">{visibleErrors.images}</p> : null}
         {photoNote ? <p className="text-sm text-danger">{photoNote}</p> : null}
         <ul className="space-y-2">
@@ -789,11 +817,18 @@ export function ProductForm({
             : "JPG, PNG, or WebP. Drag, paste, or use the camera."}
         </p>
       </Section>
+      {file ? (
+        <FileLinkFields
+          links={fileLinkSeed(draft, product)}
+          password={textValue(draft, "filePassword", product?.filePassword)}
+          error={visibleErrors.fileLinks}
+        />
+      ) : null}
       </div>
 
-      {buy ? (
+      {priced ? (
         <div className={step !== 2 ? "hidden" : undefined}>
-          <BuyOfferFields product={product} errors={visibleErrors} seed={fresh ? draft : null} onChange={fresh ? remember : undefined} />
+          <BuyOfferFields product={product} errors={visibleErrors} seed={fresh ? draft : null} onChange={fresh ? remember : undefined} digital={file} />
           <Section title="Order email">
             <Field label="Email for new orders" error={visibleErrors.contactEmail}>
               <input name="contactEmail" type="email" defaultValue={emailValue(draft, product, defaultEmail)} placeholder="name@email.com (email)" className={inputClass} />
@@ -862,7 +897,7 @@ export function ProductForm({
           {publishButton}
         </div>
       ) : stepped && step === 1 ? (
-        <div className="sticky bottom-3 mt-8 rounded-full border border-line bg-card p-2 shadow-lg">
+        <div className="sticky bottom-3 z-10 mt-8 rounded-full border border-line bg-card p-2 shadow-lg">
           <button type="button" onClick={() => showStep(2)} className={`${buttonClass} w-full`}>
             Next
           </button>
@@ -929,6 +964,19 @@ function restoreDraft(form: HTMLFormElement, draft: NewPageDraft) {
 function textValue(draft: NewPageDraft | null, key: string, fallback = "") {
   if (!draft) return fallback;
   return draft.fields[key] ?? "";
+}
+
+function fileLinkSeed(draft: NewPageDraft | null, product?: Product) {
+  const raw = draft?.fields.fileLinksJson;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string") && parsed.length > 0) return parsed;
+    } catch {
+      return product?.fileLinks.length ? product.fileLinks : [""];
+    }
+  }
+  return product?.fileLinks.length ? product.fileLinks : [""];
 }
 
 function emailValue(draft: NewPageDraft | null, product: Product | undefined, defaultEmail: string) {

@@ -16,7 +16,7 @@ async function NewPage({
   if (!cta) redirect("/start");
   const user = await getCurrentUser();
   if (user) redirect(`/dashboard/products/new?cta=${cta}`);
-  const title = cta === "buy" ? "New Product" : cta === "quote" ? "New Quote" : "New Contact";
+  const title = cta === "buy" ? "New Product" : cta === "file" ? "New digital file" : cta === "quote" ? "New Quote" : "New Contact";
   return (
     <main className="mx-auto w-full max-w-xl px-5 py-6">
       <BackButton />

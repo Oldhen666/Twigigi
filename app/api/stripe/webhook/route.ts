@@ -1,4 +1,5 @@
 import { markOrderPaid } from "@/lib/db";
+import { deliverPaidFile } from "@/lib/file-delivery";
 import { getStripe } from "@/lib/stripe";
 
 export async function POST(request: Request) {
@@ -15,7 +16,9 @@ export async function POST(request: Request) {
       const orderId = session.metadata?.orderId;
       if (orderId && session.payment_status === "paid") {
         const intent = session.payment_intent;
-        markOrderPaid(orderId, session.id, typeof intent === "string" ? intent : session.id);
+        if (markOrderPaid(orderId, session.id, typeof intent === "string" ? intent : session.id)) {
+          await deliverPaidFile(orderId);
+        }
       }
     }
   } catch {

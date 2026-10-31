@@ -1,6 +1,6 @@
-export type Cta = "buy" | "quote" | "contact";
+export type Cta = "buy" | "quote" | "contact" | "file";
 export type ProductStatus = "draft" | "published" | "deactivated";
-export type Fulfillment = "pickup" | "delivery" | "shipping";
+export type Fulfillment = "pickup" | "delivery" | "shipping" | "digital";
 export type OrderStatus = "unpaid" | "paid" | "fulfilled" | "canceled";
 export type PaymentStatus = "unpaid" | "paid";
 export type ProtectionStatus = "pending" | "active";
@@ -117,6 +117,8 @@ export type ProductInput = {
   zelleContact: string;
   sellerContactMode: "phone" | "email";
   sellerContact: string;
+  fileLinks: string[];
+  filePassword: string;
 };
 
 export type Product = ProductInput & {
@@ -185,6 +187,8 @@ export type OrderRecord = {
   disputeStatus: string;
   stripeSessionId: string | null;
   src: string;
+  fileLinks: string[];
+  filePassword: string;
   createdAt: string;
 };
 

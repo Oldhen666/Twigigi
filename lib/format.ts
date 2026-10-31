@@ -260,11 +260,12 @@ export function safeNext(value: string) {
 }
 
 export function readCta(value: string | undefined): Cta | null {
-  return value === "buy" || value === "quote" || value === "contact" ? value : null;
+  return value === "buy" || value === "quote" || value === "contact" || value === "file" ? value : null;
 }
 
 export function ctaCopy(cta: Cta) {
   if (cta === "buy") return { label: "Buy now", href: "buy" };
+  if (cta === "file") return { label: "Get the file", href: "buy" };
   if (cta === "quote") return { label: "Get a quote", href: "quote" };
   return { label: "Contact seller", href: "contact" };
 }

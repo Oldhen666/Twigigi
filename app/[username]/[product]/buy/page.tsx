@@ -11,14 +11,14 @@ import { resolveSelection } from "@/lib/variants";
 
 export function generateStaticParams() {
   return staticProductParams()
-    .filter((item) => item.cta === "buy")
+    .filter((item) => item.cta === "buy" || item.cta === "file")
     .map(({ username, product }) => ({ username, product }));
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ username: string; product: string }> }) {
   const { username, product } = await params;
   const item = await requireLiveTwig(await getPublicProduct(username, product));
-  return { title: item ? `Buy ${item.title}` : "Buy", robots: { index: false, follow: false } };
+  return { title: item ? (item.cta === "file" ? `Get ${item.title}` : `Buy ${item.title}`) : "Buy", robots: { index: false, follow: false } };
 }
 
 async function CanceledNote({
@@ -41,7 +41,7 @@ async function BuyDetails({
   const { username, product: slug } = await params;
   const query = await searchParams;
   const product = await requireLiveTwig(await getPublicProduct(username, slug));
-  if (!product || product.cta !== "buy" || product.priceCents == null) notFound();
+  if (!product || (product.cta !== "buy" && product.cta !== "file") || product.priceCents == null) notFound();
   const variantKey = typeof query.v === "string" ? query.v : "";
   const selection = resolveSelection(product, variantKey);
   const missingOption = product.hasOptions && product.options.length > 0 && !selection;
@@ -56,7 +56,7 @@ async function BuyDetails({
         <Link href={`/${product.username}/${product.slug}`} className="text-sm text-muted">
           ← {product.title}
         </Link>
-        <h1 className="mt-3 font-serif text-4xl">{product.buttonLabel || "Buy now"}</h1>
+        <h1 className="mt-3 font-serif text-4xl">{product.cta === "file" ? product.buttonLabel || "Get the file" : product.buttonLabel || "Buy now"}</h1>
         {selection?.label ? <p className="mt-2 text-muted">{selection.label}</p> : null}
         <p className="mt-2 font-serif text-2xl text-forest">{formatMoney(unit, product.currency)}</p>
         {product.quantityAvailable === 0 ? (
@@ -71,7 +71,7 @@ async function BuyDetails({
         ) : (
           <div className="mt-6">
             <CheckoutForm
-              mode="buy"
+              mode={product.cta}
               action={placeOrder}
               productId={product.id}
               currency={product.currency}

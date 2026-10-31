@@ -14,7 +14,7 @@ async function NewProduct({
   const params = await searchParams;
   const cta = readCta(typeof params.cta === "string" ? params.cta : undefined);
   if (!cta) redirect("/start");
-  const title = cta === "buy" ? "New Product" : cta === "quote" ? "New Quote" : "New Contact";
+  const title = cta === "buy" ? "New Product" : cta === "file" ? "New digital file" : cta === "quote" ? "New Quote" : "New Contact";
   return (
     <main className="mx-auto w-full max-w-xl px-5 py-6">
       <h1 className="font-serif text-4xl">{title}</h1>

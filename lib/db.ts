@@ -15,6 +15,7 @@ import {
   type MoneyBucket,
   type OwnerKind,
 } from "@/lib/ledger";
+import { readStoredFileLinks } from "@/lib/files";
 import { parseQuoteForm } from "@/lib/quote-form";
 import { DEACTIVATION_GRACE_DAYS, addDays } from "@/lib/format";
 import { readStoredOptions, readStoredVariants } from "@/lib/variants";
@@ -109,6 +110,8 @@ function openDatabase() {
       zelle_contact TEXT NOT NULL DEFAULT '',
       seller_contact_mode TEXT NOT NULL DEFAULT 'email',
       seller_contact TEXT NOT NULL DEFAULT '',
+      file_links TEXT NOT NULL DEFAULT '[]',
+      file_password TEXT NOT NULL DEFAULT '',
       view_count INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -155,6 +158,8 @@ function openDatabase() {
       stripe_session_id TEXT,
       src TEXT NOT NULL DEFAULT 'direct',
       variant_label TEXT NOT NULL DEFAULT '',
+      file_links TEXT NOT NULL DEFAULT '[]',
+      file_password TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL
     );
 
@@ -232,6 +237,10 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "zelle_contact", "zelle_contact TEXT NOT NULL DEFAULT ''");
   add("products", "seller_contact_mode", "seller_contact_mode TEXT NOT NULL DEFAULT 'email'");
   add("products", "seller_contact", "seller_contact TEXT NOT NULL DEFAULT ''");
+  add("products", "file_links", "file_links TEXT NOT NULL DEFAULT '[]'");
+  add("products", "file_password", "file_password TEXT NOT NULL DEFAULT ''");
+  add("orders", "file_links", "file_links TEXT NOT NULL DEFAULT '[]'");
+  add("orders", "file_password", "file_password TEXT NOT NULL DEFAULT ''");
   add("products", "deactivates_at", "deactivates_at TEXT");
   add("products", "deactivated_at", "deactivated_at TEXT");
   add("products", "billing_started_at", "billing_started_at TEXT");
@@ -594,7 +603,7 @@ function mapProduct(row: Row): Product {
   } catch {
     images = [];
   }
-  const cta: Cta = row.cta === "buy" || row.cta === "contact" ? row.cta : "quote";
+  const cta: Cta = row.cta === "buy" || row.cta === "contact" || row.cta === "file" ? row.cta : "quote";
   const options = readStoredOptions(str(row.options_json));
   const priceCents = nullableNum(row.price_cents);
   return {
@@ -646,6 +655,8 @@ function mapProduct(row: Row): Product {
     zelleContact: str(row.zelle_contact),
     sellerContactMode: row.seller_contact_mode === "phone" ? "phone" : "email",
     sellerContact: str(row.seller_contact),
+    fileLinks: readStoredFileLinks(str(row.file_links)),
+    filePassword: str(row.file_password),
     viewCount: num(row.view_count),
     createdAt: str(row.created_at),
     updatedAt: str(row.updated_at),
@@ -725,7 +736,7 @@ const ORDER_SELECT = `
 
 function mapOrder(row: Row): OrderRecord {
   const fulfillment: Fulfillment =
-    row.fulfillment === "delivery" || row.fulfillment === "shipping" ? row.fulfillment : "pickup";
+    row.fulfillment === "delivery" || row.fulfillment === "shipping" || row.fulfillment === "digital" ? row.fulfillment : "pickup";
   const status: OrderStatus =
     row.status === "paid" || row.status === "fulfilled" || row.status === "canceled" ? row.status : "unpaid";
   const paymentStatus: PaymentStatus = row.payment_status === "paid" ? "paid" : "unpaid";
@@ -773,6 +784,8 @@ function mapOrder(row: Row): OrderRecord {
     disputeStatus: str(row.dispute_status) || "none",
     stripeSessionId: row.stripe_session_id ? str(row.stripe_session_id) : null,
     src: str(row.src),
+    fileLinks: readStoredFileLinks(str(row.file_links)),
+    filePassword: str(row.file_password),
     createdAt: str(row.created_at),
   };
 }
@@ -939,6 +952,37 @@ export function getSellerWithProducts(username: string): PublicSeller | null {
   return { username: str(user.username), displayName: str(user.display_name), products, ratingAverage: rating.average, ratingCount: rating.count };
 }
 
+export function listPublishedMatching(filter: { kind?: string; category?: string; subcategory?: string; query?: string }) {
+  settleDeactivations();
+  const where = ["p.status = 'published'"];
+  const params: Array<string | number | null> = [];
+  if (filter.kind === "product" || filter.kind === "service") {
+    where.push("p.category_kind = ?");
+    params.push(filter.kind);
+  }
+  if (filter.category) {
+    where.push("p.category_group = ?");
+    params.push(filter.category);
+  }
+  if (filter.subcategory) {
+    where.push("p.category = ?");
+    params.push(filter.subcategory);
+  }
+  const query = filter.query?.trim().slice(0, 80).replace(/[%_]/g, "") ?? "";
+  if (query) {
+    where.push("(p.title LIKE ? OR p.description LIKE ? OR p.brand LIKE ?)");
+    const like = `%${query}%`;
+    params.push(like, like, like);
+  }
+  return many(
+    `SELECT p.*, u.username, u.display_name
+     FROM products p JOIN users u ON u.id = p.user_id
+     WHERE ${where.join(" AND ")}
+     ORDER BY p.updated_at DESC`,
+    ...params,
+  ).map(mapPublic);
+}
+
 export function listPublishedParams() {
   return many(
     `SELECT u.username AS username, p.slug AS product, p.cta AS cta
@@ -981,8 +1025,8 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
       quantity_available, button_label, has_options, same_price, options_json, variants_json,
       require_name, require_email, require_phone, payment_methods, card_payment_url, interac_email,
       venmo_username, zelle_mode, zelle_contact, seller_contact_mode, seller_contact,
-      category_kind, category_group, category
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      category_kind, category_group, category, file_links, file_password
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     userId,
@@ -1033,6 +1077,8 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     input.categoryKind,
     input.categoryGroup,
     input.category,
+    JSON.stringify(input.fileLinks),
+    input.filePassword,
   );
 }
 
@@ -1050,7 +1096,8 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
         options_json = ?, variants_json = ?, require_name = ?, require_email = ?, require_phone = ?,
         payment_methods = ?, card_payment_url = ?, interac_email = ?,
         venmo_username = ?, zelle_mode = ?, zelle_contact = ?, seller_contact_mode = ?, seller_contact = ?,
-        category_kind = ?, category_group = ?, category = ?
+        category_kind = ?, category_group = ?, category = ?,
+        file_links = ?, file_password = ?
        WHERE id = ? AND user_id = ?`,
     )
     .run(
@@ -1100,6 +1147,8 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
       input.categoryKind,
       input.categoryGroup,
       input.category,
+      JSON.stringify(input.fileLinks),
+      input.filePassword,
       id,
       userId,
     );
@@ -1350,6 +1399,8 @@ export function insertOrder(input: {
   currency: string;
   src: string;
   variantLabel: string;
+  fileLinks: string[];
+  filePassword: string;
 }) {
   db.prepare(
     `INSERT INTO orders (
@@ -1358,14 +1409,14 @@ export function insertOrder(input: {
       payment_status, payment_provider, provider_payment_id,
       protection_status, protection_days, payout_status, payout_amount,
       refund_status, dispute_status,
-      stripe_session_id, src, variant_label, created_at
+      stripe_session_id, src, variant_label, file_links, file_password, created_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?, 'unpaid',
       'unpaid', '', '',
       'pending', ?, 'none', ?,
       'none', 'none',
-      NULL, ?, ?, ?
+      NULL, ?, ?, ?, ?, ?
     )`,
   ).run(
     input.id,
@@ -1389,6 +1440,8 @@ export function insertOrder(input: {
     input.totalCents,
     input.src,
     input.variantLabel,
+    JSON.stringify(input.fileLinks),
+    input.filePassword,
     new Date().toISOString(),
   );
 }
@@ -1433,14 +1486,15 @@ export function markOrderPaid(orderId: string, sessionId: string, providerPaymen
        provider_payment_id = ?
      WHERE id = ? AND status = 'unpaid'`,
   ).run(sessionId, paymentId, orderId);
-  beginPaymentProtection(orderId);
+  return beginPaymentProtection(orderId);
 }
 
 function beginPaymentProtection(orderId: string) {
   const paidAt = new Date();
   const eligible = paidAt.toISOString();
-  db.prepare(
-    `UPDATE orders SET
+  const result = db
+    .prepare(
+      `UPDATE orders SET
        payment_status = 'paid',
        paid_at = ?,
        protection_status = 'active',
@@ -1449,8 +1503,10 @@ function beginPaymentProtection(orderId: string) {
        payout_eligible_at = ?,
        payout_status = CASE WHEN payout_status = 'none' THEN 'held' ELSE payout_status END
      WHERE id = ? AND (paid_at IS NULL OR paid_at = '')`,
-  ).run(paidAt.toISOString(), paidAt.toISOString(), 0, eligible, orderId);
+    )
+    .run(paidAt.toISOString(), paidAt.toISOString(), 0, eligible, orderId);
   postPaymentLedger(db, orderId);
+  return result.changes > 0;
 }
 
 export function getOrder(id: string) {
@@ -2071,8 +2127,8 @@ export function updateOrderStatus(id: string, userId: string, status: OrderStatu
        WHERE id = ? AND product_id IN (SELECT id FROM products WHERE user_id = ?)`,
     )
     .run(status, id, userId);
-  if (result.changes > 0 && (status === "paid" || status === "fulfilled")) beginPaymentProtection(id);
-  return result.changes > 0;
+  const justPaid = result.changes > 0 && (status === "paid" || status === "fulfilled") ? beginPaymentProtection(id) : false;
+  return { updated: result.changes > 0, justPaid };
 }
 
 export function insertQuote(input: {
@@ -2494,6 +2550,20 @@ function ensureDemoReviews() {
   }
 }
 
+function ensureDemoCategories() {
+  const rows = [
+    ["prd_cedar", "product", "garden-outdoor", "planters-gardening"],
+    ["prd_bench", "product", "garden-outdoor", "patio-furniture"],
+  ];
+  for (const [id, kind, group, item] of rows) {
+    db.prepare(
+      `UPDATE products SET category_kind = ?, category_group = ?, category = ?
+       WHERE id = ? AND (category_group IS NULL OR category_group = '')`,
+    ).run(kind, group, item, id);
+  }
+}
+
 seedIfEmpty();
 ensureConsultPage();
 ensureDemoReviews();
+ensureDemoCategories();

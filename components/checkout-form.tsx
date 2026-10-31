@@ -57,7 +57,8 @@ export function CheckoutForm({
 }) {
   const [state, formAction, pending] = useActionState(action, {} as FormState);
   const [fulfillment, setFulfillment] = useState(options[0]?.id ?? "pickup");
-  const quantityCap = maxQuantity ?? (mode === "buy" ? 20 : 99);
+  const paying = mode === "buy" || mode === "file";
+  const quantityCap = maxQuantity ?? (paying ? 20 : 99);
   const [quantity, setQuantity] = useState(Math.min(Math.max(initialQuantity, 1), Math.max(quantityCap, 1)));
   const formRef = useRef<HTMLFormElement>(null);
   const [uploadKey, setUploadKey] = useState(0);
@@ -70,9 +71,9 @@ export function CheckoutForm({
     setHideErrors(true);
   }
   const selected = options.find((option) => option.id === fulfillment) ?? options[0];
-  const total = mode === "buy" && priceCents != null && selected ? priceCents * quantity + selected.feeCents : null;
-  const label = mode === "buy" ? "Place order" : mode === "quote" ? "Request quote" : "Send message";
-  const payFulfillment = fulfillment === "delivery" || fulfillment === "shipping" ? fulfillment : "pickup";
+  const total = paying && priceCents != null && (mode === "file" || selected) ? priceCents * quantity + (mode === "file" ? 0 : selected?.feeCents ?? 0) : null;
+  const label = paying ? "Place order" : mode === "quote" ? "Request quote" : "Send message";
+  const payFulfillment = mode === "file" || !(fulfillment === "delivery" || fulfillment === "shipping") ? "pickup" : fulfillment;
   const payMethods = payments ? methodsForFulfillment(payments.methods, payFulfillment) : [];
   const fieldErrors = hideErrors || pending ? undefined : state.fieldErrors;
   const formError = hideErrors || pending ? undefined : state.error;
@@ -85,7 +86,13 @@ export function CheckoutForm({
       {variantLabel ? <p className="text-sm text-muted">{variantLabel}</p> : null}
       {formError ? <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{formError}</p> : null}
 
-      {mode !== "buy" || requireName ? (
+      {mode === "file" ? (
+        <p className="rounded-xl bg-paper-deep px-3 py-2 text-sm text-muted">
+          The file link and password are emailed after payment is confirmed. They are not shown on the public page.
+        </p>
+      ) : null}
+
+      {(mode !== "buy" && mode !== "file") || requireName ? (
         <Field label="Name" name="name" required error={fieldErrors?.name}>
           <input name="name" autoComplete="name" aria-required="true" defaultValue={defaultName} className={inputClass} />
         </Field>
@@ -93,7 +100,7 @@ export function CheckoutForm({
       <Field label="Email" name="email" required error={fieldErrors?.email}>
         <input name="email" type="email" autoComplete="email" aria-required="true" defaultValue={defaultEmail} className={inputClass} />
       </Field>
-      {mode !== "buy" || requirePhone ? (
+      {(mode !== "buy" && mode !== "file") || requirePhone ? (
         <Field label="Phone" name="phone" required error={fieldErrors?.phone}>
           <input name="phone" type="tel" autoComplete="tel" aria-required="true" className={inputClass} />
         </Field>
@@ -137,7 +144,7 @@ export function CheckoutForm({
         </fieldset>
       ) : null}
 
-      {mode === "buy" && payments ? (
+      {(mode === "buy" || mode === "file") && payments ? (
         <PayMethods
           methods={payMethods}
           cardPaymentUrl={payments.cardPaymentUrl}

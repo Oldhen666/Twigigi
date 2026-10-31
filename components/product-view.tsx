@@ -15,7 +15,7 @@ import { Stars } from "@/components/stars";
 import { toggleLikeAction, toggleSaved } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { isFavorite, isLiked, likeCount, listProductReviews, sellerReviewSummary } from "@/lib/db";
-import { categoryLabel } from "@/lib/categories";
+import { categoryHref, categoryLabel, resolveCategory } from "@/lib/categories";
 import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
 
 export async function ProductView({
@@ -45,9 +45,10 @@ export async function ProductView({
   const options = fulfillmentOptions(product);
   const cta = ctaCopy(product.cta);
   const buyLabel = product.cta === "buy" ? product.buttonLabel || cta.label : cta.label;
-  const showOptions = product.cta === "buy" && product.hasOptions && product.options.length > 0 && product.priceCents != null;
-  const soldOut = product.cta === "buy" && product.quantityAvailable === 0;
+  const showOptions = (product.cta === "buy" || product.cta === "file") && product.hasOptions && product.options.length > 0 && product.priceCents != null;
+  const soldOut = (product.cta === "buy" || product.cta === "file") && product.quantityAvailable === 0;
   const category = categoryLabel(product.categoryKind, product.categoryGroup, product.category);
+  const categoryLink = resolveCategory(product.categoryKind, product.categoryGroup, product.category, true);
   const embed = videoEmbed(product.videoUrl);
   const image = product.images[0] ? `${appUrl()}${product.images[0]}` : undefined;
   const jsonLd = {
@@ -55,6 +56,7 @@ export async function ProductView({
     "@type": "Product",
     name: product.title,
     description: product.description,
+    category: category || undefined,
     image: product.images.map((item) => `${appUrl()}${item}`),
     url: canonical,
     brand: product.brand || product.displayName,
@@ -106,7 +108,27 @@ export async function ProductView({
         <div className="px-5 pt-4">
           <p className="text-xs uppercase tracking-[0.16em] text-muted">{product.location}</p>
           <h1 className="mt-2 font-serif text-4xl leading-tight">{product.title}</h1>
-          {category ? <p className="mt-2 text-sm text-muted">{category}</p> : null}
+          {categoryLink ? (
+            <p className="mt-2 text-sm text-muted">
+              <Link href={categoryHref(categoryLink.kind)} className="underline-offset-2 hover:underline">
+                {categoryLink.kind === "service" ? "Service" : "Product"}
+              </Link>
+              {" · "}
+              <Link href={categoryHref(categoryLink.kind, categoryLink.groupId)} className="underline-offset-2 hover:underline">
+                {categoryLink.groupLabel}
+              </Link>
+              {categoryLink.itemLabel ? (
+                <>
+                  {" · "}
+                  <Link href={categoryHref(categoryLink.kind, categoryLink.groupId, categoryLink.itemId)} className="underline-offset-2 hover:underline">
+                    {categoryLink.itemLabel}
+                  </Link>
+                </>
+              ) : null}
+            </p>
+          ) : category ? (
+            <p className="mt-2 text-sm text-muted">{category}</p>
+          ) : null}
           {product.brand ? (
             <div className="mt-3">
               <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Brand</p>
@@ -136,13 +158,16 @@ export async function ProductView({
               ) : null}
               <SellerCredit username={product.username} name={product.displayName} rating={rating} />
               <ProductMarks productId={product.id} path={`/${product.username}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
-              {product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
+              {product.cta === "buy" || product.cta === "file" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </BuyPicker>
           ) : (
             <>
               <p className="mt-2 font-serif text-3xl text-forest">
                 {product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}
               </p>
+              {product.cta === "file" ? (
+                <p className="mt-2 text-sm text-muted">The file link and password are emailed after payment.</p>
+              ) : null}
               {options.length > 0 ? (
                 <ul className="mt-3 flex flex-wrap gap-2">
                   {options.map((option) => (
@@ -154,7 +179,7 @@ export async function ProductView({
               ) : null}
               <SellerCredit username={product.username} name={product.displayName} rating={rating} />
               <ProductMarks productId={product.id} path={`/${product.username}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
-              {product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
+              {product.cta === "buy" || product.cta === "file" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </>
           )}
         </div>
