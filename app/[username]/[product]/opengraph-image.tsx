@@ -3,6 +3,7 @@ import path from "node:path";
 import { ImageResponse } from "next/og";
 import { getPublicProduct, requireLiveTwig, staticProductParams } from "@/lib/catalog";
 import { formatMoney } from "@/lib/format";
+import { resolveUpload } from "@/lib/uploads";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -16,8 +17,8 @@ function photoData(urlPath: string | undefined) {
   if (!urlPath) return null;
   const relative = urlPath.replace(/^\/+/, "");
   if (!/^(uploads|seed)\/[a-zA-Z0-9._-]+$/.test(relative)) return null;
-  const full = path.join(process.cwd(), "public", relative);
-  if (!fs.existsSync(full)) return null;
+  const full = relative.startsWith("uploads/") ? resolveUpload(`/${relative}`) : path.join(process.cwd(), "public", relative);
+  if (!full || !fs.existsSync(full)) return null;
   const ext = path.extname(full).slice(1).toLowerCase();
   const mime = ext === "png" ? "image/png" : ext === "jpg" || ext === "jpeg" ? "image/jpeg" : null;
   if (!mime) return null;

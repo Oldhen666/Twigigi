@@ -14,6 +14,7 @@ import { clearSession, getCurrentUser, requireAdmin, requireSeller, requireUser,
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile } from "@/lib/file-delivery";
 import { parseFileLinks } from "@/lib/files";
+import { resolveUpload, uploadDirectory } from "@/lib/uploads";
 import {
   claimBuyerOrders,
   createUser,
@@ -326,6 +327,7 @@ const DOCUMENT_EXTENSIONS: Record<string, string> = {
 
 function safeImagePath(value: string) {
   if (!/^\/(uploads|seed)\/[a-zA-Z0-9._-]+$/.test(value)) return null;
+  if (value.startsWith("/uploads/")) return resolveUpload(value) ? value : null;
   const relative = value.replace(/^\/+/, "");
   const root = path.join(process.cwd(), "public");
   const full = path.join(root, relative);
@@ -361,7 +363,7 @@ function parseWhole(value: string): number | null | "invalid" {
 }
 
 async function saveImages(files: File[]) {
-  const directory = path.join(process.cwd(), "public", "uploads");
+  const directory = uploadDirectory();
   fs.mkdirSync(directory, { recursive: true });
   const paths: string[] = [];
   for (const file of files) {
@@ -384,7 +386,7 @@ function documentExtension(file: File) {
 }
 
 async function saveQuoteDocuments(files: File[]) {
-  const directory = path.join(process.cwd(), "public", "uploads");
+  const directory = uploadDirectory();
   fs.mkdirSync(directory, { recursive: true });
   const saved: { path: string; name: string }[] = [];
   for (const file of files) {
@@ -415,6 +417,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const deliveryRadius = parseWhole(text(formData, "deliveryRadiusKm"));
   const deliveryFee = parseMoney(text(formData, "deliveryFee"));
   const shippingFee = parseMoney(text(formData, "shippingFee"));
+  const freeShippingOver = parseMoney(text(formData, "freeShippingOver"));
   const videoRaw = text(formData, "videoUrl").trim();
   const videoUrl = videoRaw ? cleanHttpUrl(videoRaw) : null;
 
@@ -461,6 +464,9 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const pickupEnabled = formData.get("pickupEnabled") === "on";
   const deliveryEnabled = formData.get("deliveryEnabled") === "on";
   const shippingEnabled = formData.get("shippingEnabled") === "on";
+  if (shippingEnabled && (freeShippingOver === "invalid" || freeShippingOver === 0)) {
+    errors.freeShippingOver = "Enter an amount like 50, or leave it blank.";
+  }
   const onsiteEnabled = formData.get("onsiteEnabled") === "on";
   const remoteEnabled = formData.get("remoteEnabled") === "on";
   const atLocationEnabled = formData.get("atLocationEnabled") === "on";
@@ -618,6 +624,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     deliveryFeeCents: deliveryEnabled && typeof deliveryFee === "number" ? deliveryFee : null,
     shippingEnabled,
     shippingFeeCents: shippingEnabled && typeof shippingFee === "number" ? shippingFee : null,
+    freeShippingOverCents: shippingEnabled && typeof freeShippingOver === "number" ? freeShippingOver : null,
     shippingNote: text(formData, "shippingNote").trim().slice(0, 400),
     onsiteEnabled,
     remoteEnabled,

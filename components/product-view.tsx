@@ -17,6 +17,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { isFavorite, isLiked, likeCount, listProductReviews, sellerReviewSummary } from "@/lib/db";
 import { categoryHref, categoryLabel, resolveCategory } from "@/lib/categories";
 import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
+import { storedUpload } from "@/lib/uploads";
 
 export async function ProductView({
   params,
@@ -99,6 +100,7 @@ export async function ProductView({
                   fill
                   priority={index === 0}
                   sizes="440px"
+                  unoptimized={storedUpload(src)}
                   className="object-cover"
                 />
               </div>
@@ -219,7 +221,7 @@ export async function ProductView({
                     {review.images.length > 0 ? (
                       <div className="mt-2 flex gap-2">
                         {review.images.map((src) => (
-                          <Image key={src} src={src} alt="" width={72} height={72} className="h-[72px] w-[72px] rounded-xl object-cover" />
+                          <Image key={src} src={src} alt="" width={72} height={72} unoptimized={storedUpload(src)} className="h-[72px] w-[72px] rounded-xl object-cover" />
                         ))}
                       </div>
                     ) : null}

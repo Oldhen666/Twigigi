@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { Logo } from "@/components/logo";
 import { Stars } from "@/components/stars";
 import { BackButton } from "@/components/back-button";
 import { SellerListings } from "@/components/seller-listings";
+import { getCurrentUser } from "@/lib/auth";
 import { filterLiveTwigs, getPublicSeller, staticProductParams } from "@/lib/catalog";
 import { ctaCopy, formatMoney } from "@/lib/format";
 
@@ -13,9 +15,12 @@ export function generateStaticParams() {
 }
 
 async function SellerPage({ params }: { params: Promise<{ username: string }> }) {
+  await connection();
   const { username } = await params;
   const seller = await getPublicSeller(username);
   if (!seller) notFound();
+  const account = await getCurrentUser();
+  const owner = account?.username.toLowerCase() === seller.username.toLowerCase();
   const products = await filterLiveTwigs(seller.products);
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-6">
@@ -46,6 +51,7 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
             priceLabel: product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request",
             ctaLabel: ctaCopy(product.cta).label,
             image: product.images[0] ?? "",
+            editHref: owner ? `/dashboard/products/${product.id}` : "",
             categoryKind: product.categoryKind,
             categoryGroup: product.categoryGroup,
             category: product.category,

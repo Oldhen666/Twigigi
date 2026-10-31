@@ -6,6 +6,7 @@ import { BuyerSection } from "@/components/buyer-section";
 import { requireUser } from "@/lib/auth";
 import { listBrowseHistory } from "@/lib/db";
 import { formatDate, formatMoney } from "@/lib/format";
+import { storedUpload } from "@/lib/uploads";
 
 async function HistoryScreen() {
   const user = await requireUser();
@@ -21,7 +22,7 @@ async function HistoryScreen() {
             <li key={product.id}>
               <Link href={`/${product.username}/${product.slug}`} className="flex gap-4 rounded-2xl border border-line bg-card p-4">
                 <span className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-paper-deep">
-                  {product.images[0] ? <Image src={product.images[0]} alt="" fill className="object-cover" sizes="80px" /> : null}
+                  {product.images[0] ? <Image src={product.images[0]} alt="" fill unoptimized={storedUpload(product.images[0])} className="object-cover" sizes="80px" /> : null}
                 </span>
                 <span className="min-w-0">
                   <span className="block font-serif text-2xl">{product.title}</span>

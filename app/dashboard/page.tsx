@@ -8,7 +8,8 @@ import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
 import { quoteChargesSince, sellerProducts, sellerStats } from "@/lib/db";
-import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
+import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isPrivateUsername, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
+import { storedUpload } from "@/lib/uploads";
 
 async function DashboardBody() {
   const user = await requireSeller();
@@ -26,8 +27,11 @@ async function DashboardBody() {
       <div className="mt-6">
         <h1 className="font-serif text-4xl">Selling</h1>
         <p className="mt-2 text-sm text-muted">Hi, {user.displayName}</p>
-        <p className="mt-3">
+        <p className="mt-3 flex flex-wrap gap-x-4">
           <Link href="/dashboard/payments" className="font-medium text-forest">Payment settings</Link>
+          {isPrivateUsername(user.username) ? null : (
+            <Link href={`/${user.username}`} className="font-medium text-forest">Your page</Link>
+          )}
         </p>
         {user.billingMethod ? null : (
           <p className="mt-3 text-sm">
@@ -84,7 +88,7 @@ async function DashboardBody() {
               <article key={product.id} className="flex gap-4 rounded-3xl border border-line bg-card p-4">
                 <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-paper-deep">
                   {product.images[0] ? (
-                    <Image src={product.images[0]} alt="" fill className="object-cover" sizes="96px" />
+                    <Image src={product.images[0]} alt="" fill unoptimized={storedUpload(product.images[0])} className="object-cover" sizes="96px" />
                   ) : null}
                 </div>
                 <div className="min-w-0 flex-1">

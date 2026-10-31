@@ -13,6 +13,7 @@ export type SellerCard = {
   priceLabel: string;
   ctaLabel: string;
   image: string;
+  editHref?: string;
   categoryKind: string;
   categoryGroup: string;
   category: string;
@@ -103,7 +104,7 @@ export function SellerListings({ username, listings }: { username: string; listi
           return (
             <li key={product.slug} className="overflow-hidden rounded-3xl border border-line bg-card">
               <Link href={href} className="relative block aspect-[4/3] bg-paper-deep">
-                {product.image ? <Image src={product.image} alt={product.title} fill className="object-cover" sizes="360px" /> : null}
+                {product.image ? <Image src={product.image} alt={product.title} fill unoptimized={product.image.startsWith("/uploads/")} className="object-cover" sizes="360px" /> : null}
               </Link>
               <div className="p-4">
                 <h2 className="font-serif text-2xl">
@@ -119,6 +120,11 @@ export function SellerListings({ username, listings }: { username: string; listi
                 <p className="mt-1 text-sm text-muted">{product.location}</p>
                 <p className="mt-2 font-serif text-xl text-forest">{product.priceLabel}</p>
                 <p className="mt-2 text-sm text-forest">{product.ctaLabel}</p>
+                {product.editHref ? (
+                  <Link href={product.editHref} className="mt-3 inline-block text-sm font-medium text-forest">
+                    Edit
+                  </Link>
+                ) : null}
               </div>
             </li>
           );

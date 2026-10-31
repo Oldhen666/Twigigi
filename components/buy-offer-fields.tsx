@@ -354,6 +354,13 @@ export function BuyOfferFields({
                   <input name="shippingFee" inputMode="decimal" defaultValue={seed?.fields.shippingFee ?? centsToInput(product?.shippingFeeCents ?? product?.deliveryFeeCents ?? null)} placeholder="0 (optional)" aria-label="Fee" className={`${inputClass} pl-6`} />
                 </div>
               </Field>
+              <Field label="Free shipping over" optional error={errors?.freeShippingOver}>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-base text-ink" aria-hidden="true">$</span>
+                  <input name="freeShippingOver" inputMode="decimal" defaultValue={seed?.fields.freeShippingOver ?? centsToInput(product?.freeShippingOverCents ?? null)} placeholder="50 (optional)" aria-label="Free shipping over" className={`${inputClass} pl-6`} />
+                </div>
+                <span className="mt-1 block text-sm font-normal text-muted">Shipping is free when the item total reaches this amount.</span>
+              </Field>
               <Field label="Delivery area" required error={errors?.shippingNote}>
                 <input
                   name="shippingNote"
@@ -1107,7 +1114,7 @@ function PlaceFields({ location, error, onCountry }: { location?: string; error?
   );
 }
 
-function Field({ label, error, required, children }: { label: string; error?: string; required?: boolean; children: React.ReactNode }) {
+function Field({ label, error, required, optional, children }: { label: string; error?: string; required?: boolean; optional?: boolean; children: React.ReactNode }) {
   return (
     <label className="block">
       {label ? (
@@ -1119,6 +1126,7 @@ function Field({ label, error, required, children }: { label: string; error?: st
               <span className="ml-1 font-normal text-muted"> Required</span>
             </>
           ) : null}
+          {optional ? <span className="ml-1 font-normal text-muted"> Optional</span> : null}
         </span>
       ) : null}
       {children}

@@ -298,7 +298,13 @@ export type FulfillmentOption = {
   label: string;
   detail: string;
   feeCents: number;
+  freeOverCents?: number | null;
 };
+
+export function shippingCharge(subtotalCents: number, feeCents: number, freeOverCents: number | null | undefined) {
+  if (freeOverCents != null && freeOverCents > 0 && subtotalCents >= freeOverCents) return 0;
+  return feeCents;
+}
 
 export function pickupDetail(note: string, time: string) {
   const times = time
@@ -321,6 +327,7 @@ export function fulfillmentOptions(product: Pick<
   | "deliveryFeeCents"
   | "shippingEnabled"
   | "shippingFeeCents"
+  | "freeShippingOverCents"
   | "shippingNote"
   | "onsiteEnabled"
   | "remoteEnabled"
@@ -353,15 +360,16 @@ export function fulfillmentOptions(product: Pick<
     });
   }
   if (product.shippingEnabled) {
-    const fee =
-      product.shippingFeeCents && product.shippingFeeCents > 0
-        ? formatMoney(product.shippingFeeCents, product.currency)
-        : "Shipping fee confirmed by the seller";
+    const feeCents = product.shippingFeeCents ?? 0;
+    const freeOver = product.freeShippingOverCents && product.freeShippingOverCents > 0 ? product.freeShippingOverCents : null;
+    const fee = feeCents > 0 ? formatMoney(feeCents, product.currency) : "Shipping fee confirmed by the seller";
+    const free = !quote && feeCents > 0 && freeOver ? `Free shipping over ${formatMoney(freeOver, product.currency)}` : "";
     options.push({
       id: "shipping",
       label: product.cta === "buy" && !product.deliveryEnabled ? "Delivery / Shipping" : "Shipping",
-      detail: quote ? "Ship by mail or courier" : product.shippingNote ? `${product.shippingNote} · ${fee}` : fee,
-      feeCents: quote ? 0 : (product.shippingFeeCents ?? 0),
+      detail: quote ? "Ship by mail or courier" : [product.shippingNote, fee, free].filter(Boolean).join(" · "),
+      feeCents: quote ? 0 : feeCents,
+      freeOverCents: quote ? null : freeOver,
     });
   }
   if (product.onsiteEnabled) {
@@ -384,5 +392,6 @@ export function orderAmount(
 ) {
   const option = fulfillmentOptions(product).find((item) => item.id === fulfillment);
   if (!option) return null;
-  return priceCents * quantity + option.feeCents;
+  const subtotal = priceCents * quantity;
+  return subtotal + shippingCharge(subtotal, option.feeCents, option.freeOverCents);
 }

@@ -90,6 +90,7 @@ export type ProductInput = {
   deliveryFeeCents: number | null;
   shippingEnabled: boolean;
   shippingFeeCents: number | null;
+  freeShippingOverCents: number | null;
   shippingNote: string;
   onsiteEnabled: boolean;
   remoteEnabled: boolean;

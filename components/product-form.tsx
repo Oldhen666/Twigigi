@@ -322,6 +322,11 @@ export function ProductForm({
       return value.trim().length >= 2 ? null : "Enter the delivery area.";
     }
     if (name === "shippingFee") return !value || /^\d+(\.\d{1,2})?$/.test(value) ? null : "Enter a shipping fee like 20 or leave it blank.";
+    if (name === "freeShippingOver") {
+      if (!value) return null;
+      if (!/^\d+(\.\d{1,2})?$/.test(value) || Number(value) <= 0) return "Enter an amount like 50, or leave it blank.";
+      return null;
+    }
     if (name === "deliveryFee") return !value || /^\d+(\.\d{1,2})?$/.test(value) ? null : "Enter a delivery fee like 18 or 0.";
     if (name === "deliveryRadiusKm") return /^\d{1,4}$/.test(value) ? null : "Enter a radius in kilometres.";
     if (name === "images") {

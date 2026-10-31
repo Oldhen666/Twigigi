@@ -42,7 +42,11 @@ export function readPagePreview(formData: FormData, images: string[], cta: Cta, 
           formData.get("shippingEnabled") === "on"
             ? {
                 label: "Delivery / Shipping",
-                detail: [text(formData, "shippingNote"), text(formData, "shippingFee") ? `$${text(formData, "shippingFee")}` : ""].filter(Boolean).join(" · ") || "Delivery / Shipping",
+                detail: [
+                  text(formData, "shippingNote"),
+                  text(formData, "shippingFee") ? `$${text(formData, "shippingFee")}` : "",
+                  text(formData, "freeShippingOver") ? `Free shipping over $${text(formData, "freeShippingOver")}` : "",
+                ].filter(Boolean).join(" · ") || "Delivery / Shipping",
               }
             : null,
         ].filter((item): item is { label: string; detail: string } => item !== null)

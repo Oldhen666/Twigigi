@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useActionState } from "react";
 import type { FulfillmentOption } from "@/lib/format";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, shippingCharge } from "@/lib/format";
 import { methodsForFulfillment } from "@/lib/payments";
 import type { Cta, FormState, QuoteForm } from "@/lib/types";
 import { PayMethods } from "@/components/pay-methods";
@@ -71,7 +71,11 @@ export function CheckoutForm({
     setHideErrors(true);
   }
   const selected = options.find((option) => option.id === fulfillment) ?? options[0];
-  const total = paying && priceCents != null && (mode === "file" || selected) ? priceCents * quantity + (mode === "file" ? 0 : selected?.feeCents ?? 0) : null;
+  const merchandise = paying && priceCents != null ? priceCents * quantity : 0;
+  const baseFee = mode === "file" ? 0 : selected?.feeCents ?? 0;
+  const fee = mode === "file" ? 0 : shippingCharge(merchandise, baseFee, selected?.freeOverCents);
+  const shippingWaived = mode === "buy" && baseFee > 0 && fee === 0;
+  const total = paying && priceCents != null && (mode === "file" || selected) ? merchandise + fee : null;
   const label = paying ? "Place order" : mode === "quote" ? "Request quote" : "Send message";
   const payFulfillment = mode === "file" || !(fulfillment === "delivery" || fulfillment === "shipping") ? "pickup" : fulfillment;
   const payMethods = payments ? methodsForFulfillment(payments.methods, payFulfillment) : [];
@@ -242,6 +246,7 @@ export function CheckoutForm({
       ) : null}
 
       {total != null ? <p className="font-serif text-3xl text-forest">{formatMoney(total, currency)}</p> : null}
+      {shippingWaived ? <p className="-mt-2 text-sm text-muted">Shipping is free on this order.</p> : null}
       {mode === "quote" ? (
         <button type="button" onClick={clearAll} className={`${ghostClass} h-14 w-full rounded-2xl text-lg`}>
           Clear all

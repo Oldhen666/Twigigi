@@ -9,6 +9,7 @@ import { categoryHref, categoryLabel, groupsFor, isCategoryKind, listingTypes, p
 import { filterLiveTwigs } from "@/lib/catalog";
 import { listPublishedMatching } from "@/lib/db";
 import { ctaCopy, formatMoney } from "@/lib/format";
+import { storedUpload } from "@/lib/uploads";
 
 function first(value: string | string[] | undefined) {
   return (Array.isArray(value) ? value[0] : value)?.trim() ?? "";
@@ -144,7 +145,7 @@ export default async function Page({
               <li key={product.id}>
                 <Link href={`/${product.username}/${product.slug}`} className="block overflow-hidden rounded-3xl border border-line bg-card">
                   <div className="relative aspect-[4/3] bg-paper-deep">
-                    {product.images[0] ? <Image src={product.images[0]} alt={product.title} fill className="object-cover" sizes="360px" /> : null}
+                    {product.images[0] ? <Image src={product.images[0]} alt={product.title} fill unoptimized={storedUpload(product.images[0])} className="object-cover" sizes="360px" /> : null}
                   </div>
                   <div className="p-4">
                     <h2 className="font-serif text-2xl">{product.title}</h2>

@@ -83,6 +83,7 @@ function openDatabase() {
       delivery_fee_cents INTEGER,
       shipping_enabled INTEGER NOT NULL DEFAULT 0,
       shipping_fee_cents INTEGER,
+      free_shipping_over_cents INTEGER,
       shipping_note TEXT NOT NULL DEFAULT '',
       onsite_enabled INTEGER NOT NULL DEFAULT 0,
       remote_enabled INTEGER NOT NULL DEFAULT 0,
@@ -237,6 +238,7 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "zelle_contact", "zelle_contact TEXT NOT NULL DEFAULT ''");
   add("products", "seller_contact_mode", "seller_contact_mode TEXT NOT NULL DEFAULT 'email'");
   add("products", "seller_contact", "seller_contact TEXT NOT NULL DEFAULT ''");
+  add("products", "free_shipping_over_cents", "free_shipping_over_cents INTEGER");
   add("products", "file_links", "file_links TEXT NOT NULL DEFAULT '[]'");
   add("products", "file_password", "file_password TEXT NOT NULL DEFAULT ''");
   add("orders", "file_links", "file_links TEXT NOT NULL DEFAULT '[]'");
@@ -628,6 +630,7 @@ function mapProduct(row: Row): Product {
     deliveryFeeCents: nullableNum(row.delivery_fee_cents),
     shippingEnabled: num(row.shipping_enabled) === 1,
     shippingFeeCents: nullableNum(row.shipping_fee_cents),
+    freeShippingOverCents: nullableNum(row.free_shipping_over_cents),
     shippingNote: str(row.shipping_note),
     onsiteEnabled: num(row.onsite_enabled) === 1,
     remoteEnabled: num(row.remote_enabled) === 1,
@@ -1019,14 +1022,14 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     `INSERT INTO products (
       id, user_id, slug, title, brand, description, price_cents, currency, location, video_url,
       pickup_enabled, pickup_note, pickup_time, delivery_enabled, delivery_radius_km, delivery_fee_cents,
-      shipping_enabled, shipping_fee_cents, shipping_note, onsite_enabled, remote_enabled, at_location_enabled,
+      shipping_enabled, shipping_fee_cents, free_shipping_over_cents, shipping_note, onsite_enabled, remote_enabled, at_location_enabled,
       quote_form_json, cta, contact_email, contact_phone,
       status, images_json, view_count, created_at, updated_at,
       quantity_available, button_label, has_options, same_price, options_json, variants_json,
       require_name, require_email, require_phone, payment_methods, card_payment_url, interac_email,
       venmo_username, zelle_mode, zelle_contact, seller_contact_mode, seller_contact,
       category_kind, category_group, category, file_links, file_password
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     userId,
@@ -1045,6 +1048,7 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     input.deliveryFeeCents,
     input.shippingEnabled ? 1 : 0,
     input.shippingFeeCents,
+    input.freeShippingOverCents,
     input.shippingNote,
     input.onsiteEnabled ? 1 : 0,
     input.remoteEnabled ? 1 : 0,
@@ -1088,7 +1092,7 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
       `UPDATE products SET
         slug = ?, title = ?, brand = ?, description = ?, price_cents = ?, location = ?, video_url = ?,
         pickup_enabled = ?, pickup_note = ?, pickup_time = ?, delivery_enabled = ?, delivery_radius_km = ?, delivery_fee_cents = ?,
-        shipping_enabled = ?, shipping_fee_cents = ?, shipping_note = ?,
+        shipping_enabled = ?, shipping_fee_cents = ?, free_shipping_over_cents = ?, shipping_note = ?,
         onsite_enabled = ?, remote_enabled = ?, at_location_enabled = ?, quote_form_json = ?,
         cta = ?, contact_email = ?, contact_phone = ?,
         status = ?, images_json = ?, updated_at = ?,
@@ -1116,6 +1120,7 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
       input.deliveryFeeCents,
       input.shippingEnabled ? 1 : 0,
       input.shippingFeeCents,
+      input.freeShippingOverCents,
       input.shippingNote,
       input.onsiteEnabled ? 1 : 0,
       input.remoteEnabled ? 1 : 0,
