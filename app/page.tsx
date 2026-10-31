@@ -25,13 +25,13 @@ const fallbacks = [
     seller: "Ava Chen",
   },
   {
-    href: "/ava/garden-bench",
-    slug: "garden-bench",
-    title: "Custom garden bench",
+    href: "/ava/landscape",
+    slug: "landscape",
+    title: "Landscape service",
     location: "Edmonton, Alberta",
     price: "Pricing on request",
     cta: "Get a quote",
-    image: "/seed/bench-1.jpg",
+    image: "/seed/consult-1.jpg",
     seller: "Ava Chen",
   },
 ] as const;
@@ -144,7 +144,7 @@ async function HomeScreen() {
   const ratingCount = seller?.ratingCount ?? 0;
   const live = (slug: string) => seller?.products.find((product) => product.slug === slug) ?? null;
   const cedarProduct = live("cedar-planter");
-  const benchProduct = live("garden-bench");
+  const landscapeProduct = live("landscape") ?? live("garden-bench");
   const cedar = await withQr(
     cedarProduct
       ? cardFromProduct(cedarProduct, seller?.displayName || "Ava Chen", ratingAverage, ratingCount)
@@ -156,9 +156,9 @@ async function HomeScreen() {
           shareHref: `${appUrl()}${fallbacks[0].href}`,
         },
   );
-  const bench = await withQr(
-    benchProduct
-      ? cardFromProduct(benchProduct, seller?.displayName || "Ava Chen", ratingAverage, ratingCount)
+  const landscape = await withQr(
+    landscapeProduct
+      ? cardFromProduct(landscapeProduct, seller?.displayName || "Ava Chen", ratingAverage, ratingCount)
       : {
           ...fallbacks[1],
           ratingAverage,
@@ -196,14 +196,14 @@ async function HomeScreen() {
               <span className="mt-4 block leading-none sm:mt-6">One link.</span>
             </h1>
             <p className="mt-5 max-w-md text-base leading-7 text-muted sm:text-lg">
-              Create a simple page, share the link, and let buyers order or request a quote.
+              Stop building. Start selling.
             </p>
             <Link href="/start" className="mt-8 inline-flex h-14 items-center rounded-full bg-forest px-6 text-lg font-bold text-card transition hover:bg-forest-2">
               Create a Twig
             </Link>
             <HomeTicker />
           </div>
-          <HomeDemo slides={[cedar, bench]} />
+          <HomeDemo slides={[cedar, landscape]} />
         </section>
 
         <section id="how" className="scroll-mt-24 border-t border-line/80">

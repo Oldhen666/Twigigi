@@ -2295,14 +2295,14 @@ function seedIfEmpty() {
 
     insert.run(
       "prd_bench",
-      "garden-bench",
-      "Custom garden bench",
-      "A bench made to the length of your entry or garden bed. Tell me the size, the wood, and whether it needs to live outside all year.",
+      "landscape",
+      "Landscape service",
+      "Seasonal lawn care, garden beds, and planting for Edmonton yards. Tell me the lot size and what you want done.",
       null,
-      1,
-      "Pickup in the southwest once it's finished.",
-      1,
-      30,
+      0,
+      "",
+      0,
+      null,
       null,
       0,
       null,
@@ -2311,7 +2311,7 @@ function seedIfEmpty() {
       "ava@twigigi.demo",
       "780-555-0148",
       "published",
-      JSON.stringify(["/seed/bench-1.jpg", "/seed/bench-2.jpg"]),
+      JSON.stringify(["/seed/consult-1.jpg"]),
       now,
       "2026-10-08T15:00:00.000Z",
     );
@@ -2386,7 +2386,7 @@ function ensureDemoReviews() {
       slug,
     );
   const cedar = product("cedar-planter");
-  const bench = product("garden-bench");
+  const bench = product("landscape") ?? product("garden-bench");
   if (!cedar && !bench) return;
   const expected = (cedar ? 3 : 0) + (bench ? 2 : 0);
   const seeded = one("SELECT COUNT(*) AS n FROM reviews WHERE id LIKE 'rev_demo_%'");
@@ -2555,10 +2555,35 @@ function ensureDemoReviews() {
   }
 }
 
+function ensureLandscapeDemo() {
+  db.prepare(
+    `UPDATE products SET
+      slug = 'landscape',
+      title = 'Landscape service',
+      description = ?,
+      images_json = ?,
+      pickup_enabled = 0,
+      delivery_enabled = 0,
+      onsite_enabled = 1,
+      pickup_note = '',
+      category_kind = 'service',
+      category_group = 'lawn-outdoor-services',
+      category = 'landscaping'
+     WHERE id = 'prd_bench' AND (title = 'Custom garden bench' OR slug = 'garden-bench')`,
+  ).run(
+    "Seasonal lawn care, garden beds, and planting for Edmonton yards. Tell me the lot size and what you want done.",
+    JSON.stringify(["/seed/consult-1.jpg"]),
+  );
+  db.prepare(
+    `UPDATE products SET onsite_enabled = 1, category_kind = 'service', category_group = 'lawn-outdoor-services', category = 'landscaping'
+     WHERE id = 'prd_bench' AND slug = 'landscape' AND (category_kind IS NULL OR category_kind = '' OR category_kind = 'product')`,
+  ).run();
+}
+
 function ensureDemoCategories() {
   const rows = [
     ["prd_cedar", "product", "garden-outdoor", "planters-gardening"],
-    ["prd_bench", "product", "garden-outdoor", "patio-furniture"],
+    ["prd_bench", "service", "lawn-outdoor-services", "landscaping"],
   ];
   for (const [id, kind, group, item] of rows) {
     db.prepare(
@@ -2570,5 +2595,6 @@ function ensureDemoCategories() {
 
 seedIfEmpty();
 ensureConsultPage();
+ensureLandscapeDemo();
 ensureDemoReviews();
 ensureDemoCategories();

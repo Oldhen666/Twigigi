@@ -18,7 +18,7 @@ npm run dev
 - 邮箱 `ava@twigigi.demo`
 - 密码 `planter-demo`
 - 在售页 `/ava/cedar-planter`（立即购买）
-- 报价页 `/ava/garden-bench`
+- 报价页 `/ava/landscape`
 - 联系页 `/ava/garden-consult`
 
 ## 环境变量
