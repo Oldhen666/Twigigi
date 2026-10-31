@@ -6,9 +6,9 @@ import { payAndPublish, reactivateTwig } from "@/lib/actions";
 import { activeWindow, billingCurrency, listingFeeCents, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
+import { TwigCheckbox, TwigSelectAll, TwigSelectionProvider } from "@/components/twig-selection";
 import { CopyLink } from "@/components/share-bar";
-import { quoteChargesSince, sellerProducts, sellerStats } from "@/lib/db";
-import { UsernameForm } from "@/components/username-form";
+import { productHasActivity, quoteChargesSince, sellerProducts, sellerStats } from "@/lib/db";
 import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
 import { storedUpload } from "@/lib/uploads";
 
@@ -28,9 +28,6 @@ async function DashboardBody() {
       <div className="mt-6">
         <h1 className="font-serif text-4xl">Selling</h1>
         <p className="mt-2 text-sm text-muted">Hi, {user.displayName}</p>
-        <div className="mt-3">
-          <UsernameForm username={user.username} next="/dashboard" />
-        </div>
         <p className="mt-3 flex flex-wrap gap-x-4">
           <Link href="/dashboard/payments" className="font-medium text-forest">Payment settings</Link>
           <Link href={`/${user.publicId}`} className="font-medium text-forest">Your page</Link>
@@ -63,9 +60,20 @@ async function DashboardBody() {
           </Link>
         </div>
       ) : (
+        <TwigSelectionProvider
+          items={products.map((product) => ({
+            id: product.id,
+            title: product.title,
+            status: product.status,
+            canDelete: product.status === "deactivated" || (product.status === "draft" && !productHasActivity(product.id)),
+          }))}
+        >
         <section className="mt-8 space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="font-serif text-2xl">Twigs</h2>
+            <div className="flex items-center gap-3">
+              <TwigSelectAll />
+              <h2 className="font-serif text-2xl">Twigs</h2>
+            </div>
             <Link href="/start" className="inline-flex h-11 items-center rounded-full bg-forest px-5 text-sm font-medium text-card shadow-[0_8px_18px_rgba(27,67,50,0.18)]">+ New Twig</Link>
           </div>
           {products.map((product) => {
@@ -88,14 +96,29 @@ async function DashboardBody() {
             );
             return (
               <article key={product.id} className="flex gap-4 rounded-3xl border border-line bg-card p-4">
-                <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-paper-deep">
-                  {product.images[0] ? (
-                    <Image src={product.images[0]} alt="" fill unoptimized={storedUpload(product.images[0])} className="object-cover" sizes="96px" />
-                  ) : null}
-                </div>
+                <TwigCheckbox id={product.id} title={product.title} />
+                {live ? (
+                  <Link href={url} aria-label={product.title} className="relative block h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-paper-deep">
+                    {product.images[0] ? (
+                      <Image src={product.images[0]} alt="" fill unoptimized={storedUpload(product.images[0])} className="object-cover" sizes="96px" />
+                    ) : null}
+                  </Link>
+                ) : (
+                  <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-paper-deep">
+                    {product.images[0] ? (
+                      <Image src={product.images[0]} alt="" fill unoptimized={storedUpload(product.images[0])} className="object-cover" sizes="96px" />
+                    ) : null}
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
-                    <h3 className="font-serif text-2xl leading-tight">{product.title}</h3>
+                    {live ? (
+                      <Link href={url} className="min-w-0 hover:underline">
+                        <h3 className="font-serif text-2xl leading-tight">{product.title}</h3>
+                      </Link>
+                    ) : (
+                      <h3 className="font-serif text-2xl leading-tight">{product.title}</h3>
+                    )}
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${live && !ending ? "bg-moss text-forest" : ending ? "bg-paper-deep text-clay" : "bg-paper-deep text-muted"}`}>
                       {badge}
                     </span>
@@ -151,17 +174,20 @@ async function DashboardBody() {
                       <DeactivateTwig productId={product.id} mode={ending ? "ending" : "live"} endsLabel={endsLabel} deleteLabel={deleteLabel} />
                     ) : null}
                     {product.status === "deactivated" ? (
-                      listingStillPaid(product) ? (
-                        <form action={reactivateTwig}>
-                          <input type="hidden" name="id" value={product.id} />
-                          <button className="font-medium text-forest">Reactivate</button>
-                        </form>
-                      ) : (
-                        <form action={payAndPublish}>
-                          <input type="hidden" name="id" value={product.id} />
-                          <button className="font-medium text-forest">Pay and reactivate</button>
-                        </form>
-                      )
+                      <>
+                        {listingStillPaid(product) ? (
+                          <form action={reactivateTwig}>
+                            <input type="hidden" name="id" value={product.id} />
+                            <button className="font-medium text-forest">Reactivate</button>
+                          </form>
+                        ) : (
+                          <form action={payAndPublish}>
+                            <input type="hidden" name="id" value={product.id} />
+                            <button className="font-medium text-forest">Pay and reactivate</button>
+                          </form>
+                        )}
+                        <DeleteTwig productId={product.id} mode="deactivated" />
+                      </>
                     ) : null}
                     {product.status === "draft" ? (
                       <>
@@ -178,6 +204,7 @@ async function DashboardBody() {
             );
           })}
         </section>
+        </TwigSelectionProvider>
       )}
 
     </main>

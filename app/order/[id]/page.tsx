@@ -7,8 +7,8 @@ import { PayMethods } from "@/components/pay-methods";
 import { InteractionLine } from "@/components/interaction-line";
 import { getCurrentUser } from "@/lib/auth";
 import { getInteractionBySource, getOrder, getProductById } from "@/lib/db";
-import { formatMoney } from "@/lib/format";
-import { methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
+import { formatMoney, orderHeading } from "@/lib/format";
+import { methodLabel, methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
 import { confirmStripeSession } from "@/lib/stripe";
 
 async function OrderView({
@@ -35,11 +35,31 @@ async function OrderView({
     <Stage>
       <div className="bg-card px-6 py-10 sm:rounded-[28px]">
         <p className="text-sm text-clay">{paid ? "Payment received" : "Order sent"}</p>
-        <h1 className="mt-2 font-serif text-4xl">{order.productTitle}</h1>
-        {order.variantLabel ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
-        <p className="mt-4 text-muted">
-          {order.quantity} × {digital ? "digital file" : order.fulfillment} · {formatMoney(order.amountCents, order.currency)}
-        </p>
+        <h1 className="mt-2 font-serif text-4xl">{orderHeading(order)}</h1>
+        {order.lines.length > 1 ? (
+          <div className="mt-4 space-y-2 text-sm">
+            {order.lines.map((line) => (
+              <p key={`${line.productId}-${line.variantLabel}`}>
+                <Link href={`/${order.publicId}/${line.slug}`} className="font-medium">{line.title}</Link>
+                {line.variantLabel ? <span className="text-muted"> · {line.variantLabel}</span> : null}
+                <span className="text-muted"> · {line.quantity} × {formatMoney(line.unitCents, order.currency)}</span>
+              </p>
+            ))}
+            <p className="flex justify-between text-muted"><span>Items</span><span>{formatMoney(order.subtotalCents, order.currency)}</span></p>
+            <p className="flex justify-between text-muted"><span>Shipping</span><span>{order.shippingCents === 0 ? "Free" : formatMoney(order.shippingCents, order.currency)}</span></p>
+            <p className="font-serif text-2xl text-forest">{formatMoney(order.totalCents, order.currency)}</p>
+          </div>
+        ) : (
+          <>
+            {order.variantLabel ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
+            <p className="mt-4 text-muted">
+              {order.quantity} × {digital ? "digital file" : order.fulfillment} · {formatMoney(order.amountCents, order.currency)}
+            </p>
+          </>
+        )}
+        {order.fulfillment === "pickup" && product?.pickupNote ? <p className="mt-3 text-sm">Pickup location: {product.pickupNote}</p> : null}
+        {order.pickupWindow ? <p className="mt-1 text-sm">Pickup time: {order.pickupWindow}</p> : null}
+        {order.buyerPayment ? <p className="mt-1 text-sm">Payment: {methodLabel(order.buyerPayment)}</p> : null}
         <p className="mt-3 text-sm leading-6 text-muted">
           {digital
             ? fileReady
@@ -65,7 +85,10 @@ async function OrderView({
         ) : null}
         {!paid && (product?.cta === "buy" || product?.cta === "file") ? (
           <PayMethods
-            methods={methodsForFulfillment(product.paymentMethods, order.fulfillment === "digital" ? "pickup" : order.fulfillment)}
+            methods={(() => {
+              const offered = methodsForFulfillment(product.paymentMethods, order.fulfillment === "digital" ? "pickup" : order.fulfillment);
+              return order.buyerPayment && offered.includes(order.buyerPayment) ? [order.buyerPayment] : offered;
+            })()}
             cardPaymentUrl={product.cardPaymentUrl}
             interacEmail={product.interacEmail}
             venmoUsername={product.venmoUsername}

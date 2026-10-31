@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { addCartItem } from "@/components/add-to-cart";
 import { formatMoney } from "@/lib/format";
 import type { ProductOption, ProductVariant } from "@/lib/types";
 import { resolveSelection, variantKey } from "@/lib/variants";
@@ -16,6 +17,8 @@ export function BuyPicker({
   variants,
   samePrice,
   quantityAvailable,
+  cartPublicId = "",
+  productId = "",
   children,
 }: {
   username: string;
@@ -27,6 +30,8 @@ export function BuyPicker({
   variants: ProductVariant[];
   samePrice: boolean;
   quantityAvailable: number | null;
+  cartPublicId?: string;
+  productId?: string;
   children?: React.ReactNode;
 }) {
   const [selected, setSelected] = useState(() => options.map((option) => option.values[0] ?? ""));
@@ -92,6 +97,17 @@ export function BuyPicker({
           <span className="flex h-14 items-center justify-center rounded-2xl bg-paper-deep text-lg text-muted">
             {soldOut ? "Sold out" : "Unavailable"}
           </span>
+        ) : cartPublicId && productId ? (
+          <button
+            type="button"
+            onClick={() => {
+              addCartItem(cartPublicId, { productId, variantKey: variantKey(selected), quantity }, Math.max(cap, 1));
+              window.location.assign(`/${cartPublicId}/cart`);
+            }}
+            className="flex h-14 w-full items-center justify-center rounded-2xl bg-forest text-lg text-card"
+          >
+            {buttonLabel || "Buy now"}
+          </button>
         ) : (
           <Link href={href} className="flex h-14 items-center justify-center rounded-2xl bg-forest text-lg text-card">
             {buttonLabel || "Buy now"}

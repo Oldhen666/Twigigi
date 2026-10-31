@@ -41,7 +41,7 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
       <p className="mt-10 text-sm text-muted">Twigger</p>
       <h1 className="mt-2 font-serif text-5xl">{seller.displayName}</h1>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted">
-        {owner ? <UsernameForm username={seller.username} next={pagePath} /> : <span>{seller.username}</span>}
+        {owner && account ? <UsernameForm username={account.username} next={pagePath} /> : <span>{seller.username}</span>}
         {seller.ratingCount > 0 && seller.ratingAverage != null ? (
           <span className="inline-flex items-center gap-1 text-forest">
             <Stars value={seller.ratingAverage} />

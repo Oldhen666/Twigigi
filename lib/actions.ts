@@ -9,7 +9,7 @@ import { updateTag } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, interacEmailProblem, isTransferMethod, methodsForFulfillment, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
+import { cardLinkProblem, interacEmailProblem, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
 import { clearSession, getCurrentUser, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile } from "@/lib/file-delivery";
@@ -42,6 +42,7 @@ import {
   productHasActivity,
   releaseStock,
   reserveStock,
+  setOrderChoices,
   deactivateNow,
   resumePublished,
   publishDraft,
@@ -54,6 +55,7 @@ import {
   takePasswordReset,
   toggleFavorite,
   toggleLike,
+  toggleGuestLike,
   allocatePublicId,
   uniqueSlug,
   listUsers,
@@ -73,6 +75,8 @@ import {
   appUrl,
   formatMoney,
   fulfillmentOptions,
+  pickupTimes,
+  cartFulfillmentCharge,
   isPrivateUsername,
   isTwigLive,
   normalizeSrc,
@@ -85,6 +89,7 @@ import {
 } from "@/lib/format";
 import type { Cta, FormState, Fulfillment, OrderStatus, ProductInput } from "@/lib/types";
 import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
+import { ensureVisitor } from "@/lib/visitor";
 import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { getStripe } from "@/lib/stripe";
@@ -181,6 +186,7 @@ async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
     if (message.includes("users.username")) return { fieldErrors: { username: "That username is taken." } };
     return { error: "Could not create the account." };
   }
+  claimBuyerOrders(id, parsed.data.email);
   const sessionError = await startSession(id);
   if (sessionError) return { error: sessionError };
   return { ok: true, userId: id };
@@ -234,7 +240,11 @@ function claimPublicUsername(userId: string, raw: string): FormState {
   }
   const taken = findUserByUsername(parsed.data);
   if (taken && taken !== userId) return { fieldErrors: { username: "That username is taken." } };
-  updateUsername(userId, parsed.data);
+  try {
+    updateUsername(userId, parsed.data);
+  } catch {
+    return { fieldErrors: { username: "That username is taken." } };
+  }
   return {};
 }
 
@@ -259,7 +269,8 @@ export async function signUp(_prev: FormState, formData: FormData): Promise<Form
   const created = await createAccount(formData);
   if (!created.ok) return created;
   const cta = readCta(text(formData, "cta"));
-  const after = cta ? `/dashboard/products/new?cta=${cta}` : "/orders";
+  const requested = text(formData, "next");
+  const after = cta ? `/dashboard/products/new?cta=${cta}` : requested ? safeNext(requested) : "/orders";
   return { next: `/billing?next=${encodeURIComponent(after)}` };
 }
 
@@ -461,7 +472,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     .filter((item): item is string => typeof item === "string")
     .map(safeImagePath)
     .filter((item): item is string => Boolean(item));
+  const slots = formData.getAll("photoSlot").filter((item): item is string => typeof item === "string" && item.length > 0);
   const files = formData.getAll("images").filter((item): item is File => item instanceof File && item.size > 0);
+  if (slots.length > 6) errors.images = "Use up to 6 photos.";
+  if (slots.length > 0 && slots.filter((slot) => slot === "file").length !== files.length) errors.images = "Could not save the photos.";
   if (kept.length + files.length > 6) errors.images = "Use up to 6 photos.";
   for (const file of files) {
     if (!IMAGE_TYPES[file.type]) errors.images = "Use JPG, PNG, or WebP photos.";
@@ -596,7 +610,23 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
 
   let images = kept;
   try {
-    images = [...kept, ...(await saveImages(files))];
+    const saved = await saveImages(files);
+    if (slots.length > 0) {
+      let fileAt = 0;
+      images = [];
+      for (const slot of slots) {
+        if (slot === "file") {
+          const next = saved[fileAt];
+          fileAt += 1;
+          if (next) images.push(next);
+        } else {
+          const safe = safeImagePath(slot);
+          if (safe) images.push(safe);
+        }
+      }
+    } else {
+      images = [...kept, ...saved];
+    }
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Could not save the photos.", ...sessionStamp };
   }
@@ -696,17 +726,49 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   return { saved: true, productId: savedProductId, slug, images, savedAt: Date.now() };
 }
 
+function dropProduct(user: { id: string; publicId: string }, product: { id: string; userId: string; status: string; slug: string }) {
+  if (product.userId !== user.id) return;
+  if (product.status === "published") return;
+  if (product.status === "draft" && productHasActivity(product.id)) return;
+  if (product.status !== "draft" && product.status !== "deactivated") return;
+  if (!deleteProduct(product.id, user.id)) return;
+  updateTag(productTag(user.publicId, product.slug));
+}
+
 export async function removeProduct(formData: FormData) {
   const user = await requireSeller();
   const id = text(formData, "id");
   const product = getProductById(id);
   if (!product || product.userId !== user.id) redirect("/dashboard");
-  if (product.status !== "draft") redirect(`/dashboard/products/${product.id}?blocked=live`);
-  if (productHasActivity(product.id)) {
+  if (product.status === "published") redirect(`/dashboard/products/${product.id}?blocked=live`);
+  if (product.status === "draft" && productHasActivity(product.id)) {
     redirect(`/dashboard/products/${product.id}?blocked=1`);
   }
-  deleteProduct(product.id, user.id);
-  updateTag(productTag(user.publicId, product.slug));
+  dropProduct(user, product);
+  updateTag(sellerTag(user.publicId));
+  redirect("/dashboard");
+}
+
+export async function removeProducts(formData: FormData) {
+  const user = await requireSeller();
+  for (const id of formData.getAll("id")) {
+    if (typeof id !== "string") continue;
+    const product = getProductById(id);
+    if (product) dropProduct(user, product);
+  }
+  updateTag(sellerTag(user.publicId));
+  redirect("/dashboard");
+}
+
+export async function deactivateProducts(formData: FormData) {
+  const user = await requireSeller();
+  for (const id of formData.getAll("id")) {
+    if (typeof id !== "string") continue;
+    const product = getProductById(id);
+    if (!product || product.userId !== user.id || product.status !== "published") continue;
+    deactivateNow(product.id, user.id);
+    updateTag(productTag(user.publicId, product.slug));
+  }
   updateTag(sellerTag(user.publicId));
   redirect("/dashboard");
 }
@@ -820,6 +882,23 @@ const personSchema = {
   phone: z.string().trim().min(7, "Enter a phone number.").max(30),
 };
 
+function chosenOrderDetails(formData: FormData, fulfillment: string, methods: string[], times: string[]):
+  { ok: false; fieldErrors: Record<string, string> } | { ok: true; payment: string; pickupWindow: string } {
+  const payment = text(formData, "paymentMethod");
+  if (methods.length > 0 && !methods.includes(payment)) {
+    return { ok: false, fieldErrors: { paymentMethod: "Choose how you will pay." } };
+  }
+  const pickupTime = text(formData, "pickupTime");
+  if (fulfillment === "pickup" && times.length > 1 && !times.includes(pickupTime)) {
+    return { ok: false, fieldErrors: { pickupTime: "Choose a pickup time." } };
+  }
+  return {
+    ok: true,
+    payment: methods.includes(payment) ? payment : "",
+    pickupWindow: fulfillment === "pickup" ? (times.includes(pickupTime) ? pickupTime : times[0] ?? "") : "",
+  };
+}
+
 export async function placeOrder(_prev: FormState, formData: FormData): Promise<FormState> {
   const productId = text(formData, "productId");
   const product = getProductById(productId);
@@ -865,6 +944,11 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       return { fieldErrors: { address: "Enter an address for delivery or shipping." } };
     }
   }
+  const payFulfillment = parsed.data.fulfillment === "delivery" || parsed.data.fulfillment === "shipping" ? parsed.data.fulfillment : "pickup";
+  const payMethods = methodsForFulfillment(product.paymentMethods, payFulfillment);
+  const times = parsed.data.fulfillment === "pickup" ? pickupTimes(product.pickupTime) : [];
+  const choice = chosenOrderDetails(formData, parsed.data.fulfillment, payMethods, times);
+  if (!choice.ok) return { fieldErrors: choice.fieldErrors };
   const subtotal = selection.priceCents * parsed.data.quantity;
   const amount = digital ? subtotal : orderAmount(selection.priceCents, parsed.data.quantity, parsed.data.fulfillment, product);
   if (amount == null) return { error: "Could not calculate the total." };
@@ -900,6 +984,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       fileLinks: digital ? product.fileLinks : [],
       filePassword: digital ? product.filePassword : "",
     });
+    setOrderChoices(orderId, choice.payment, choice.pickupWindow);
     openInteraction({
       kind: "order",
       sourceId: orderId,
@@ -928,7 +1013,10 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       parsed.data.phone ? `Phone: ${parsed.data.phone}` : null,
       `Quantity: ${parsed.data.quantity}`,
       digital ? "Delivery: emailed after you mark the order paid" : `Fulfillment: ${parsed.data.fulfillment}`,
+      parsed.data.fulfillment === "pickup" && product.pickupNote.trim() ? `Pickup location: ${product.pickupNote.trim()}` : null,
+      choice.pickupWindow ? `Pickup time: ${choice.pickupWindow}` : null,
       !digital && parsed.data.fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
+      choice.payment ? `Payment: ${methodLabel(choice.payment)}` : null,
       `Total: ${formatMoney(total, product.currency)}`,
       order?.publicRef ? `Order: ${order.publicRef}` : null,
       digital ? "Do not send the file link yourself. Twigigi emails it when you mark this order paid." : null,
@@ -939,6 +1027,186 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   }
 
   redirect(`/order/${orderId}`);
+}
+
+export async function placeCartOrder(_prev: FormState, formData: FormData): Promise<FormState> {
+  const requested = readCartRequest(text(formData, "lines"));
+  if (requested.length < 1) return { error: "Add a Twig before you check out." };
+  const prepared = [];
+  for (const line of requested) {
+    const product = getProductById(line.productId);
+    if (!product || !isTwigLive(product) || product.cta !== "buy" || product.priceCents == null) {
+      return { error: "One of these Twigs is not available to buy." };
+    }
+    const first = prepared[0]?.product;
+    if (first && (product.userId !== first.userId || product.currency !== first.currency)) {
+      return { error: "Check out one seller at a time." };
+    }
+    const selection = resolveSelection(product, line.variantKey);
+    if (!selection || selection.priceCents == null || !selection.available) return { error: "Choose an available option on each Twig." };
+    const cap = product.quantityAvailable == null ? 20 : Math.min(20, product.quantityAvailable);
+    const used = prepared.filter((item) => item.product.id === product.id).reduce((sum, item) => sum + item.quantity, 0);
+    if (line.quantity + used > cap) return { error: cap < 1 ? `${product.title} is sold out.` : `Only ${cap} of ${product.title} available.` };
+    prepared.push({ product, selection, quantity: line.quantity });
+  }
+
+  const fulfillment = text(formData, "fulfillment");
+  if (fulfillment !== "pickup" && fulfillment !== "delivery" && fulfillment !== "shipping") {
+    return { fieldErrors: { fulfillment: "Choose how you want to receive it." } };
+  }
+  const shipLines = [];
+  for (const line of prepared) {
+    const option = fulfillmentOptions(line.product).find((item) => item.id === fulfillment);
+    if (!option) return { error: `${line.product.title} can't be received that way. Remove it or choose another way.` };
+    shipLines.push({ feeCents: option.feeCents, freeOverCents: option.freeOverCents });
+  }
+  const requireName = prepared.some((line) => line.product.requireName);
+  const requirePhone = prepared.some((line) => line.product.requirePhone);
+  const parsed = z
+    .object({
+      name: requireName ? personSchema.name : z.string().trim().max(80),
+      email: personSchema.email,
+      phone: requirePhone ? personSchema.phone : z.string().trim().max(30),
+      address: z.string().trim().max(300),
+    })
+    .safeParse({
+      name: text(formData, "name"),
+      email: text(formData, "email"),
+      phone: text(formData, "phone"),
+      address: text(formData, "address"),
+    });
+  if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
+  const methods = prepared.map((line) => methodsForFulfillment(line.product.paymentMethods, fulfillment));
+  const sharedMethods = methods[0].filter((id) => methods.every((list) => list.includes(id)));
+  if (fulfillment !== "pickup" && sharedMethods.length === 0) {
+    return { error: "Delivery and shipping have to be paid by transfer first. This seller has not set one up." };
+  }
+  if (fulfillment !== "pickup" && parsed.data.address.length < 4) {
+    return { fieldErrors: { address: "Enter an address for delivery or shipping." } };
+  }
+  const times = fulfillment === "pickup" ? [...new Set(prepared.flatMap((line) => pickupTimes(line.product.pickupTime)))] : [];
+  const choice = chosenOrderDetails(formData, fulfillment, sharedMethods, times);
+  if (!choice.ok) return { fieldErrors: choice.fieldErrors };
+  const pickupLocation = fulfillment === "pickup"
+    ? [...new Set(prepared.map((line) => line.product.pickupNote.trim()).filter(Boolean))].join("; ")
+    : "";
+
+  const merchandise = prepared.reduce((sum, line) => sum + (line.selection.priceCents ?? 0) * line.quantity, 0);
+  const shipping = cartFulfillmentCharge(merchandise, shipLines);
+  const total = merchandise + shipping;
+  const reserved: { id: string; quantity: number }[] = [];
+  for (const line of prepared) {
+    if (!reserveStock(line.product.id, line.quantity)) {
+      for (const item of reserved) releaseStock(item.id, item.quantity);
+      return { error: `There aren't enough ${line.product.title} left.` };
+    }
+    reserved.push({ id: line.product.id, quantity: line.quantity });
+  }
+
+  const first = prepared[0];
+  const orderId = newId("ord");
+  const sessionUser = await getCurrentUser();
+  const emailMatch = findUserByEmail(parsed.data.email);
+  const buyerId = sessionUser ? sessionUser.id : emailMatch?.id ?? null;
+  const lines = prepared.map((line) => ({
+    productId: line.product.id,
+    title: line.product.title,
+    slug: line.product.slug,
+    variantLabel: line.selection.label,
+    quantity: line.quantity,
+    unitCents: line.selection.priceCents ?? 0,
+    subtotalCents: (line.selection.priceCents ?? 0) * line.quantity,
+  }));
+  try {
+    insertOrder({
+      id: orderId,
+      productId: first.product.id,
+      sellerId: first.product.userId,
+      buyerId,
+      buyerName: parsed.data.name,
+      email: parsed.data.email,
+      phone: parsed.data.phone,
+      quantity: lines.reduce((sum, line) => sum + line.quantity, 0),
+      fulfillment,
+      address: fulfillment === "pickup" ? "" : parsed.data.address,
+      subtotalCents: merchandise,
+      shippingCents: shipping,
+      taxCents: 0,
+      totalCents: total,
+      currency: first.product.currency,
+      src: await trafficSource(),
+      variantLabel: lines.length === 1 ? lines[0].variantLabel : "",
+      fileLinks: [],
+      filePassword: "",
+      lines: lines.length > 1 ? lines : [],
+    });
+    setOrderChoices(orderId, choice.payment, choice.pickupWindow);
+    openInteraction({
+      kind: "order",
+      sourceId: orderId,
+      productId: first.product.id,
+      sellerId: first.product.userId,
+      buyerId,
+      buyerEmail: parsed.data.email,
+    });
+  } catch {
+    for (const item of reserved) releaseStock(item.id, item.quantity);
+    return { error: "Could not save this order. Try again." };
+  }
+
+  const seller = findUserById(first.product.userId);
+  const reservedEmail = first.product.contactEmail.trim().toLowerCase();
+  const notify = z.string().email().safeParse(reservedEmail).success ? reservedEmail : seller?.email ?? "";
+  if (notify) {
+    const order = getOrder(orderId);
+    const itemLines = lines.flatMap((line) => [
+      `${line.title}${line.variantLabel ? ` (${line.variantLabel})` : ""} × ${line.quantity} · ${formatMoney(line.subtotalCents, first.product.currency)}`,
+    ]);
+    const text = [
+      "You have a new order on Twigigi.",
+      "",
+      ...itemLines,
+      `Buyer: ${parsed.data.name}`,
+      `Email: ${parsed.data.email}`,
+      parsed.data.phone ? `Phone: ${parsed.data.phone}` : null,
+      `Fulfillment: ${fulfillment}`,
+      pickupLocation ? `Pickup location: ${pickupLocation}` : null,
+      choice.pickupWindow ? `Pickup time: ${choice.pickupWindow}` : null,
+      fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
+      choice.payment ? `Payment: ${methodLabel(choice.payment)}` : null,
+      `Items: ${formatMoney(merchandise, first.product.currency)}`,
+      `Shipping: ${shipping === 0 ? "Free" : formatMoney(shipping, first.product.currency)}`,
+      `Total: ${formatMoney(total, first.product.currency)}`,
+      order?.publicRef ? `Order: ${order.publicRef}` : null,
+      "",
+      `Open the order: ${appUrl()}/order/${orderId}`,
+    ].filter((line): line is string => line !== null);
+    await sendOrderEmail(notify, { subject: `New order from ${parsed.data.name}`, text: text.join("\n") });
+  }
+
+  redirect(`/order/${orderId}`);
+}
+
+function readCartRequest(raw: string) {
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!Array.isArray(value)) return [];
+    const merged = new Map<string, { productId: string; variantKey: string; quantity: number }>();
+    for (const item of value) {
+      if (!item || typeof item !== "object") continue;
+      const row = item as Record<string, unknown>;
+      const productId = typeof row.productId === "string" ? row.productId : "";
+      const variantKey = typeof row.variantKey === "string" ? row.variantKey : "";
+      const quantity = Number(row.quantity);
+      if (!productId || !Number.isInteger(quantity) || quantity < 1 || quantity > 20) continue;
+      const key = `${productId}\n${variantKey}`;
+      const current = merged.get(key);
+      merged.set(key, { productId, variantKey, quantity: Math.min(20, (current?.quantity ?? 0) + quantity) });
+    }
+    return [...merged.values()].slice(0, 20);
+  } catch {
+    return [];
+  }
 }
 
 export async function requestQuote(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -1146,11 +1414,15 @@ export async function toggleSaved(formData: FormData) {
 }
 
 export async function toggleLikeAction(formData: FormData) {
-  const user = await requireUser();
   const product = getProductById(text(formData, "productId"));
   const next = safeNext(text(formData, "next"));
-  if (!product || !isTwigLive(product) || product.userId === user.id) redirect(next);
-  toggleLike(user.id, product.id);
+  if (!product || !isTwigLive(product)) redirect(next);
+  const user = await getCurrentUser();
+  if (user) {
+    if (product.userId !== user.id) toggleLike(user.id, product.id);
+  } else {
+    toggleGuestLike(await ensureVisitor(), product.id);
+  }
   redirect(next);
 }
 
@@ -1269,8 +1541,8 @@ export async function updateAccountUsername(_prev: FormState, formData: FormData
   const user = await requireUser();
   const claimed = claimPublicUsername(user.id, text(formData, "username"));
   if (claimed.fieldErrors || claimed.error) return claimed;
-  updateTag(sellerTag(user.publicId));
-  redirect(safeNext(text(formData, "next")));
+  updateTag(sellerTag(user.publicId.toLowerCase()));
+  return { next: safeNext(text(formData, "next")) };
 }
 
 export async function adminRenameUser(formData: FormData) {

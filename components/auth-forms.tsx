@@ -67,12 +67,13 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
   );
 }
 
-export function SignupForm({ cta }: { cta?: string }) {
+export function SignupForm({ cta, email = "", nextPath = "" }: { cta?: string; email?: string; nextPath?: string }) {
   const [state, action, pending] = useActionState(signUp, {} as FormState);
   useContinue(state.next);
   return (
     <form action={action} noValidate className="space-y-4">
       {cta ? <input type="hidden" name="cta" value={cta} /> : null}
+      {nextPath ? <input type="hidden" name="next" value={nextPath} /> : null}
       {state.error ? <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{state.error}</p> : null}
       <label className="block">
         <span className={labelClass}>Your name</span>
@@ -87,7 +88,7 @@ export function SignupForm({ cta }: { cta?: string }) {
       </label>
       <label className="block">
         <span className={labelClass}>Email</span>
-        <input name="email" type="email" autoComplete="email" className={inputClass} />
+        <input name="email" type="email" autoComplete="email" defaultValue={email} className={inputClass} />
         <ErrorText message={state.fieldErrors?.email} />
       </label>
       <label className="block">

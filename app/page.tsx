@@ -181,6 +181,7 @@ async function HomeScreen() {
             <>
               <Link href="/dashboard" className="text-ink hover:text-forest">Selling</Link>
               <BuyerMenu active={false} />
+              {user.role === "admin" ? <Link href="/admin/users" className="text-ink hover:text-forest">Admin</Link> : null}
             </>
           ) : (
             <Link href="/login" className="text-ink hover:text-forest">Sign in</Link>

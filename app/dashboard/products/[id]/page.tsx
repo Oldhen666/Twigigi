@@ -30,22 +30,23 @@ async function Editor({
       ) : null}
       {query.blocked === "live" ? (
         <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">
-          A live or deactivated Twig cannot be deleted. Deactivate it from the dashboard, then reactivate before it is permanently deleted.
+          A live Twig cannot be deleted. Deactivate it from the dashboard first.
         </p>
       ) : null}
       <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} cta={product.cta} />
-      {product.status === "draft" ? (
-        <div className="mt-2">
-          <DeleteTwig productId={product.id} />
-        </div>
-      ) : (
+      {product.status === "published" ? (
         <p className="mt-6 text-sm text-muted">
-          {product.status === "published"
-            ? "This Twig is live, so it cannot be deleted. Deactivate it from the dashboard. The page becomes inactive. Turn it back on before the next charge date and you will not be charged again. If you do not reactivate, it is permanently deleted 30 days after it deactivates."
-            : product.deactivatedAt
-              ? "This Twig is deactivated. Reactivate it from the dashboard before the permanent deletion date."
-              : "This Twig is deactivated. Reactivate it from the dashboard, or it is permanently deleted 30 days after it was deactivated."}
+          This Twig is live, so it cannot be deleted. Deactivate it from the dashboard. The page becomes inactive. Turn it back on before the next charge date and you will not be charged again. If you do not reactivate, it is permanently deleted 30 days after it deactivates.
         </p>
+      ) : (
+        <div className="mt-6">
+          {product.status === "deactivated" ? (
+            <p className="mb-2 text-sm text-muted">
+              This Twig is deactivated. You can delete it now, or reactivate it from the dashboard before it is permanently deleted.
+            </p>
+          ) : null}
+          <DeleteTwig productId={product.id} mode={product.status === "deactivated" ? "deactivated" : "draft"} />
+        </div>
       )}
     </main>
   );

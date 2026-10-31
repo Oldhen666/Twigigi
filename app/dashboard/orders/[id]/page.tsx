@@ -2,25 +2,39 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { confirmInteraction, setLeadStatus } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
-import { getInteractionBySource, getOrder } from "@/lib/db";
-import { formatDate, formatMoney, interactionLabel, srcLabel } from "@/lib/format";
+import { getInteractionBySource, getOrder, getProductById } from "@/lib/db";
+import { formatDate, formatMoney, interactionLabel, orderHeading, srcLabel } from "@/lib/format";
+import { methodLabel } from "@/lib/payments";
 
 async function OrderScreen({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireSeller();
   const { id } = await params;
   const order = getOrder(id);
   if (!order || order.sellerId !== user.id) notFound();
+  const product = getProductById(order.productId);
   const interaction = getInteractionBySource(order.id);
   return (
     <main className="mx-auto w-full max-w-3xl px-5 pb-16">
       <p className="text-sm text-muted">{order.publicRef}</p>
-      <h1 className="mt-1 font-serif text-4xl">{order.productTitle}</h1>
-      {order.variantLabel ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
+      <h1 className="mt-1 font-serif text-4xl">{orderHeading(order)}</h1>
+      {order.lines.length > 1 ? (
+        <div className="mt-4 space-y-1 text-sm">
+          {order.lines.map((line) => (
+            <p key={`${line.productId}-${line.variantLabel}`}>
+              {line.title}{line.variantLabel ? ` · ${line.variantLabel}` : ""} · {line.quantity} × {formatMoney(line.unitCents, order.currency)}
+            </p>
+          ))}
+          <p className="text-muted">Items {formatMoney(order.subtotalCents, order.currency)} · Shipping {order.shippingCents === 0 ? "Free" : formatMoney(order.shippingCents, order.currency)}</p>
+        </div>
+      ) : order.variantLabel ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
       <p className="mt-4 font-serif text-2xl">{formatMoney(order.amountCents, order.currency)}</p>
       <p className="mt-2 text-sm text-muted">{order.quantity} · {order.fulfillment === "digital" ? "digital file" : order.fulfillment} · {order.status}</p>
       <p className="mt-4 text-sm">{order.buyerName}</p>
       <p className="text-sm text-muted">{order.email}{order.phone ? ` · ${order.phone}` : ""}</p>
       {order.address ? <p className="text-sm text-muted">{order.address}</p> : null}
+      {order.fulfillment === "pickup" && product?.pickupNote ? <p className="text-sm text-muted">Pickup location: {product.pickupNote}</p> : null}
+      {order.pickupWindow ? <p className="text-sm text-muted">Pickup time: {order.pickupWindow}</p> : null}
+      {order.buyerPayment ? <p className="text-sm text-muted">Payment: {methodLabel(order.buyerPayment)}</p> : null}
       {order.fulfillment === "digital" ? (
         <p className="mt-3 text-sm text-muted">
           {order.status === "paid" || order.status === "fulfilled"

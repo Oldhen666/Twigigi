@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import QRCode from "qrcode";
 import { getPublicProduct, requireLiveTwig } from "@/lib/catalog";
 import { BuyPicker } from "@/components/buy-picker";
+import { AddToCart } from "@/components/add-to-cart";
 import { CopyLink, ShareBar } from "@/components/share-bar";
 import { Stage } from "@/components/stage";
 import { ViewTracker } from "@/components/view-tracker";
@@ -14,7 +15,8 @@ import { PayMethods } from "@/components/pay-methods";
 import { Stars } from "@/components/stars";
 import { toggleLikeAction, toggleSaved } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
-import { isFavorite, isLiked, likeCount, listProductReviews, sellerReviewSummary } from "@/lib/db";
+import { isFavorite, isGuestLiked, isLiked, likeCount, listProductReviews, sellerReviewSummary } from "@/lib/db";
+import { readVisitor } from "@/lib/visitor";
 import { categoryHref, categoryLabel, resolveCategory } from "@/lib/categories";
 import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
 import { sellerPath } from "@/lib/seller-route";
@@ -33,7 +35,8 @@ export async function ProductView({
   if (!product) notFound();
   const account = await getCurrentUser();
   const saved = account ? isFavorite(account.id, product.id) : false;
-  const liked = account ? isLiked(account.id, product.id) : false;
+  const visitor = account ? "" : await readVisitor();
+  const liked = account ? isLiked(account.id, product.id) : visitor ? isGuestLiked(visitor, product.id) : false;
   const likes = likeCount(product.id);
   const reviews = listProductReviews(product.id);
   const rating = sellerReviewSummary(product.userId);
@@ -151,6 +154,8 @@ export async function ProductView({
               variants={product.variants}
               samePrice={product.samePrice}
               quantityAvailable={product.quantityAvailable}
+              cartPublicId={product.cta === "buy" ? product.publicId : ""}
+              productId={product.id}
             >
               {options.length > 0 ? (
                 <ul className="mt-3 flex flex-wrap gap-2">
@@ -192,6 +197,13 @@ export async function ProductView({
         <div className="sticky bottom-0 z-10 mt-4 border-t border-line bg-card/95 px-4 py-3 backdrop-blur">
           {soldOut ? (
             <span className="flex h-14 items-center justify-center rounded-2xl bg-paper-deep text-lg text-muted">Sold out</span>
+          ) : product.cta === "buy" && product.priceCents != null ? (
+            <AddToCart
+              publicId={product.publicId}
+              productId={product.id}
+              cap={product.quantityAvailable == null ? 20 : Math.min(20, product.quantityAvailable)}
+              label={buyLabel}
+            />
           ) : (
             <Link href={`/${product.publicId}/${product.slug}/${cta.href}`} className="flex h-14 items-center justify-center rounded-2xl bg-forest text-lg text-card">
               {buyLabel}
@@ -303,7 +315,12 @@ function ProductMarks({
   const login = `/login?next=${encodeURIComponent(path)}`;
   return (
     <div className="mt-3 flex items-center gap-4">
-      {signedIn && !ownTwig ? (
+      {ownTwig ? (
+        <span className="inline-flex items-center gap-1.5 text-muted">
+          <HeartIcon filled={false} />
+          <span className="text-sm text-ink">{likes}</span>
+        </span>
+      ) : (
         <form action={toggleLikeAction}>
           <input type="hidden" name="productId" value={productId} />
           <input type="hidden" name="next" value={path} />
@@ -312,16 +329,6 @@ function ProductMarks({
             <span className="text-sm text-ink">{likes}</span>
           </button>
         </form>
-      ) : ownTwig ? (
-        <span className="inline-flex items-center gap-1.5 text-muted">
-          <HeartIcon filled={false} />
-          <span className="text-sm text-ink">{likes}</span>
-        </span>
-      ) : (
-        <Link href={login} aria-label="Like" className="inline-flex items-center gap-1.5 text-muted">
-          <HeartIcon filled={false} />
-          <span className="text-sm text-ink">{likes}</span>
-        </Link>
       )}
       {ownTwig ? null : signedIn ? (
         <form action={toggleSaved}>

@@ -299,11 +299,35 @@ export type FulfillmentOption = {
   detail: string;
   feeCents: number;
   freeOverCents?: number | null;
+  location?: string;
+  times?: string[];
 };
+
+export function pickupTimes(value: string) {
+  return value
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
 
 export function shippingCharge(subtotalCents: number, feeCents: number, freeOverCents: number | null | undefined) {
   if (freeOverCents != null && freeOverCents > 0 && subtotalCents >= freeOverCents) return 0;
   return feeCents;
+}
+
+export function cartFulfillmentCharge(
+  merchandiseCents: number,
+  lines: { feeCents: number; freeOverCents?: number | null }[],
+) {
+  if (lines.length === 0) return 0;
+  return Math.max(0, ...lines.map((line) => shippingCharge(merchandiseCents, line.feeCents, line.freeOverCents)));
+}
+
+export function orderHeading(order: { productTitle: string; lines: { title: string }[] }) {
+  if (order.lines.length <= 1) return order.productTitle;
+  if (order.lines.length === 2) return `${order.lines[0].title} and ${order.lines[1].title}`;
+  return `${order.lines[0].title} and ${order.lines.length - 1} more`;
 }
 
 export function pickupDetail(note: string, time: string) {
@@ -344,6 +368,8 @@ export function fulfillmentOptions(product: Pick<
         ? "Customer picks it up"
         : pickupDetail(product.pickupNote, product.pickupTime),
       feeCents: 0,
+      location: quote ? "" : product.pickupNote.trim(),
+      times: quote ? [] : pickupTimes(product.pickupTime),
     });
   }
   if (product.deliveryEnabled) {

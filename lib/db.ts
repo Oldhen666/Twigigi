@@ -25,6 +25,7 @@ import {
   type Cta,
   type Fulfillment,
   type MessageRecord,
+  type OrderLine,
   type OrderRecord,
   type OrderStatus,
   type PaymentStatus,
@@ -244,6 +245,9 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "file_password", "file_password TEXT NOT NULL DEFAULT ''");
   add("orders", "file_links", "file_links TEXT NOT NULL DEFAULT '[]'");
   add("orders", "file_password", "file_password TEXT NOT NULL DEFAULT ''");
+  add("orders", "lines_json", "lines_json TEXT NOT NULL DEFAULT '[]'");
+  add("orders", "buyer_payment", "buyer_payment TEXT NOT NULL DEFAULT ''");
+  add("orders", "pickup_window", "pickup_window TEXT NOT NULL DEFAULT ''");
   add("products", "deactivates_at", "deactivates_at TEXT");
   add("products", "deactivated_at", "deactivated_at TEXT");
   add("products", "billing_started_at", "billing_started_at TEXT");
@@ -338,6 +342,13 @@ function ensureColumns(database: DatabaseSync) {
       product_id TEXT NOT NULL REFERENCES products(id),
       created_at TEXT NOT NULL,
       PRIMARY KEY (user_id, product_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS guest_likes (
+      visitor_id TEXT NOT NULL,
+      product_id TEXT NOT NULL REFERENCES products(id),
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (visitor_id, product_id)
     );
 
   `);
@@ -698,14 +709,31 @@ export function settleDeactivations(now = new Date().toISOString()) {
   }
 }
 
-function eraseProduct(id: string) {
+function clearProductRows(id: string) {
   db.prepare("DELETE FROM favorites WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM likes WHERE product_id = ?").run(id);
+  db.prepare("DELETE FROM guest_likes WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM reviews WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM page_views WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM quotes WHERE product_id = ?").run(id);
   db.prepare("DELETE FROM messages WHERE product_id = ?").run(id);
-  db.prepare("DELETE FROM products WHERE id = ?").run(id);
+}
+
+function removeProductRow(id: string, userId?: string) {
+  db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    const result = userId
+      ? db.prepare("DELETE FROM products WHERE id = ? AND user_id = ?").run(id, userId)
+      : db.prepare("DELETE FROM products WHERE id = ?").run(id);
+    return result.changes > 0;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
+function eraseProduct(id: string) {
+  clearProductRows(id);
+  removeProductRow(id);
 }
 
 function mapPublic(row: Row): PublicProduct {
@@ -767,6 +795,8 @@ function mapOrder(row: Row): OrderRecord {
     quantity: num(row.quantity),
     fulfillment,
     address: str(row.address),
+    buyerPayment: str(row.buyer_payment),
+    pickupWindow: str(row.pickup_window),
     amountCents: num(row.amount_cents),
     subtotalCents: num(row.subtotal),
     shippingCents: num(row.shipping),
@@ -794,8 +824,34 @@ function mapOrder(row: Row): OrderRecord {
     src: str(row.src),
     fileLinks: readStoredFileLinks(str(row.file_links)),
     filePassword: str(row.file_password),
+    lines: parseOrderLines(str(row.lines_json)),
     createdAt: str(row.created_at),
   };
+}
+
+function parseOrderLines(raw: string): OrderLine[] {
+  try {
+    const value = JSON.parse(raw || "[]") as unknown;
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as Record<string, unknown>;
+      const productId = str(row.productId);
+      const title = str(row.title);
+      if (!productId || !title) return [];
+      return [{
+        productId,
+        title,
+        slug: str(row.slug),
+        variantLabel: str(row.variantLabel),
+        quantity: num(row.quantity),
+        unitCents: num(row.unitCents),
+        subtotalCents: num(row.subtotalCents),
+      }];
+    });
+  } catch {
+    return [];
+  }
 }
 
 function mapQuote(row: Row): QuoteRecord {
@@ -948,7 +1004,9 @@ export function takePasswordReset(tokenHash: string) {
 }
 
 export function claimBuyerOrders(userId: string, email: string) {
-  db.prepare("UPDATE orders SET buyer_id = ? WHERE buyer_id IS NULL AND lower(email) = ?").run(userId, email.toLowerCase());
+  const normalized = email.toLowerCase();
+  db.prepare("UPDATE orders SET buyer_id = ? WHERE buyer_id IS NULL AND lower(email) = ?").run(userId, normalized);
+  db.prepare("UPDATE interactions SET buyer_id = ? WHERE buyer_id IS NULL AND lower(buyer_email) = ?").run(userId, normalized);
 }
 
 export function getProductById(id: string) {
@@ -1340,10 +1398,10 @@ export function productHasActivity(productId: string) {
 }
 
 export function deleteProduct(id: string, userId: string) {
-  db.prepare("DELETE FROM likes WHERE product_id = ?").run(id);
-  db.prepare("DELETE FROM page_views WHERE product_id = ?").run(id);
-  const result = db.prepare("DELETE FROM products WHERE id = ? AND user_id = ?").run(id, userId);
-  return result.changes > 0;
+  const owned = one("SELECT id FROM products WHERE id = ? AND user_id = ?", id, userId);
+  if (!owned) return false;
+  clearProductRows(id);
+  return removeProductRow(id, userId);
 }
 
 export function sellerProducts(userId: string) {
@@ -1433,6 +1491,7 @@ export function insertOrder(input: {
   variantLabel: string;
   fileLinks: string[];
   filePassword: string;
+  lines?: OrderLine[];
 }) {
   db.prepare(
     `INSERT INTO orders (
@@ -1441,14 +1500,14 @@ export function insertOrder(input: {
       payment_status, payment_provider, provider_payment_id,
       protection_status, protection_days, payout_status, payout_amount,
       refund_status, dispute_status,
-      stripe_session_id, src, variant_label, file_links, file_password, created_at
+      stripe_session_id, src, variant_label, file_links, file_password, lines_json, created_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?, 'unpaid',
       'unpaid', '', '',
       'pending', ?, 'none', ?,
       'none', 'none',
-      NULL, ?, ?, ?, ?, ?
+      NULL, ?, ?, ?, ?, ?, ?
     )`,
   ).run(
     input.id,
@@ -1474,8 +1533,13 @@ export function insertOrder(input: {
     input.variantLabel,
     JSON.stringify(input.fileLinks),
     input.filePassword,
+    JSON.stringify(input.lines ?? []),
     new Date().toISOString(),
   );
+}
+
+export function setOrderChoices(id: string, payment: string, pickupWindow: string) {
+  db.prepare("UPDATE orders SET buyer_payment = ?, pickup_window = ? WHERE id = ?").run(payment, pickupWindow, id);
 }
 
 export function reserveStock(productId: string, quantity: number) {
@@ -1559,7 +1623,28 @@ export function listBuyerOrders(userId: string, email: string) {
 }
 
 export function likeCount(productId: string) {
-  return num(one("SELECT COUNT(*) AS n FROM likes WHERE product_id = ?", productId)?.n);
+  const row = one(
+    `SELECT
+       (SELECT COUNT(*) FROM likes WHERE product_id = ?) +
+       (SELECT COUNT(*) FROM guest_likes WHERE product_id = ?) AS n`,
+    productId,
+    productId,
+  );
+  return num(row?.n);
+}
+
+export function isGuestLiked(visitorId: string, productId: string) {
+  if (!visitorId) return false;
+  return Boolean(one("SELECT 1 AS n FROM guest_likes WHERE visitor_id = ? AND product_id = ?", visitorId, productId));
+}
+
+export function toggleGuestLike(visitorId: string, productId: string) {
+  if (isGuestLiked(visitorId, productId)) {
+    db.prepare("DELETE FROM guest_likes WHERE visitor_id = ? AND product_id = ?").run(visitorId, productId);
+    return false;
+  }
+  db.prepare("INSERT INTO guest_likes (visitor_id, product_id, created_at) VALUES (?, ?, ?)").run(visitorId, productId, new Date().toISOString());
+  return true;
 }
 
 export function isLiked(userId: string, productId: string) {

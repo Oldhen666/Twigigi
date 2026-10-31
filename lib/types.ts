@@ -150,6 +150,16 @@ export type PublicSeller = {
   ratingCount: number;
 };
 
+export type OrderLine = {
+  productId: string;
+  title: string;
+  slug: string;
+  variantLabel: string;
+  quantity: number;
+  unitCents: number;
+  subtotalCents: number;
+};
+
 export type OrderRecord = {
   id: string;
   publicRef: string;
@@ -167,6 +177,8 @@ export type OrderRecord = {
   quantity: number;
   fulfillment: Fulfillment;
   address: string;
+  buyerPayment: string;
+  pickupWindow: string;
   amountCents: number;
   subtotalCents: number;
   shippingCents: number;
@@ -194,6 +206,7 @@ export type OrderRecord = {
   src: string;
   fileLinks: string[];
   filePassword: string;
+  lines: OrderLine[];
   createdAt: string;
 };
 

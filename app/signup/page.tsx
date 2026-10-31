@@ -15,6 +15,8 @@ async function SignupScreen({
 }) {
   const params = await searchParams;
   const cta = readCta(typeof params.cta === "string" ? params.cta : undefined);
+  const email = typeof params.email === "string" && params.email.includes("@") && !params.email.includes(" ") ? params.email : "";
+  const nextPath = typeof params.next === "string" && params.next.startsWith("/") && !params.next.startsWith("//") ? params.next : "";
   const user = await getCurrentUser();
   if (user) redirect(cta ? `/dashboard/products/new?cta=${cta}` : userHasTwigs(user.id) ? "/dashboard" : "/orders");
   return (
@@ -25,10 +27,10 @@ async function SignupScreen({
       <h1 className="mt-8 font-serif text-4xl">Create an account</h1>
       <p className="mt-2 text-muted">One account for your orders, saved Twigs, and anything you publish.</p>
       <div className="mt-6">
-        <SignupForm cta={cta ?? undefined} />
+        <SignupForm cta={cta ?? undefined} email={email} nextPath={nextPath} />
       </div>
       <p className="mt-4 text-sm text-muted">
-        Already have an account? <Link href="/login" className="text-forest">Log in</Link>
+        Already have an account? <Link href={nextPath ? `/login?next=${encodeURIComponent(nextPath)}` : "/login"} className="text-forest">Log in</Link>
       </p>
       </div>
     </main>

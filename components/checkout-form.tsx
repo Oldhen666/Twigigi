@@ -1,12 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useActionState } from "react";
 import type { FulfillmentOption } from "@/lib/format";
 import { formatMoney, shippingCharge } from "@/lib/format";
 import { methodsForFulfillment } from "@/lib/payments";
 import type { Cta, FormState, QuoteForm } from "@/lib/types";
-import { PayMethods } from "@/components/pay-methods";
+import { PayChoice, PickupFacts } from "@/components/checkout-choices";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 
 type PayDetails = {
@@ -57,6 +57,8 @@ export function CheckoutForm({
 }) {
   const [state, formAction, pending] = useActionState(action, {} as FormState);
   const [fulfillment, setFulfillment] = useState(options[0]?.id ?? "pickup");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [pickupTime, setPickupTime] = useState("");
   const paying = mode === "buy" || mode === "file";
   const quantityCap = maxQuantity ?? (paying ? 20 : 99);
   const [quantity, setQuantity] = useState(Math.min(Math.max(initialQuantity, 1), Math.max(quantityCap, 1)));
@@ -67,6 +69,8 @@ export function CheckoutForm({
     formRef.current?.reset();
     setQuantity(Math.min(Math.max(initialQuantity, 1), Math.max(quantityCap, 1)));
     setFulfillment(options[0]?.id ?? "pickup");
+    setPaymentMethod("");
+    setPickupTime("");
     setUploadKey((key) => key + 1);
     setHideErrors(true);
   }
@@ -79,6 +83,13 @@ export function CheckoutForm({
   const label = paying ? "Place order" : mode === "quote" ? "Request quote" : "Send message";
   const payFulfillment = mode === "file" || !(fulfillment === "delivery" || fulfillment === "shipping") ? "pickup" : fulfillment;
   const payMethods = payments ? methodsForFulfillment(payments.methods, payFulfillment) : [];
+  const methodKey = payMethods.join("|");
+  const timeKey = (selected?.times ?? []).join("|");
+  useEffect(() => {
+    setPaymentMethod((current) => (payMethods.length === 1 ? payMethods[0] : payMethods.includes(current) ? current : ""));
+    const times = selected?.id === "pickup" ? selected.times ?? [] : [];
+    setPickupTime((current) => (times.length <= 1 ? times[0] ?? "" : times.includes(current) ? current : ""));
+  }, [methodKey, selected?.id, timeKey]);
   const fieldErrors = hideErrors || pending ? undefined : state.fieldErrors;
   const formError = hideErrors || pending ? undefined : state.error;
   const needsTransfer = mode === "buy" && payFulfillment !== "pickup" && payMethods.length === 0;
@@ -140,24 +151,35 @@ export function CheckoutForm({
                   className="mr-2"
                 />
                 <span className="font-medium">{option.label}</span>
-                <span className="mt-1 block pl-6 text-sm text-muted">{option.detail}</span>
+                {option.id === "pickup" ? null : option.detail ? <span className="mt-1 block pl-6 text-sm text-muted">{option.detail}</span> : null}
+                {fulfillment === option.id && option.id === "pickup" ? (
+                  <PickupFacts
+                    location={option.location ?? ""}
+                    times={option.times ?? []}
+                    selectedTime={pickupTime}
+                    onTime={setPickupTime}
+                  />
+                ) : null}
               </label>
             ))}
           </div>
           {fieldErrors?.fulfillment ? <p className="mt-1 text-sm text-danger">{fieldErrors.fulfillment}</p> : null}
+          {fieldErrors?.pickupTime ? <p className="mt-1 text-sm text-danger">{fieldErrors.pickupTime}</p> : null}
         </fieldset>
       ) : null}
 
       {(mode === "buy" || mode === "file") && payments ? (
-        <PayMethods
+        <PayChoice
           methods={payMethods}
+          selected={paymentMethod}
+          onSelect={setPaymentMethod}
           cardPaymentUrl={payments.cardPaymentUrl}
           interacEmail={payments.interacEmail}
           venmoUsername={payments.venmoUsername}
           zelleMode={payments.zelleMode}
           zelleContact={payments.zelleContact}
-          showContacts
-          empty="Delivery and shipping have to be paid by transfer first. This seller has not set one up."
+          error={fieldErrors?.paymentMethod}
+          empty={needsTransfer ? "Delivery and shipping have to be paid by transfer first. This seller has not set one up." : ""}
         />
       ) : null}
 

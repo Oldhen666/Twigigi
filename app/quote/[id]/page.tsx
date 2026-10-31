@@ -2,10 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { InteractionLine } from "@/components/interaction-line";
 import { Stage } from "@/components/stage";
+import { buttonClass, ghostClass } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth";
-import { getInteractionBySource, getQuote } from "@/lib/db";
+import { claimBuyerOrders, getInteractionBySource, getQuote } from "@/lib/db";
+
+function sentLine(files: number) {
+  if (files === 1) return "Your request and 1 attachment have been sent to the seller.";
+  if (files > 1) return `Your request and ${files} attachments have been sent to the seller.`;
+  return "Your request has been sent to the seller.";
+}
 
 async function QuoteView({ params }: { params: Promise<{ id: string }> }) {
   await connection();
@@ -13,28 +19,55 @@ async function QuoteView({ params }: { params: Promise<{ id: string }> }) {
   const quote = getQuote(id);
   if (!quote) notFound();
   const account = await getCurrentUser();
+  if (account && account.email.toLowerCase() === quote.email.toLowerCase()) claimBuyerOrders(account.id, account.email);
   const interaction = getInteractionBySource(quote.id);
+  const listing = `/${quote.publicId}/${quote.productSlug}`;
+  const signup = `/signup?email=${encodeURIComponent(quote.email)}&next=${encodeURIComponent("/orders")}`;
   return (
     <Stage>
-      <div className="bg-card px-6 py-10 sm:rounded-[28px]">
-        <p className="text-sm text-clay">Quote request sent</p>
-        <h1 className="mt-2 font-serif text-4xl">{quote.productTitle}</h1>
-        <p className="mt-4 text-sm leading-6 text-muted">
-          The seller has your request for {quote.quantity}
-          {quote.documents.length > 0 ? ` and ${quote.documents.length} ${quote.documents.length === 1 ? "file" : "files"}` : ""} and will reply at {quote.email}.
+      <div className="bg-card px-5 py-6 sm:rounded-[28px] sm:px-6 sm:py-8">
+        <p className="flex items-center gap-2 text-sm font-medium text-forest">
+          <span className="grid size-5 shrink-0 place-items-center rounded-full bg-moss" aria-hidden>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M2.5 6.2 4.8 8.5 9.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          Quote request sent
         </p>
-        {interaction && account && (account.id === interaction.buyerId || account.email.toLowerCase() === interaction.buyerEmail) ? (
-          <div className="mt-6"><InteractionLine item={interaction} nextPath={`/quote/${quote.id}`} side="buyer" /></div>
-        ) : interaction && account && account.id === interaction.sellerId ? (
-          <div className="mt-6"><InteractionLine item={interaction} nextPath={`/quote/${quote.id}`} side="seller" /></div>
-        ) : interaction ? (
-          <p className="mt-6 text-sm text-muted">
-            Interaction {interaction.publicRef}. <Link href="/signup" className="text-forest">Create an account</Link> with this email to mark it completed and review.
-          </p>
-        ) : null}
-        <Link href={`/${quote.publicId}/${quote.productSlug}`} className="mt-8 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">
-          Back to the product
+        <h1 className="mt-3 font-serif text-4xl leading-tight">{quote.productTitle}</h1>
+        <p className="mt-3 text-sm leading-6 text-muted">{sentLine(quote.documents.length)}</p>
+
+        <section className="mt-5 rounded-2xl bg-paper-deep px-4 py-4">
+          <h2 className="font-serif text-xl">What happens next?</h2>
+          <p className="mt-2 text-sm leading-6">The seller will review your request and contact you at:</p>
+          <p className="mt-2 break-all font-medium">{quote.email}</p>
+        </section>
+
+        {interaction ? <p className="mt-4 text-sm text-muted">Request #{interaction.publicRef}</p> : null}
+
+        {account ? (
+          <Link href="/orders" className={`${buttonClass} mt-5 w-full`}>
+            View my requests
+          </Link>
+        ) : (
+          <section className="mt-6">
+            <h2 className="font-serif text-xl">Keep track of your request</h2>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Create a free Twigigi account with this email to view and track your requests, and leave a review when the job is complete.
+            </p>
+            <Link href={signup} className={`${buttonClass} mt-4 w-full`}>
+              Create free account
+            </Link>
+            <p className="mt-3 text-sm text-muted">
+              Already have an account? <Link href={`/login?next=${encodeURIComponent("/orders")}`} className="text-forest">Log in</Link>
+            </p>
+          </section>
+        )}
+
+        <Link href={listing} className={`${ghostClass} mt-3 w-full`}>
+          Back to listing
         </Link>
+        <p className="mt-3 text-center text-sm text-muted">No account is required to receive a reply.</p>
       </div>
     </Stage>
   );
@@ -42,7 +75,7 @@ async function QuoteView({ params }: { params: Promise<{ id: string }> }) {
 
 export default function Page({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <Suspense fallback={<p className="p-8 text-muted">Loading…</p>}>
+    <Suspense fallback={<p className="px-5 py-8 text-muted">Loading…</p>}>
       <QuoteView params={params} />
     </Suspense>
   );

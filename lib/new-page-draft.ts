@@ -13,7 +13,7 @@ export type NewPageDraft = {
   savedImages?: string[];
 };
 
-const SKIP = new Set(["id", "slug", "cta", "kept", "intent", "accountMode", "displayName", "username", "email", "password"]);
+const SKIP = new Set(["id", "slug", "cta", "kept", "photoSlot", "intent", "accountMode", "displayName", "username", "email", "password"]);
 
 export function captureDraft(form: HTMLFormElement, images: DraftImage[]): NewPageDraft {
   const fields: Record<string, string> = {};

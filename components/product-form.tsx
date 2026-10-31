@@ -8,6 +8,7 @@ import { BuyOfferFields } from "@/components/buy-offer-fields";
 import { CategoryFields } from "@/components/category-fields";
 import { FileLinkFields } from "@/components/file-link-fields";
 import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/components/page-preview";
+import { PhotoFrame } from "@/components/photo-frame";
 import { PublishAccount } from "@/components/publish-account";
 import { QuoteFormFields } from "@/components/quote-form-fields";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
@@ -17,6 +18,19 @@ import { PROVINCES, joinLocation, lookupCurrentPlace, placeProblem, splitLocatio
 import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
 
 type Action = (state: FormState, formData: FormData) => Promise<FormState>;
+
+type ListingPhoto =
+  | { id: string; kind: "kept"; src: string }
+  | { id: string; kind: "new"; src: string; file: File };
+
+type FrameRequest = {
+  src: string;
+  revoke: boolean;
+  replaceId: string | null;
+  pending: File[];
+  index: number;
+  total: number;
+};
 
 export function ProductForm({
   action,
@@ -49,8 +63,8 @@ export function ProductForm({
     for (const file of restoredFiles.current) formData.append("images", file);
     return action(prev, formData);
   }, {} as FormState);
-  const [kept, setKept] = useState<string[]>(product?.images ?? []);
-  const [previews, setPreviews] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<ListingPhoto[]>(() => (product?.images ?? []).map((src) => ({ id: src, kind: "kept" as const, src })));
+  const [framing, setFraming] = useState<FrameRequest | null>(null);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<PagePreviewDraft | null>(null);
@@ -73,6 +87,7 @@ export function ProductForm({
   const fileInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const keptCount = useRef(0);
+  const photosSynced = useRef(false);
   const published = product?.status === "published";
   const retired = product?.status === "deactivated";
   const [reactivateOpen, setReactivateOpen] = useState(false);
@@ -82,7 +97,7 @@ export function ProductForm({
   const quote = cta === "quote";
   const stepped = priced || quote;
   const fresh = !product;
-  keptCount.current = kept.length;
+  keptCount.current = photos.filter((photo) => photo.kind === "kept").length;
 
   useEffect(() => {
     const errors = state.fieldErrors;
@@ -118,9 +133,13 @@ export function ProductForm({
     savedRecord.current = { productId: state.productId, slug: state.slug, savedImages: images };
     setSavedId(state.productId);
     setSavedSlug(state.slug ?? "");
-    setKept(images);
-    restoredFiles.current = [];
-    setPreviews([]);
+    setPhotos((current) => {
+      for (const photo of current) {
+        if (photo.kind === "new") URL.revokeObjectURL(photo.src);
+      }
+      restoredFiles.current = [];
+      return images.map((src) => ({ id: src, kind: "kept" as const, src }));
+    });
     if (!product) {
       imageDraft.current = [];
       latest.current = {
@@ -158,12 +177,45 @@ export function ProductForm({
         return new File([blob], image.name || "photo", { type: image.type || blob.type });
       }),
     ).then((files) => {
-      if (!cancel) restoredFiles.current = files;
+      if (cancel) return;
+      setPhotos((current) => {
+        if (current.some((photo) => photo.kind === "new")) return current;
+        const next = [
+          ...current,
+          ...files.map((file) => ({ id: crypto.randomUUID(), kind: "new" as const, src: URL.createObjectURL(file), file })),
+        ];
+        restoredFiles.current = next.flatMap((photo) => (photo.kind === "new" ? [photo.file] : []));
+        return next;
+      });
     });
     return () => {
       cancel = true;
     };
   }, [ready, product, resetKey]);
+
+  useEffect(() => {
+    const files = photos.flatMap((photo) => (photo.kind === "new" ? [photo.file] : []));
+    restoredFiles.current = files;
+    if (!photosSynced.current) {
+      photosSynced.current = true;
+      return;
+    }
+    let cancel = false;
+    void Promise.all(files.map(readDraftImage))
+      .then((drafts) => {
+        if (cancel) return;
+        imageDraft.current = drafts;
+        remember();
+      })
+      .catch(() => {
+        if (!cancel) imageDraft.current = [];
+      });
+    return () => {
+      cancel = true;
+    };
+    // remember reads the form; photos is the only changing input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photos]);
 
   useEffect(() => {
     if (product || !ready) return;
@@ -209,7 +261,7 @@ export function ProductForm({
   useEffect(() => {
     const form = formRef.current;
     if (form) refreshRef.current(form);
-  }, [kept, previews.length, state.fieldErrors, localErrors]);
+  }, [photos, state.fieldErrors, localErrors]);
 
   function fieldValue(form: HTMLFormElement, name: string) {
     const field = form.elements.namedItem(name);
@@ -430,7 +482,7 @@ export function ProductForm({
     event.stopPropagation();
     const form = formRef.current;
     if (!form) return;
-    const next = readPagePreview(new FormData(form), [...kept, ...previews], cta, seller);
+    const next = readPagePreview(new FormData(form), photos.map((photo) => photo.src), cta, seller);
     remember();
     // Wait until this click finishes. Replacing the button immediately can submit the form.
     window.setTimeout(() => {
@@ -507,34 +559,88 @@ export function ProductForm({
 
   const PHOTO_TYPES: Record<string, boolean> = { "image/jpeg": true, "image/png": true, "image/webp": true };
 
-  async function applyFiles(files: File[]) {
-    restoredFiles.current = files;
-    setPreviews((current) => {
-      for (const url of current) {
-        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+  function rememberFiles(next: ListingPhoto[]) {
+    restoredFiles.current = next.flatMap((photo) => (photo.kind === "new" ? [photo.file] : []));
+    return next;
+  }
+
+  function placeFramed(file: File, replaceId: string | null) {
+    const src = URL.createObjectURL(file);
+    const photo: ListingPhoto = { id: crypto.randomUUID(), kind: "new", src, file };
+    setPhotos((current) => {
+      if (replaceId) {
+        const next = current.map((item) => {
+          if (item.id !== replaceId) return item;
+          if (item.kind === "new") URL.revokeObjectURL(item.src);
+          return photo;
+        });
+        return rememberFiles(next);
       }
-      return files.map((file) => URL.createObjectURL(file));
+      if (current.length >= 6) {
+        URL.revokeObjectURL(src);
+        return current;
+      }
+      return rememberFiles([...current, photo]);
     });
-    try {
-      imageDraft.current = await Promise.all(files.map(readDraftImage));
-    } catch {
-      imageDraft.current = [];
-    }
-    remember();
+  }
+
+  function advanceFrame(current: FrameRequest): FrameRequest | null {
+    if (current.revoke) URL.revokeObjectURL(current.src);
+    const [next, ...rest] = current.pending;
+    if (!next) return null;
+    return {
+      src: URL.createObjectURL(next),
+      revoke: true,
+      replaceId: null,
+      pending: rest,
+      index: current.index + 1,
+      total: current.total,
+    };
+  }
+
+  function closeFrame() {
+    setFraming((current) => {
+      if (current?.revoke) URL.revokeObjectURL(current.src);
+      return null;
+    });
+  }
+
+  function acceptFrame(file: File) {
+    if (!framing) return;
+    placeFramed(file, framing.replaceId);
+    setFraming(advanceFrame(framing));
+  }
+
+  function skipFrame() {
+    if (!framing) return;
+    setFraming(advanceFrame(framing));
+  }
+
+  function editPhoto(photo: ListingPhoto) {
+    setFraming({ src: photo.src, revoke: false, replaceId: photo.id, pending: [], index: 1, total: 1 });
   }
 
   function addImageFiles(incoming: File[]) {
     const images = incoming.filter((file) => PHOTO_TYPES[file.type]);
     if (images.length < incoming.length) setPhotoNote("Use JPG, PNG, or WebP photos.");
     else setPhotoNote("");
-    const room = Math.max(0, 6 - keptCount.current - restoredFiles.current.length);
+    const room = Math.max(0, 6 - photos.length);
     if (room === 0) {
       setPhotoNote("Use up to 6 photos.");
       return;
     }
-    const next = [...restoredFiles.current, ...images.slice(0, room)];
+    const accepted = images.slice(0, room);
     if (images.length > room) setPhotoNote("Use up to 6 photos.");
-    void applyFiles(next);
+    const [first, ...rest] = accepted;
+    if (!first) return;
+    setFraming({
+      src: URL.createObjectURL(first),
+      revoke: true,
+      replaceId: null,
+      pending: rest,
+      index: 1,
+      total: accepted.length,
+    });
     setPhotoOpen(false);
   }
 
@@ -552,7 +658,16 @@ export function ProductForm({
     setSavedId("");
     setSavedSlug("");
     setNotice(null);
-    setPreviews([]);
+    setPhotos((current) => {
+      for (const photo of current) {
+        if (photo.kind === "new") URL.revokeObjectURL(photo.src);
+      }
+      return [];
+    });
+    setFraming((current) => {
+      if (current?.revoke) URL.revokeObjectURL(current.src);
+      return null;
+    });
     setDraft(null);
     setStep(1);
     setPreviewing(false);
@@ -567,15 +682,23 @@ export function ProductForm({
     }, 300);
   }
 
+  function removePhoto(id: string) {
+    setPhotos((current) => {
+      const photo = current.find((item) => item.id === id);
+      if (photo?.kind === "new") URL.revokeObjectURL(photo.src);
+      return rememberFiles(current.filter((item) => item.id !== id));
+    });
+  }
+
   function move(index: number, direction: -1 | 1) {
-    setKept((current) => {
+    setPhotos((current) => {
       const next = [...current];
       const target = index + direction;
       if (target < 0 || target >= next.length) return current;
       const [item] = next.splice(index, 1);
       if (!item) return current;
       next.splice(target, 0, item);
-      return next;
+      return rememberFiles(next);
     });
   }
 
@@ -621,6 +744,16 @@ export function ProductForm({
       onChange={hintFrom}
       className="pb-36"
     >
+      {framing ? (
+        <PhotoFrame
+          key={framing.src}
+          src={framing.src}
+          progress={framing.replaceId === null ? `Photo ${framing.index} of ${framing.total}.` : ""}
+          onCancel={closeFrame}
+          onSkip={framing.replaceId === null ? skipFrame : undefined}
+          onUse={acceptFrame}
+        />
+      ) : null}
       {photoOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={() => setPhotoOpen(false)}>
           <div role="dialog" aria-modal="true" aria-labelledby="add-photo-title" className="w-full max-w-sm rounded-[28px] border border-line bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
@@ -695,8 +828,11 @@ export function ProductForm({
       {savedId ? <input type="hidden" name="id" value={savedId} /> : null}
       {savedSlug ? <input type="hidden" name="slug" value={savedSlug} /> : null}
       <input type="hidden" name="cta" value={cta} />
-      {kept.map((image) => (
-        <input key={image} type="hidden" name="kept" value={image} />
+      {photos.map((photo) => (
+        <input key={`slot-${photo.id}`} type="hidden" name="photoSlot" value={photo.kind === "kept" ? photo.src : "file"} />
+      ))}
+      {photos.map((photo) => (
+        photo.kind === "kept" ? <input key={photo.id} type="hidden" name="kept" value={photo.src} /> : null
       ))}
       {state.error ? <p className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{state.error}</p> : null}
       {fresh && !previewing ? (
@@ -767,27 +903,22 @@ export function ProductForm({
         {visibleErrors.images ? <p className="text-sm text-danger">{visibleErrors.images}</p> : null}
         {photoNote ? <p className="text-sm text-danger">{photoNote}</p> : null}
         <ul className="space-y-2">
-          {kept.map((image, index) => (
-            <li key={image} className="flex items-center gap-3 rounded-2xl border border-line bg-white p-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={image} alt="" className="h-16 w-16 rounded-xl object-cover" />
+          {photos.map((photo, index) => (
+            <li key={photo.id} className="flex items-center gap-3 rounded-2xl border border-line bg-white p-2">
+              <button type="button" onClick={() => editPhoto(photo)} className="shrink-0" aria-label={`Adjust ${index === 0 ? "cover" : `photo ${index + 1}`}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photo.src} alt="" className="h-16 w-16 rounded-xl object-cover" />
+              </button>
               <span className="text-sm text-muted">{index === 0 ? "Cover" : `Photo ${index + 1}`}</span>
               <span className="ml-auto flex gap-2 text-sm">
+                <button type="button" onClick={() => editPhoto(photo)} className="text-forest">Adjust</button>
                 <button type="button" onClick={() => move(index, -1)} className="text-forest">Up</button>
                 <button type="button" onClick={() => move(index, 1)} className="text-forest">Down</button>
-                <button type="button" onClick={() => setKept((current) => current.filter((item) => item !== image))} className="text-danger">Remove</button>
+                <button type="button" onClick={() => removePhoto(photo.id)} className="text-danger">Remove</button>
               </span>
             </li>
           ))}
         </ul>
-        {previews.length > 0 ? (
-          <div className="flex gap-2 overflow-x-auto">
-            {previews.map((preview) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={preview} src={preview} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
-            ))}
-          </div>
-        ) : null}
         <button
           type="button"
           aria-label="Add photos"
@@ -809,9 +940,9 @@ export function ProductForm({
         <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={onFiles} className="sr-only" />
         <input ref={cameraInput} type="file" accept="image/*" capture="environment" onChange={onFiles} className="sr-only" />
         <p className="text-sm text-muted">
-          {previews.length > 0
-            ? `${previews.length} ${previews.length === 1 ? "photo" : "photos"} selected. JPG, PNG, or WebP.`
-            : "JPG, PNG, or WebP. Drag, paste, or use the camera."}
+          {photos.some((photo) => photo.kind === "new")
+            ? `${photos.filter((photo) => photo.kind === "new").length} ${photos.filter((photo) => photo.kind === "new").length === 1 ? "photo" : "photos"} selected. JPG, PNG, or WebP.`
+            : "JPG, PNG, or WebP. Drag, paste, or use the camera. Adjust a photo to choose the square customers see."}
         </p>
       </Section>
       {file ? (
