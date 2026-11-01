@@ -5,10 +5,11 @@ import { Suspense } from "react";
 import { Stage } from "@/components/stage";
 import { PayMethods } from "@/components/pay-methods";
 import { InteractionLine } from "@/components/interaction-line";
+import { OrderPaymentFacts } from "@/components/order-payment-facts";
 import { getCurrentUser } from "@/lib/auth";
 import { getInteractionBySource, getOrder, getProductById } from "@/lib/db";
 import { formatMoney, orderHeading } from "@/lib/format";
-import { methodLabel, methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
+import { methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
 import { confirmStripeSession } from "@/lib/stripe";
 
 async function OrderView({
@@ -34,7 +35,7 @@ async function OrderView({
   return (
     <Stage>
       <div className="bg-card px-6 py-10 sm:rounded-[28px]">
-        <p className="text-sm text-clay">{paid ? "Payment received" : "Order sent"}</p>
+        <p className="text-sm text-clay">{paid ? "Seller confirmed payment" : "Order sent"}</p>
         <h1 className="mt-2 font-serif text-4xl">{orderHeading(order)}</h1>
         {order.lines.length > 1 ? (
           <div className="mt-4 space-y-2 text-sm">
@@ -59,17 +60,17 @@ async function OrderView({
         )}
         {order.fulfillment === "pickup" && product?.pickupNote ? <p className="mt-3 text-sm">Pickup location: {product.pickupNote}</p> : null}
         {order.pickupWindow ? <p className="mt-1 text-sm">Pickup time: {order.pickupWindow}</p> : null}
-        {order.buyerPayment ? <p className="mt-1 text-sm">Payment: {methodLabel(order.buyerPayment)}</p> : null}
+        <OrderPaymentFacts order={order} cardPaymentUrl={product?.cardPaymentUrl ?? ""} />
         <p className="mt-3 text-sm leading-6 text-muted">
           {digital
             ? fileReady
-              ? `Payment received. The file link and password were emailed to ${order.email}. They are also listed below.`
-              : `Pay ${order.displayName} first. After they confirm payment, Twigigi emails the file link and password to ${order.email}.`
+              ? `The seller confirmed payment. The file link and password were emailed to ${order.email}. They are also listed below.`
+              : `Pay ${order.displayName} directly. After they confirm payment, Twigigi emails the file link and password to ${order.email}.`
             : paid
-              ? `${order.displayName} has your payment. They will follow up at ${order.email}.`
+              ? `${order.displayName} confirmed your payment. They will follow up at ${order.email}.`
               : order.fulfillment === "pickup"
-                ? `Pay ${order.displayName} when you pick up. They will follow up at ${order.email}.`
-                : `Transfer the payment to ${order.displayName} first. They confirm it, then ship. They will follow up at ${order.email}.`}
+                ? `Pay ${order.displayName} directly when you pick up. They will follow up at ${order.email}.`
+                : `Pay ${order.displayName} directly. They confirm it, then ship. They will follow up at ${order.email}.`}
         </p>
         {fileReady ? (
           <div className="mt-4 space-y-2 rounded-2xl bg-paper-deep px-4 py-3 text-sm">

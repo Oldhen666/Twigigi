@@ -14,12 +14,18 @@ export const US_PAYMENTS: PayMethod[] = [
   { id: "zelle", label: "Zelle" },
 ];
 
-const LABELS = new Map([...CA_PAYMENTS, ...US_PAYMENTS].map((method) => [method.id, method.label]));
+export const CARD_PAYMENT: PayMethod = { id: "card", label: "Credit card" };
+
+const LABELS = new Map([...CA_PAYMENTS, ...US_PAYMENTS, CARD_PAYMENT].map((method) => [method.id, method.label]));
 
 export function paymentsForCountry(country: string): PayMethod[] {
   if (country === "US") return US_PAYMENTS;
   if (country === "CA") return CA_PAYMENTS;
   return [];
+}
+
+export function paymentsForDigitalFile(): PayMethod[] {
+  return [CARD_PAYMENT];
 }
 
 const CASH_METHODS = new Set(["cash", "cash_pickup"]);
@@ -33,7 +39,7 @@ export function isCashMethod(id: string) {
 }
 
 export function isTransferMethod(id: string) {
-  return Boolean(methodLabel(id)) && !CASH_METHODS.has(id);
+  return id !== "card" && Boolean(methodLabel(id)) && !CASH_METHODS.has(id);
 }
 
 export function methodsForFulfillment(methods: string[], fulfillment: "pickup" | "delivery" | "shipping") {
@@ -52,7 +58,7 @@ export function sellerContactProblem(mode: string, value: string) {
   return safeEmail(trimmed) ? null : "Enter an email like name@email.com.";
 }
 
-export function parsePaymentMethods(raw: string, country: string) {
+export function parsePaymentMethods(raw: string, country: string, digital = false) {
   let parsed: unknown = [];
   try {
     parsed = JSON.parse(raw || "[]");
@@ -60,7 +66,7 @@ export function parsePaymentMethods(raw: string, country: string) {
     parsed = [];
   }
   if (!Array.isArray(parsed)) return [];
-  const allowed = new Set(paymentsForCountry(country).map((method) => method.id));
+  const allowed = new Set((digital ? paymentsForDigitalFile() : paymentsForCountry(country)).map((method) => method.id));
   const methods: string[] = [];
   for (const item of parsed) {
     if (typeof item !== "string" || !allowed.has(item) || methods.includes(item)) continue;

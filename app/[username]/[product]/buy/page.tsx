@@ -89,7 +89,7 @@ async function BuyDetails({
               defaultName={account?.displayName ?? ""}
               defaultEmail={account?.email ?? ""}
               payments={{
-                methods: product.paymentMethods,
+                methods: product.cta === "file" ? ["card"] : product.paymentMethods,
                 cardPaymentUrl: product.cardPaymentUrl,
                 interacEmail: product.interacEmail,
                 venmoUsername: product.venmoUsername,

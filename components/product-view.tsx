@@ -75,7 +75,7 @@ export async function ProductView({
           price: (product.priceCents / 100).toFixed(2),
           availability: "https://schema.org/InStock",
           url: canonical,
-          areaServed: product.location,
+          areaServed: product.cta === "file" ? undefined : product.location,
         }
       : undefined,
   };
@@ -115,7 +115,7 @@ export async function ProductView({
           </div>
         ) : null}
         <div className="px-5 pt-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-muted">{product.location}</p>
+          {product.cta === "file" ? null : <p className="text-xs uppercase tracking-[0.16em] text-muted">{product.location}</p>}
           <h1 className="mt-2 font-serif text-4xl leading-tight">{product.title}</h1>
           {categoryLink ? (
             <p className="mt-2 text-sm text-muted">
@@ -169,7 +169,7 @@ export async function ProductView({
               ) : null}
               <SellerCredit username={product.publicId} name={product.displayName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
               <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
-              {product.cta === "buy" || product.cta === "file" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
+              {product.cta === "file" ? <PayMethods methods={["card"]} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </BuyPicker>
           ) : (
             <>
@@ -190,7 +190,7 @@ export async function ProductView({
               ) : null}
               <SellerCredit username={product.publicId} name={product.displayName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
               <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
-              {product.cta === "buy" || product.cta === "file" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
+              {product.cta === "file" ? <PayMethods methods={["card"]} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </>
           )}
         </div>

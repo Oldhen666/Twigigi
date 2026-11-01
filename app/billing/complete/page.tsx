@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import { activeWindow, billingCurrency, listingFeeCents } from "@/lib/billing";
+import { activeWindow, listingFeeCents, listingFeeCurrency } from "@/lib/billing";
 import { requireUser } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { getProductById, publishDraft, reactivateProduct, recordTwigBill } from "@/lib/db";
@@ -37,7 +37,7 @@ async function CompleteScreen({
     userId: user.id,
     productId: product.id,
     amountCents: cents,
-    currency: billingCurrency(product.location),
+    currency: listingFeeCurrency(product.cta, product.location),
     method: user.billingMethod || "stripe",
     kind: "listing",
     periodStart: window.start,

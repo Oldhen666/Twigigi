@@ -312,9 +312,13 @@ export function ProductForm({
       if (Math.round(Number(value) * 100) < 50) return "Enter a price of at least $0.50.";
       return null;
     }
-    if (name === "location") return cta === "buy" || cta === "file" ? placeProblem(value) : value.length >= 2 ? null : "Add a public location, such as a city.";
+    if (name === "location") {
+      if (cta === "file") return null;
+      return cta === "buy" ? placeProblem(value) : value.length >= 2 ? null : "Add a public location, such as a city.";
+    }
     if (name === "paymentMethods") {
-      if (cta !== "buy" && cta !== "file") return null;
+      if (cta === "file") return null;
+      if (cta !== "buy") return null;
       const country = splitLocation(fieldValue(form, "location")).country;
       if (!country) return "Choose a country before choosing how buyers pay.";
       const methods = parsePaymentMethods(value || "[]", country);
@@ -329,7 +333,8 @@ export function ProductForm({
       return null;
     }
     if (name === "cardPaymentUrl") {
-      if (cta !== "buy" && cta !== "file") return null;
+      if (cta === "file") return cardLinkProblem(value);
+      if (cta !== "buy") return null;
       const methods = parsePaymentMethods(fieldValue(form, "paymentMethods") || "[]", splitLocation(fieldValue(form, "location")).country);
       if (!methods.includes("card")) return null;
       return cardLinkProblem(value);
@@ -528,7 +533,7 @@ export function ProductForm({
     const form = formRef.current;
     if (!form || (cta !== "buy" && cta !== "file")) return false;
     const problems: Record<string, string> = {};
-    for (const key of ["price", "location"]) {
+    for (const key of cta === "file" ? ["price"] : ["price", "location"]) {
       const problem = activeProblem(form, key);
       if (problem) problems[key] = problem;
     }

@@ -100,7 +100,7 @@ import type { Cta, FormState, Fulfillment, OrderStatus, ProductInput } from "@/l
 import { IP_POLICY_VERSION, LISTING_REPORT_REASONS, PRIVACY_VERSION, REPORT_STATUSES, RIGHT_TYPES, TERMS_VERSION } from "@/lib/legal";
 import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { ensureVisitor } from "@/lib/visitor";
-import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
+import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { getStripe } from "@/lib/stripe";
 import { DIGITAL_FILE_CATEGORY, categoryProblem, resolveCategory } from "@/lib/categories";
@@ -534,12 +534,12 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   if (priced && price !== "invalid" && (typeof price !== "number" || price < 50)) {
     errors.price = "Enter a price of at least $0.50.";
   }
-  if (priced) {
+  if (cta === "buy") {
     const place = placeProblem(location);
     if (place) errors.location = place;
   }
-  const payCountry = splitLocation(location).country;
-  const paymentMethods = priced ? parsePaymentMethods(text(formData, "paymentMethods"), payCountry) : [];
+  const payCountry = splitLocation(cta === "file" ? "" : location).country;
+  const paymentMethods = cta === "file" ? ["card"] : priced ? parsePaymentMethods(text(formData, "paymentMethods"), payCountry) : [];
   const cardPaymentUrl = text(formData, "cardPaymentUrl").trim().slice(0, 500);
   const interacEmail = text(formData, "interacEmail").trim().slice(0, 80);
   const venmoUsername = text(formData, "venmoUsername").trim().replace(/^@/, "").slice(0, 30);
@@ -548,10 +548,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const sellerContactMode = text(formData, "sellerContactMode") === "phone" ? "phone" : "email";
   const sellerContact = text(formData, "sellerContact").trim().slice(0, 80);
   if (priced && intent === "publish") {
-    if (paymentMethods.length === 0) {
+    if (cta !== "file" && paymentMethods.length === 0) {
       errors.paymentMethods = payCountry ? "Choose at least one way buyers can pay." : "Choose a country before choosing how buyers pay.";
     }
-    if (paymentMethods.includes("card")) {
+    if (cta === "file" || paymentMethods.includes("card")) {
       const problem = cardLinkProblem(cardPaymentUrl);
       if (problem) errors.cardPaymentUrl = problem;
     }
@@ -660,7 +660,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     category: chosenCategory?.itemId ?? "",
     description,
     priceCents: typeof price === "number" ? price : null,
-    location,
+    location: cta === "file" ? "" : location,
     videoUrl,
     pickupEnabled,
     pickupNote: text(formData, "pickupNote").trim().slice(0, 400),
@@ -731,7 +731,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
         userId: owner.id,
         productId: savedProductId,
         amountCents: cents,
-        currency: billingCurrency(location),
+        currency: listingFeeCurrency(input.cta, location),
         method: user.billingMethod,
         kind: "listing",
         periodStart: window.start,
@@ -827,7 +827,7 @@ export async function payAndPublish(formData: FormData) {
     redirect(`/dashboard/products/${product.id}`);
   }
   const cents = listingFeeCents(product.cta);
-  const currency = billingCurrency(product.location);
+  const currency = listingFeeCurrency(product.cta, product.location);
   const stripe = getStripe();
   if (stripe && cents && (user.billingMethod === "card" || user.billingMethod === "stripe")) {
     const session = await stripe.checkout.sessions.create({
@@ -964,7 +964,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
     }
   }
   const payFulfillment = parsed.data.fulfillment === "delivery" || parsed.data.fulfillment === "shipping" ? parsed.data.fulfillment : "pickup";
-  const payMethods = methodsForFulfillment(product.paymentMethods, payFulfillment);
+  const payMethods = digital ? ["card"] : methodsForFulfillment(product.paymentMethods, payFulfillment);
   const times = parsed.data.fulfillment === "pickup" ? pickupTimes(product.pickupTime) : [];
   const choice = chosenOrderDetails(formData, parsed.data.fulfillment, payMethods, times);
   if (!choice.ok) return { fieldErrors: choice.fieldErrors };

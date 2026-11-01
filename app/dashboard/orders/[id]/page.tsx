@@ -4,7 +4,7 @@ import { confirmInteraction, setLeadStatus } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { getInteractionBySource, getOrder, getProductById } from "@/lib/db";
 import { formatDate, formatMoney, interactionLabel, orderHeading, srcLabel } from "@/lib/format";
-import { methodLabel } from "@/lib/payments";
+import { OrderPaymentFacts } from "@/components/order-payment-facts";
 
 async function OrderScreen({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireSeller();
@@ -27,14 +27,13 @@ async function OrderScreen({ params }: { params: Promise<{ id: string }> }) {
           <p className="text-muted">Items {formatMoney(order.subtotalCents, order.currency)} · Shipping {order.shippingCents === 0 ? "Free" : formatMoney(order.shippingCents, order.currency)}</p>
         </div>
       ) : order.variantLabel ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
-      <p className="mt-4 font-serif text-2xl">{formatMoney(order.amountCents, order.currency)}</p>
-      <p className="mt-2 text-sm text-muted">{order.quantity} · {order.fulfillment === "digital" ? "digital file" : order.fulfillment} · {order.status}</p>
+      <OrderPaymentFacts order={order} cardPaymentUrl={product?.cardPaymentUrl ?? ""} />
+      <p className="mt-2 text-sm text-muted">{order.quantity} · {order.fulfillment === "digital" ? "digital file" : order.fulfillment}</p>
       <p className="mt-4 text-sm">{order.buyerName}</p>
       <p className="text-sm text-muted">{order.email}{order.phone ? ` · ${order.phone}` : ""}</p>
       {order.address ? <p className="text-sm text-muted">{order.address}</p> : null}
       {order.fulfillment === "pickup" && product?.pickupNote ? <p className="text-sm text-muted">Pickup location: {product.pickupNote}</p> : null}
       {order.pickupWindow ? <p className="text-sm text-muted">Pickup time: {order.pickupWindow}</p> : null}
-      {order.buyerPayment ? <p className="text-sm text-muted">Payment: {methodLabel(order.buyerPayment)}</p> : null}
       {order.fulfillment === "digital" ? (
         <p className="mt-3 text-sm text-muted">
           {order.status === "paid" || order.status === "fulfilled"

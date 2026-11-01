@@ -7,7 +7,7 @@ import type { Product, ProductOption, ProductVariant } from "@/lib/types";
 import { MAX_VALUES, OPTION_NAMES, normalizeVariants, variantLabel } from "@/lib/variants";
 import { inputClass, labelClass } from "@/components/ui";
 import { CA_PROVINCES, US_STATES, joinLocation, lookupCurrentPlace, lookupIpPlace, splitLocation } from "@/lib/places";
-import { parsePaymentMethods, paymentsForCountry } from "@/lib/payments";
+import { parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile } from "@/lib/payments";
 
 function readOptions(seed: NewPageDraft | null, product?: Product): ProductOption[] {
   let saved: ProductOption[] = [];
@@ -61,10 +61,10 @@ export function BuyOfferFields({
   const [variable, setVariable] = useState(seed ? seed.fields.hasOptions === "1" : Boolean(product?.hasOptions && product.options.some((item) => item.values.length > 0)));
   const [pickup, setPickup] = useState(seed ? (seed.checks.pickupEnabled ?? true) : (product?.pickupEnabled ?? true));
   const [ship, setShip] = useState(seed ? seed.checks.shippingEnabled === true : Boolean(product?.deliveryEnabled || product?.shippingEnabled));
-  const initialLocation = seed?.fields.location ?? product?.location ?? "";
+  const initialLocation = digital ? "" : seed?.fields.location ?? product?.location ?? "";
   const [payCountry, setPayCountry] = useState(() => splitLocation(initialLocation).country);
   const [methods, setMethods] = useState(() =>
-    parsePaymentMethods(seed?.fields.paymentMethods ?? JSON.stringify(product?.paymentMethods ?? []), splitLocation(initialLocation).country),
+    parsePaymentMethods(seed?.fields.paymentMethods ?? JSON.stringify(product?.paymentMethods ?? []), splitLocation(initialLocation).country, digital),
   );
   const [cardUrl, setCardUrl] = useState(seed?.fields.cardPaymentUrl ?? product?.cardPaymentUrl ?? "");
   const [interacEmail, setInteracEmail] = useState(seed?.fields.interacEmail ?? product?.interacEmail ?? "");
@@ -102,7 +102,7 @@ export function BuyOfferFields({
     notify.current?.();
   }, [price, unlimited, samePrice, options, variants, enabled, variable, pickup, ship, methods, cardUrl, interacEmail, venmoUsername, zelleContact, zelleMode, deliveryArea, sellerContact, sellerMode]);
   useEffect(() => {
-    const allowed = new Set(paymentsForCountry(payCountry).map((method) => method.id));
+    const allowed = new Set((digital ? paymentsForDigitalFile() : paymentsForCountry(payCountry)).map((method) => method.id));
     setMethods((current) => {
       const next = current.filter((id) => allowed.has(id));
       return next.length === current.length ? current : next;
@@ -213,7 +213,7 @@ export function BuyOfferFields({
           {errors?.quantityAvailable ? <p className="mt-1 text-sm text-danger">{errors.quantityAvailable}</p> : null}
         </fieldset>
 
-        <PlaceFields location={initialLocation} error={errors?.location} onCountry={setPayCountry} />
+        {digital ? <input type="hidden" name="location" value="" /> : <PlaceFields location={initialLocation} error={errors?.location} onCountry={setPayCountry} />}
 
         {digital ? (
           <>
@@ -432,6 +432,7 @@ export function BuyOfferFields({
         </h2>
         <PaymentChoices
           country={payCountry}
+          digital={digital}
           methods={methods}
           cardUrl={cardUrl}
           interacEmail={interacEmail}
@@ -463,6 +464,7 @@ export function BuyOfferFields({
 
 function PaymentChoices({
   country,
+  digital = false,
   methods,
   cardUrl,
   interacEmail,
@@ -487,6 +489,7 @@ function PaymentChoices({
   onZelleContact,
 }: {
   country: string;
+  digital?: boolean;
   methods: string[];
   cardUrl: string;
   interacEmail: string;
@@ -511,6 +514,24 @@ function PaymentChoices({
   onZelleContact: (value: string) => void;
 }) {
   const choices = paymentsForCountry(country);
+  if (digital) {
+    return (
+      <div className="mt-4">
+        <input type="hidden" name="paymentMethods" value='["card"]' />
+        <Field label="Credit card payment link" required error={cardError}>
+          <input
+            ref={cardRef}
+            name="cardPaymentUrl"
+            value={cardUrl}
+            onChange={(event) => onCardUrl(event.target.value)}
+            placeholder="https://buy.stripe.com/… (http or https)"
+            className={inputClass}
+          />
+          <span className="mt-1 block text-sm text-muted">Buyers pay by credit card. Paste a Stripe Payment Link, Square link, or PayPal checkout link.</span>
+        </Field>
+      </div>
+    );
+  }
   const cardOn = methods.includes("card");
   const interacOn = methods.includes("interac");
   const venmoOn = methods.includes("venmo");

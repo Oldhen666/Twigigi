@@ -3,11 +3,20 @@ import { splitLocation } from "@/lib/places";
 
 export type BillingMethod = "card" | "paypal" | "stripe";
 
-export const LISTING_CENTS = 100;
+export const LISTING_CENTS = 149;
 export const QUOTE_SUBMISSION_CENTS = 25;
 
 export function billingCurrency(location: string) {
   return splitLocation(location).country === "US" ? "USD" : "CAD";
+}
+
+export function listingFeeCurrency(cta: string, location: string) {
+  if (cta === "file") return "CAD";
+  return billingCurrency(location);
+}
+
+export function formatListingFee(currency: string) {
+  return currency === "USD" ? "USD$1.49" : "C$1.49";
 }
 
 export function listingFeeCents(cta: string) {

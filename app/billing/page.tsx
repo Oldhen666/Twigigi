@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { saveBillingMethod } from "@/lib/actions";
-import { LISTING_CENTS, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
+import { QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { requireUser } from "@/lib/auth";
 import { BackButton } from "@/components/back-button";
 import { Logo } from "@/components/logo";
@@ -16,7 +16,6 @@ async function BillingScreen({
   const params = await searchParams;
   const next = safeNext(typeof params.next === "string" ? params.next : "/dashboard");
   const user = await requireUser();
-  const listing = formatMoney(LISTING_CENTS);
   const quoteRequest = formatMoney(QUOTE_SUBMISSION_CENTS);
   const cardSelected = user.billingMethod !== "paypal";
 
@@ -29,13 +28,13 @@ async function BillingScreen({
         <p className="mt-2 text-muted">Add a payment method for your Twigigi fees.</p>
         <div className="mt-6 space-y-2 text-sm">
           <div className="flex items-baseline justify-between gap-6">
-            <span>Active Buy Now listing</span>
-            <span>{listing} / month</span>
+            <span>Active Buy Now or Quote listing</span>
+            <span>C$1.49 or USD$1.49 / month</span>
           </div>
-          <p className="text-muted">or</p>
+          <p className="text-muted">Canada is charged in CAD. A United States listing is charged in USD.</p>
           <div className="flex items-baseline justify-between gap-6">
-            <span>Active Quote listing</span>
-            <span>{listing} / month</span>
+            <span>Active digital file</span>
+            <span>C$1.49 / month</span>
           </div>
           <div className="flex items-baseline justify-between gap-6">
             <span>Quote request</span>

@@ -195,6 +195,7 @@ export type OrderRecord = {
   variantLabel: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
+  paymentFlow: "seller_direct" | "twigigi_checkout";
   paymentProvider: string;
   providerPaymentId: string;
   paidAt: string | null;

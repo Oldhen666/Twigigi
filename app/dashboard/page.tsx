@@ -3,18 +3,19 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { requireSeller } from "@/lib/auth";
 import { payAndPublish, reactivateTwig } from "@/lib/actions";
-import { activeWindow, billingCurrency, listingFeeCents, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
+import { activeWindow, formatListingFee, listingFeeCents, listingFeeCurrency, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
 import { TwigCheckbox, TwigSelectAll, TwigSelectionProvider } from "@/components/twig-selection";
 import { CopyLink } from "@/components/share-bar";
-import { productHasActivity, quoteChargesSince, sellerProducts, sellerStats } from "@/lib/db";
+import { productHasActivity, quoteChargesSince, sellerProducts, sellerSales, sellerStats } from "@/lib/db";
 import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
 import { storedUpload } from "@/lib/uploads";
 
 async function DashboardBody() {
   const user = await requireSeller();
   const stats = sellerStats(user.id);
+  const sales = sellerSales(user.id);
   const products = sellerProducts(user.id);
   const summary = [
     ["Views", String(stats.views), "/dashboard/views"],
@@ -51,6 +52,23 @@ async function DashboardBody() {
         </div>
       </section>
 
+      <section className="mt-4 rounded-3xl border border-line bg-card px-4 py-4 text-sm">
+        {sales.length === 0 ? (
+          <p className="text-muted">No sales yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {sales.map((row) => (
+              <div key={row.currency} className="grid gap-2 sm:grid-cols-3">
+                <p><span className="block text-xs uppercase tracking-wide text-muted">Sales</span><span className="font-serif text-2xl">{formatMoney(row.salesCents, row.currency)}</span></p>
+                <p><span className="block text-xs uppercase tracking-wide text-muted">Paid orders</span><span className="font-serif text-2xl">{formatMoney(row.paidCents, row.currency)}</span></p>
+                <p><span className="block text-xs uppercase tracking-wide text-muted">Awaiting payment</span><span className="font-serif text-2xl">{formatMoney(row.awaitingCents, row.currency)}</span></p>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="mt-3 text-muted">Payments are collected directly by you.</p>
+      </section>
+
       {products.length === 0 ? (
         <div className="mt-8 rounded-3xl border border-dashed border-line bg-card p-6">
           <p className="font-serif text-2xl">You have something to sell.</p>
@@ -84,9 +102,9 @@ async function DashboardBody() {
             const badge = restricted ? "Restricted" : product.status === "deactivated" ? "Deactivated" : ending ? "Deactivating" : live ? "Live" : "Draft";
             const period = activeWindow(product.billingStartedAt || product.createdAt);
             const activeLabel = `${formatBillingDate(period.start)} – ${formatBillingDate(period.end)}`;
-            const currency = billingCurrency(product.location);
+            const currency = listingFeeCurrency(product.cta, product.location);
             const money = (cents: number) => `${formatMoney(cents, currency)} ${currency}`;
-            const listingLabel = money(listingFeeCents(product.cta));
+            const listingLabel = formatListingFee(currency);
             const quoteEach = money(QUOTE_SUBMISSION_CENTS);
             const quoteUse = product.cta === "quote" ? quoteChargesSince(product.id, period.start) : null;
             const endsLabel = product.deactivatesAt ? formatBillingDate(product.deactivatesAt) : billingEndsLabel;

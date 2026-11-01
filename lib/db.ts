@@ -16,6 +16,7 @@ import {
   type MoneyBucket,
   type OwnerKind,
 } from "@/lib/ledger";
+import { MARKETPLACE_GMV_SQL, PLATFORM_REVENUE_SQL, SELLER_SALES_SQL, paymentFlowOf } from "@/lib/order-money";
 import { readStoredFileLinks } from "@/lib/files";
 import { parseQuoteForm } from "@/lib/quote-form";
 import { DEACTIVATION_GRACE_DAYS, RESERVED_USERNAMES, addDays, isPrivateUsername, slugify } from "@/lib/format";
@@ -318,6 +319,7 @@ function ensureColumns(database: DatabaseSync) {
       ON ledger_entries(order_id, account, entry_type)
       WHERE entry_type IN ('PAYMENT', 'STRIPE_FEE', 'TWIGIGI_FEE', 'SELLER_PAYABLE', 'PAYOUT', 'PAYOUT_COMPLETED');
   `);
+  add("orders", "payment_flow", "payment_flow TEXT NOT NULL DEFAULT 'seller_direct'");
   backfillOrders(database);
   ensureOrderNumbers(database);
   database.exec(`
@@ -355,8 +357,10 @@ function ensureColumns(database: DatabaseSync) {
   migrateCommerce(database);
   database.prepare(`UPDATE users SET role = 'user' WHERE role NOT IN ('admin', 'user')`).run();
   promoteAdmins(database);
-  const paid = database.prepare(`SELECT id FROM orders WHERE payment_status = 'paid' OR status IN ('paid', 'fulfilled')`).all() as Array<{ id: string }>;
-  for (const row of paid) postPaymentLedger(database, row.id);
+  const paid = database.prepare(`SELECT id, payment_flow FROM orders WHERE payment_status = 'paid' OR status IN ('paid', 'fulfilled')`).all() as Array<{ id: string; payment_flow: string }>;
+  for (const row of paid) {
+    if (paymentFlowOf(row.payment_flow) === "twigigi_checkout") postPaymentLedger(database, row.id);
+  }
   add("users", "suspended", "suspended INTEGER NOT NULL DEFAULT 0");
   add("products", "moderation_status", "moderation_status TEXT NOT NULL DEFAULT ''");
   add("products", "rights_confirmed", "rights_confirmed INTEGER NOT NULL DEFAULT 0");
@@ -428,16 +432,17 @@ function backfillOrders(database: DatabaseSync) {
   ).run();
   database.prepare(
     `UPDATE orders
-     SET subtotal = amount_cents, total = amount_cents, payout_amount = amount_cents
+     SET subtotal = amount_cents, total = amount_cents
      WHERE subtotal = 0 AND total = 0 AND amount_cents > 0`,
   ).run();
   const paid = database
     .prepare(
-      `SELECT id, created_at, stripe_session_id FROM orders
+      `SELECT id, created_at, stripe_session_id, payment_flow FROM orders
        WHERE status IN ('paid', 'fulfilled') AND (paid_at IS NULL OR paid_at = '')`,
     )
-    .all() as Array<{ id: string; created_at: string; stripe_session_id: string | null }>;
-  const fill = database.prepare(
+    .all() as Array<{ id: string; created_at: string; stripe_session_id: string | null; payment_flow: string }>;
+  const fillDirect = database.prepare(`UPDATE orders SET payment_status = 'paid', paid_at = ? WHERE id = ?`);
+  const fillCheckout = database.prepare(
     `UPDATE orders SET
        payment_status = 'paid',
        payment_provider = CASE WHEN ? != '' THEN 'stripe' ELSE payment_provider END,
@@ -452,9 +457,13 @@ function backfillOrders(database: DatabaseSync) {
   );
   for (const row of paid) {
     const started = row.created_at;
+    if (paymentFlowOf(row.payment_flow) !== "twigigi_checkout") {
+      fillDirect.run(started, row.id);
+      continue;
+    }
     const eligible = new Date(new Date(started).getTime() + PROTECTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const sessionId = row.stripe_session_id ?? "";
-    fill.run(sessionId, sessionId, started, started, PROTECTION_DAYS, eligible, row.id);
+    fillCheckout.run(sessionId, sessionId, started, started, PROTECTION_DAYS, eligible, row.id);
   }
 }
 
@@ -605,7 +614,7 @@ function postPaymentLedger(database: DatabaseSync, orderId: string) {
   const existing = database.prepare(`SELECT id FROM ledger_entries WHERE order_id = ? AND account = 'processor' AND entry_type = 'PAYMENT' LIMIT 1`).get();
   if (existing) return;
   const order = database.prepare(`SELECT * FROM orders WHERE id = ?`).get(orderId) as Row | undefined;
-  if (!order) return;
+  if (!order || paymentFlowOf(str(order.payment_flow)) !== "twigigi_checkout") return;
   const paid = num(order.total) || num(order.amount_cents);
   if (paid <= 0) return;
   const split = splitPayment(paid);
@@ -868,6 +877,7 @@ function mapOrder(row: Row): OrderRecord {
     variantLabel: str(row.variant_label),
     status,
     paymentStatus,
+    paymentFlow: paymentFlowOf(str(row.payment_flow)),
     paymentProvider: str(row.payment_provider),
     providerPaymentId: str(row.provider_payment_id),
     paidAt: row.paid_at ? str(row.paid_at) : null,
@@ -1763,6 +1773,64 @@ export function sellerStats(userId: string): SellerStats {
   };
 }
 
+export function sellerSales(userId: string) {
+  return many(SELLER_SALES_SQL, userId).flatMap((row) => {
+    const salesCents = num(row.sales);
+    const paidCents = num(row.paid);
+    const awaitingCents = num(row.awaiting);
+    if (salesCents === 0 && paidCents === 0 && awaitingCents === 0) return [];
+    return [{ currency: str(row.currency || "CAD"), salesCents, paidCents, awaitingCents }];
+  });
+}
+
+export function marketplaceGmv() {
+  return many(MARKETPLACE_GMV_SQL).flatMap((row) => {
+    const gmvCents = num(row.gmv);
+    const paidCents = num(row.paid_gmv);
+    const unpaidCents = num(row.unpaid_gmv);
+    if (gmvCents === 0 && paidCents === 0 && unpaidCents === 0) return [];
+    return [{ currency: str(row.currency || "CAD"), gmvCents, paidCents, unpaidCents }];
+  });
+}
+
+export function platformRevenue() {
+  return many(PLATFORM_REVENUE_SQL).flatMap((row) => {
+    const cents = num(row.revenue);
+    if (cents <= 0) return [];
+    return [{ currency: str(row.currency || "CAD"), cents }];
+  });
+}
+
+export function listSellerSales() {
+  return many(
+    `SELECT u.id, u.display_name, u.email,
+            COALESCE(NULLIF(o.currency, ''), 'CAD') AS currency,
+            COALESCE(SUM(CASE WHEN o.id IS NOT NULL AND o.status != 'canceled' THEN CASE WHEN o.total > 0 THEN o.total ELSE o.amount_cents END ELSE 0 END), 0) AS sales,
+            COALESCE(SUM(CASE WHEN o.id IS NOT NULL AND o.status != 'canceled' AND (o.payment_status = 'paid' OR o.status IN ('paid', 'fulfilled')) THEN CASE WHEN o.total > 0 THEN o.total ELSE o.amount_cents END ELSE 0 END), 0) AS paid,
+            COALESCE(SUM(CASE WHEN o.id IS NOT NULL AND o.status NOT IN ('canceled', 'paid', 'fulfilled') AND o.payment_status != 'paid' THEN CASE WHEN o.total > 0 THEN o.total ELSE o.amount_cents END ELSE 0 END), 0) AS awaiting
+     FROM users u
+     LEFT JOIN orders o ON o.seller_id = u.id
+     GROUP BY u.id, COALESCE(NULLIF(o.currency, ''), 'CAD')
+     ORDER BY u.display_name ASC`,
+  ).map((row) => ({
+    id: str(row.id),
+    displayName: str(row.display_name),
+    email: str(row.email),
+    currency: str(row.currency || "CAD"),
+    salesCents: num(row.sales),
+    paidCents: num(row.paid),
+    awaitingCents: num(row.awaiting),
+  }));
+}
+
+export function listMarketplaceOrders() {
+  return many(`${ORDER_SELECT} ORDER BY o.created_at DESC LIMIT 200`).map(mapOrder);
+}
+
+export function listOpenDisputes() {
+  return many(`${ORDER_SELECT} WHERE o.dispute_status = 'open' ORDER BY o.created_at DESC`).map(mapOrder);
+}
+
 export function sellerViewSources(userId: string) {
   const rows = many(
     `SELECT v.product_id AS product_id, v.src AS src, COUNT(*) AS n
@@ -1839,7 +1907,7 @@ export function insertOrder(input: {
     input.totalCents,
     input.currency,
     0,
-    input.totalCents,
+    0,
     input.src,
     input.variantLabel,
     JSON.stringify(input.fileLinks),
@@ -1884,6 +1952,8 @@ export function attachStripeSession(orderId: string, sessionId: string) {
 }
 
 export function markOrderPaid(orderId: string, sessionId: string, providerPaymentId = "") {
+  const row = one("SELECT payment_flow FROM orders WHERE id = ?", orderId);
+  if (!row || paymentFlowOf(str(row.payment_flow)) !== "twigigi_checkout") return false;
   const paymentId = providerPaymentId || sessionId;
   db.prepare(
     `UPDATE orders SET
@@ -1897,8 +1967,18 @@ export function markOrderPaid(orderId: string, sessionId: string, providerPaymen
 }
 
 function beginPaymentProtection(orderId: string) {
-  const paidAt = new Date();
-  const eligible = paidAt.toISOString();
+  const row = one("SELECT payment_flow FROM orders WHERE id = ?", orderId);
+  if (!row) return false;
+  const paidAt = new Date().toISOString();
+  if (paymentFlowOf(str(row.payment_flow)) !== "twigigi_checkout") {
+    const result = db
+      .prepare(
+        `UPDATE orders SET payment_status = 'paid', paid_at = ?
+         WHERE id = ? AND (paid_at IS NULL OR paid_at = '')`,
+      )
+      .run(paidAt, orderId);
+    return result.changes > 0;
+  }
   const result = db
     .prepare(
       `UPDATE orders SET
@@ -1911,8 +1991,8 @@ function beginPaymentProtection(orderId: string) {
        payout_status = CASE WHEN payout_status = 'none' THEN 'held' ELSE payout_status END
      WHERE id = ? AND (paid_at IS NULL OR paid_at = '')`,
     )
-    .run(paidAt.toISOString(), paidAt.toISOString(), 0, eligible, orderId);
-  postPaymentLedger(db, orderId);
+    .run(paidAt, paidAt, 0, paidAt, orderId);
+  if (result.changes > 0) postPaymentLedger(db, orderId);
   return result.changes > 0;
 }
 
@@ -2349,6 +2429,7 @@ function loadMoneyOrders(sellerId: string) {
      JOIN users u ON u.id = o.seller_id
      LEFT JOIN ledger_entries l ON l.order_id = o.id
      WHERE (? = '' OR o.seller_id = ?)
+       AND o.payment_flow = 'twigigi_checkout'
      GROUP BY o.id
      ORDER BY o.paid_at DESC`,
     sellerId,
@@ -2426,7 +2507,12 @@ export function listLedger(orderId: string): StoredLedgerEntry[] {
 }
 
 export function platformBooks() {
-  const rows = many(`SELECT account, COALESCE(SUM(amount_cents), 0) AS n, MAX(currency) AS currency FROM ledger_entries GROUP BY account`);
+  const rows = many(
+    `SELECT l.account, COALESCE(SUM(l.amount_cents), 0) AS n, MAX(l.currency) AS currency
+     FROM ledger_entries l
+     JOIN orders o ON o.id = l.order_id AND o.payment_flow = 'twigigi_checkout'
+     GROUP BY l.account`,
+  );
   const byAccount: Record<string, number> = {};
   let currency = "CAD";
   for (const row of rows) {
@@ -2470,6 +2556,7 @@ function orderSellerNet(orderId: string) {
 export function startPayout(orderId: string) {
   const order = getOrder(orderId);
   if (!order) return { ok: false as const, error: "Order not found." };
+  if (order.paymentFlow !== "twigigi_checkout") return { ok: false as const, error: "Payout does not apply. The seller received this payment directly." };
   if (order.paymentStatus !== "paid") return { ok: false as const, error: "This order is not paid." };
   if (order.disputeStatus === "open") return { ok: false as const, error: "A dispute is open. The payout stays held." };
   if (order.payoutCreatedAt) return { ok: false as const, error: "Payout already started." };
@@ -2499,6 +2586,7 @@ export function startPayout(orderId: string) {
 export function completePayout(orderId: string) {
   const order = getOrder(orderId);
   if (!order) return { ok: false as const, error: "Order not found." };
+  if (order.paymentFlow !== "twigigi_checkout") return { ok: false as const, error: "Payout does not apply. The seller received this payment directly." };
   if (!order.payoutCreatedAt || order.payoutCompletedAt) return { ok: false as const, error: "This payout is not on the way." };
   const net = orderSellerNet(orderId);
   if (net <= 0) return { ok: false as const, error: "Nothing to pay out." };
@@ -2522,24 +2610,26 @@ export function completePayout(orderId: string) {
 export function setDispute(orderId: string, open: boolean) {
   const order = getOrder(orderId);
   if (!order) return { ok: false as const, error: "Order not found." };
-  if (order.payoutCreatedAt) return { ok: false as const, error: "The payout has already left safeguarded funds." };
+  if (order.paymentFlow === "twigigi_checkout" && order.payoutCreatedAt) return { ok: false as const, error: "The payout has already left safeguarded funds." };
   const next = open ? "open" : "none";
   const current = open ? "none" : "open";
-  const lines: LedgerDraft[] = [
-    {
-      account: "safeguarded",
-      entryType: open ? "DISPUTE_OPENED" : "DISPUTE_CLOSED",
-      amountCents: 0,
-      ownerKind: "seller",
-      availableAt: order.payoutEligibleAt,
-      memo: open ? "Dispute opened. Seller payout stays held." : "Dispute closed.",
-    },
-  ];
   try {
     db.exec("BEGIN");
     const result = db.prepare(`UPDATE orders SET dispute_status = ? WHERE id = ? AND dispute_status = ?`).run(next, orderId, current);
     if (result.changes !== 1) throw new Error("Dispute status did not change.");
-    appendLedger(db, { orderId, sellerId: order.sellerId, buyerId: order.buyerId, currency: order.currency, lines });
+    if (order.paymentFlow === "twigigi_checkout") {
+      const lines: LedgerDraft[] = [
+        {
+          account: "safeguarded",
+          entryType: open ? "DISPUTE_OPENED" : "DISPUTE_CLOSED",
+          amountCents: 0,
+          ownerKind: "seller",
+          availableAt: order.payoutEligibleAt,
+          memo: open ? "Dispute opened. Seller payout stays held." : "Dispute closed.",
+        },
+      ];
+      appendLedger(db, { orderId, sellerId: order.sellerId, buyerId: order.buyerId, currency: order.currency, lines });
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
