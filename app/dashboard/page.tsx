@@ -80,7 +80,8 @@ async function DashboardBody() {
             const live = isTwigLive(product);
             const ending = live && Boolean(product.deactivatesAt);
             const url = productUrl(user.publicId, product.slug);
-            const badge = product.status === "deactivated" ? "Deactivated" : ending ? "Deactivating" : live ? "Live" : "Draft";
+            const restricted = product.moderationStatus === "restricted";
+            const badge = restricted ? "Restricted" : product.status === "deactivated" ? "Deactivated" : ending ? "Deactivating" : live ? "Live" : "Draft";
             const period = activeWindow(product.billingStartedAt || product.createdAt);
             const activeLabel = `${formatBillingDate(period.start)} – ${formatBillingDate(period.end)}`;
             const currency = billingCurrency(product.location);
@@ -130,7 +131,7 @@ async function DashboardBody() {
                     {ctaCopy(product.cta).label} · {product.viewCount} {product.viewCount === 1 ? "view" : "views"}
                   </p>
                   <div className="mt-2 space-y-0.5 text-sm text-muted">
-                    {product.status === "published" && !ending ? (
+                    {product.status === "published" && !ending && !restricted ? (
                       <>
                         <p>Active {activeLabel}</p>
                         {listingFeeCents(product.cta) > 0 ? <p>Next charge {billingEndsLabel} · {listingLabel} / month</p> : <p>No listing fee</p>}
@@ -144,6 +145,7 @@ async function DashboardBody() {
                         <p>This page turns off on {endsLabel}</p>
                       </>
                     ) : null}
+                    {restricted ? <p>This listing is hidden from the public page while Twigigi reviews it.</p> : null}
                     {product.status === "deactivated" ? (
                       <>
                         <p>Inactive{deactivatedLabel ? ` since ${deactivatedLabel}` : ""}</p>

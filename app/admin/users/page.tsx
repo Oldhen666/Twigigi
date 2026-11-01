@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { adminRenameUser, setUserRole } from "@/lib/actions";
+import { adminRenameUser, adminSuspendAccount, setUserRole } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { listUsers } from "@/lib/db";
 import { formatDate } from "@/lib/format";
@@ -41,7 +41,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                       <input name="displayName" defaultValue={user.displayName} className="h-9 w-40 rounded-xl border border-line bg-white px-2 text-sm" />
                       <button className="text-forest">Save name</button>
                     </form>
-                    <p className="text-muted">{user.username}</p>
+                    <p className="text-muted">{user.username}{user.suspended ? " · Suspended" : ""}</p>
                     <Link href={`/${user.publicId}`} className="text-forest">twigigi.com/{user.publicId}</Link>
                   </td>
                   <td className="px-4 py-3 text-muted">{formatDate(user.createdAt)}</td>
@@ -57,6 +57,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                         <button className="inline-flex h-9 items-center rounded-full bg-forest px-3 text-sm text-card">
                           {user.role === "admin" ? "Remove admin" : "Make admin"}
                         </button>
+                      </form>
+                    )}
+                    {yours || user.role === "admin" ? null : (
+                      <form action={adminSuspendAccount} className="mt-2">
+                        <input type="hidden" name="userId" value={user.id} />
+                        <input type="hidden" name="suspended" value={user.suspended ? "0" : "1"} />
+                        <button className="text-sm text-forest">{user.suspended ? "Unsuspend" : "Suspend"}</button>
                       </form>
                     )}
                   </td>

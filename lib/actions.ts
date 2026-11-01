@@ -21,11 +21,15 @@ import {
   clearDeactivatesAt,
   clearDeactivatedAt,
   deleteProduct,
+  confirmListingRights,
+  findListingByPath,
   findUserByEmail,
   findUserByUsername,
   findUserById,
   getOrder,
   getProductById,
+  insertContentReport,
+  insertModerationEvent,
   insertMessage,
   insertOrder,
   insertProduct,
@@ -37,15 +41,20 @@ import {
   updateReview,
   deleteReview,
   reviewPlacement,
+  updateContentReport,
   updateDisplayName,
+  getContentReport,
   getInteraction,
   productHasActivity,
+  recordLegalAcceptance,
   releaseStock,
   reserveStock,
   setOrderChoices,
   deactivateNow,
   resumePublished,
   publishDraft,
+  setProductModeration,
+  setUserSuspended,
   setBillingMethod,
   setPayoutDetails,
   setBillingStarted,
@@ -88,6 +97,7 @@ import {
   SRC_COOKIE,
 } from "@/lib/format";
 import type { Cta, FormState, Fulfillment, OrderStatus, ProductInput } from "@/lib/types";
+import { IP_POLICY_VERSION, LISTING_REPORT_REASONS, PRIVACY_VERSION, REPORT_STATUSES, RIGHT_TYPES, TERMS_VERSION } from "@/lib/legal";
 import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { ensureVisitor } from "@/lib/visitor";
 import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
@@ -187,6 +197,8 @@ async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
     return { error: "Could not create the account." };
   }
   claimBuyerOrders(id, parsed.data.email);
+  recordLegalAcceptance(id, "terms", TERMS_VERSION);
+  recordLegalAcceptance(id, "privacy", PRIVACY_VERSION);
   const sessionError = await startSession(id);
   if (sessionError) return { error: sessionError };
   return { ok: true, userId: id };
@@ -223,6 +235,8 @@ async function createAccount(formData: FormData): Promise<OpenedAccount> {
     return { error: "Could not create the account." };
   }
   claimBuyerOrders(id, parsed.data.email);
+  recordLegalAcceptance(id, "terms", TERMS_VERSION);
+  recordLegalAcceptance(id, "privacy", PRIVACY_VERSION);
   const sessionError = await startSession(id);
   if (sessionError) return { error: sessionError };
   return { ok: true, userId: id };
@@ -255,6 +269,7 @@ async function signInAccount(formData: FormData): Promise<OpenedAccount> {
   if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
     return { error: "Email or password is incorrect." };
   }
+  if (user.suspended) return { error: "This account is suspended." };
   const sessionError = await startSession(user.id);
   if (sessionError) return { error: sessionError };
   return { ok: true, userId: user.id };
@@ -580,6 +595,9 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     if (!z.string().email().safeParse(contactEmail).success) {
       errors.contactEmail = cta === "quote" ? "Enter a contact email." : "Enter an email for buyer replies.";
     }
+    if (text(formData, "contentRights") !== "yes") {
+      errors.contentRights = "Confirm that you own or have permission to use the content in this listing.";
+    }
   }
 
   if (Object.keys(errors).length > 0) return { fieldErrors: errors };
@@ -693,6 +711,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       if (input.status !== "published" || existing.status === "deactivated") clearDeactivatesAt(existing.id, owner.id);
       if (input.status === "published" && existing.status === "deactivated") clearDeactivatedAt(existing.id, owner.id);
     } else insertProduct(savedProductId, owner.id, input);
+    if (input.status === "published") confirmListingRights(savedProductId, owner.id, TERMS_VERSION, IP_POLICY_VERSION);
   } catch {
     return { error: "Could not save this Twig. Try a different link name.", ...sessionStamp };
   }
@@ -1600,4 +1619,169 @@ export async function setLeadStatus(formData: FormData) {
   } else if (kind === "message" && ["new", "read", "closed"].includes(status)) {
     updateMessageStatus(id, user.id, status as "new" | "read" | "closed");
   }
+}
+
+function reportListingMatch(contentUrl: string, productId: string) {
+  const fromUrl = findListingByPath(contentUrl);
+  if (fromUrl) return fromUrl;
+  if (!productId) return null;
+  const product = getProductById(productId);
+  if (!product) return null;
+  const owner = findUserById(product.userId);
+  return owner
+    ? { id: product.id, userId: product.userId, title: product.title, slug: product.slug, publicId: owner.publicId, displayName: owner.displayName, email: owner.email }
+    : null;
+}
+
+export async function submitIpReport(_prev: FormState, formData: FormData): Promise<FormState> {
+  const name = text(formData, "name").trim().slice(0, 120);
+  const email = text(formData, "email").trim().slice(0, 120);
+  const rightType = text(formData, "rightType");
+  const protectedWork = text(formData, "protectedWork").trim().slice(0, 2000);
+  const contentUrl = text(formData, "contentUrl").trim().slice(0, 500);
+  const description = text(formData, "description").trim().slice(0, 4000);
+  const signature = text(formData, "signature").trim().slice(0, 120);
+  const fieldErrors: Record<string, string> = {};
+  if (name.length < 2) fieldErrors.name = "Enter your full name.";
+  if (!z.string().email().safeParse(email).success) fieldErrors.email = "Enter a valid email.";
+  if (!RIGHT_TYPES.some((item) => item.id === rightType)) fieldErrors.rightType = "Choose the type of right.";
+  if (protectedWork.length < 4) fieldErrors.protectedWork = "Identify the protected work or right.";
+  if (contentUrl.length < 2) fieldErrors.contentUrl = "Add the listing or content URL.";
+  if (description.length < 8) fieldErrors.description = "Describe the alleged infringement.";
+  if (text(formData, "accurate") !== "yes") fieldErrors.accurate = "Confirm that the report is accurate.";
+  if (signature.length < 2) fieldErrors.signature = "Type your legal name.";
+  if (Object.keys(fieldErrors).length > 0) return { fieldErrors };
+  const user = await getCurrentUser();
+  const listing = findListingByPath(contentUrl);
+  insertContentReport({
+    kind: "ip",
+    reporterUserId: user?.id ?? null,
+    reporterName: name,
+    reporterEmail: email,
+    company: text(formData, "company").trim().slice(0, 160),
+    reason: "ip",
+    rightType,
+    protectedWork,
+    contentUrl,
+    productId: listing?.id ?? null,
+    ownerUserId: listing?.userId ?? null,
+    description,
+    evidence: text(formData, "evidence").trim().slice(0, 4000),
+    signature,
+    policyVersion: IP_POLICY_VERSION,
+  });
+  return { saved: true };
+}
+
+export async function submitListingReport(_prev: FormState, formData: FormData): Promise<FormState> {
+  const name = text(formData, "name").trim().slice(0, 120);
+  const email = text(formData, "email").trim().slice(0, 120);
+  const reason = text(formData, "reason");
+  const description = text(formData, "description").trim().slice(0, 4000);
+  const fieldErrors: Record<string, string> = {};
+  if (!LISTING_REPORT_REASONS.some((item) => item.id === reason)) fieldErrors.reason = "Choose a reason.";
+  if (name.length < 2) fieldErrors.name = "Enter your name.";
+  if (!z.string().email().safeParse(email).success) fieldErrors.email = "Enter a valid email.";
+  if (description.length < 8) fieldErrors.description = "Describe what Twigigi should review.";
+  if (text(formData, "accurate") !== "yes") fieldErrors.accurate = "Confirm that the report is accurate.";
+  if (Object.keys(fieldErrors).length > 0) return { fieldErrors };
+  const user = await getCurrentUser();
+  const listing = reportListingMatch(text(formData, "contentUrl"), text(formData, "productId"));
+  insertContentReport({
+    kind: "listing",
+    reporterUserId: user?.id ?? null,
+    reporterName: name,
+    reporterEmail: email,
+    company: "",
+    reason,
+    rightType: "",
+    protectedWork: "",
+    contentUrl: text(formData, "contentUrl").trim().slice(0, 500),
+    productId: listing?.id ?? null,
+    ownerUserId: listing?.userId ?? null,
+    description,
+    evidence: "",
+    signature: name,
+    policyVersion: TERMS_VERSION,
+  });
+  return { saved: true };
+}
+
+function refreshListing(productId: string) {
+  const product = getProductById(productId);
+  if (!product) return;
+  const seller = findUserById(product.userId);
+  if (!seller) return;
+  updateTag(productTag(seller.publicId, product.slug));
+  updateTag(sellerTag(seller.publicId));
+}
+
+export async function adminUpdateReport(formData: FormData) {
+  const admin = await requireAdmin();
+  const report = getContentReport(text(formData, "id"));
+  if (!report) redirect("/admin/reports");
+  const status = text(formData, "status");
+  if (!REPORT_STATUSES.some((item) => item === status)) redirect(`/admin/reports/${report.id}`);
+  const note = text(formData, "adminNote").trim().slice(0, 2000);
+  const updated = updateContentReport(report.id, { status, adminNote: note });
+  insertModerationEvent({
+    actorId: admin.id,
+    action: "report_status",
+    targetKind: "report",
+    targetId: report.id,
+    note,
+    fromStatus: updated?.fromStatus ?? report.status,
+    toStatus: status,
+  });
+  if (status === "content_restricted" && report.productId) {
+    setProductModeration(report.productId, "restricted");
+    insertModerationEvent({
+      actorId: admin.id,
+      action: "restrict_listing",
+      targetKind: "product",
+      targetId: report.productId,
+      note: `Restricted from report ${report.id}`,
+      toStatus: "restricted",
+    });
+    refreshListing(report.productId);
+  }
+  redirect(`/admin/reports/${report.id}`);
+}
+
+export async function adminRestoreReportedListing(formData: FormData) {
+  const admin = await requireAdmin();
+  const productId = text(formData, "productId");
+  const reportId = text(formData, "reportId");
+  if (!getProductById(productId)) redirect(reportId ? `/admin/reports/${reportId}` : "/admin/reports");
+  setProductModeration(productId, "");
+  insertModerationEvent({
+    actorId: admin.id,
+    action: "restore_listing",
+    targetKind: "product",
+    targetId: productId,
+    note: text(formData, "note").trim().slice(0, 500),
+    toStatus: "restored",
+  });
+  refreshListing(productId);
+  redirect(reportId ? `/admin/reports/${reportId}` : "/admin/twigs");
+}
+
+export async function adminSuspendAccount(formData: FormData) {
+  const admin = await requireAdmin();
+  const userId = text(formData, "userId");
+  const reportId = text(formData, "reportId");
+  const next = reportId ? `/admin/reports/${reportId}` : "/admin/users";
+  const person = findUserById(userId);
+  if (!person || person.id === admin.id || person.role === "admin") redirect(next);
+  const suspend = text(formData, "suspended") === "1";
+  setUserSuspended(userId, suspend);
+  insertModerationEvent({
+    actorId: admin.id,
+    action: suspend ? "suspend_user" : "unsuspend_user",
+    targetKind: "user",
+    targetId: userId,
+    note: text(formData, "note").trim().slice(0, 500),
+    toStatus: suspend ? "suspended" : "active",
+  });
+  redirect(next);
 }

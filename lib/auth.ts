@@ -26,7 +26,9 @@ export async function getCurrentUser() {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   const userId = await readSession(token);
   if (!userId) return null;
-  return findUserById(userId);
+  const user = findUserById(userId);
+  if (!user || user.suspended) return null;
+  return user;
 }
 
 export async function requireUser() {

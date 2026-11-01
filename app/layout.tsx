@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Outfit } from "next/font/google";
 import { NewPageEntry } from "@/components/new-page-entry";
+import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
 
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
@@ -24,6 +25,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className={`${outfit.variable} ${fraunces.variable} h-full antialiased`}>
       <body className="min-h-full font-sans text-ink">
         <NewPageEntry>{children}</NewPageEntry>
+        <SiteFooter />
       </body>
     </html>
   );

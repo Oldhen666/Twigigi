@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import Link from "next/link";
 import { signIn, signUp } from "@/lib/actions";
 import type { FormState } from "@/lib/types";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
@@ -96,6 +97,9 @@ export function SignupForm({ cta, email = "", nextPath = "" }: { cta?: string; e
         <input name="password" type="password" autoComplete="new-password" className={inputClass} />
         <ErrorText message={state.fieldErrors?.password} />
       </label>
+      <p className="text-sm leading-6 text-muted">
+        By creating an account, you agree to Twigigi&apos;s <Link href="/legal/terms" className="text-forest">Terms of Service</Link> and <Link href="/legal/privacy" className="text-forest">Privacy Policy</Link>.
+      </p>
       <button disabled={pending} className={`${buttonClass} w-full`}>
         {pending ? "Creating…" : "Create account"}
       </button>

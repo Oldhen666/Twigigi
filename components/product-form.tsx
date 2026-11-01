@@ -507,6 +507,14 @@ export function ProductForm({
       event.preventDefault();
       return;
     }
+    if (intent === "publish") {
+      const box = formRef.current?.querySelector<HTMLInputElement>('input[name="contentRights"]');
+      if (!box?.checked) {
+        event.preventDefault();
+        setLive((current) => ({ ...current, contentRights: "Confirm that you own or have permission to use the content in this listing." }));
+        return;
+      }
+    }
     if (needsAccount && !accountOpen) {
       event.preventDefault();
       setAccountIntent(intent === "draft" ? "draft" : "publish");
@@ -1016,6 +1024,16 @@ export function ProductForm({
 
       {previewing && preview ? <PagePreview draft={preview} /> : null}
 
+      {previewing && !reactivateOpen ? (
+        <div className="mt-6">
+          <label className="flex items-start gap-3 text-sm leading-6">
+            <input type="checkbox" name="contentRights" value="yes" className="mt-1 h-4 w-4 accent-forest" />
+            <span>I confirm that I own or have permission to use the content in this listing and that my listing does not knowingly violate third-party intellectual property rights or applicable law.</span>
+          </label>
+          {visibleErrors.contentRights ? <p className="mt-2 text-sm text-danger">{visibleErrors.contentRights}</p> : null}
+        </div>
+      ) : null}
+
       {previewing ? (
         <div key="preview-actions" className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg">
           <button type="button" onClick={() => setPreviewing(false)} className={ghostClass}>
@@ -1058,6 +1076,11 @@ export function ProductForm({
           <div role="dialog" aria-modal="true" aria-labelledby="reactivate-title" className="w-full max-w-sm rounded-[28px] border border-line bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
             <h2 id="reactivate-title" className="font-serif text-3xl">Reactivate this Twig</h2>
             <p className="mt-2 text-sm text-muted">This publishes the Twig again and the link works. The 30-day permanent deletion is canceled.</p>
+            <label className="mt-4 flex items-start gap-3 text-sm leading-6">
+              <input type="checkbox" name="contentRights" value="yes" className="mt-1 h-4 w-4 accent-forest" />
+              <span>I confirm that I own or have permission to use the content in this listing and that my listing does not knowingly violate third-party intellectual property rights or applicable law.</span>
+            </label>
+            {visibleErrors.contentRights ? <p className="mt-2 text-sm text-danger">{visibleErrors.contentRights}</p> : null}
             <button name="intent" value="publish" disabled={pending} className={`${buttonClass} mt-5 w-full`}>
               {pending ? "Saving…" : "Reactivate"}
             </button>

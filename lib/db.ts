@@ -357,6 +357,61 @@ function ensureColumns(database: DatabaseSync) {
   promoteAdmins(database);
   const paid = database.prepare(`SELECT id FROM orders WHERE payment_status = 'paid' OR status IN ('paid', 'fulfilled')`).all() as Array<{ id: string }>;
   for (const row of paid) postPaymentLedger(database, row.id);
+  add("users", "suspended", "suspended INTEGER NOT NULL DEFAULT 0");
+  add("products", "moderation_status", "moderation_status TEXT NOT NULL DEFAULT ''");
+  add("products", "rights_confirmed", "rights_confirmed INTEGER NOT NULL DEFAULT 0");
+  add("products", "rights_confirmed_at", "rights_confirmed_at TEXT");
+  add("products", "rights_user_id", "rights_user_id TEXT NOT NULL DEFAULT ''");
+  add("products", "rights_terms_version", "rights_terms_version TEXT NOT NULL DEFAULT ''");
+  add("products", "rights_ip_version", "rights_ip_version TEXT NOT NULL DEFAULT ''");
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS legal_acceptances (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      document TEXT NOT NULL,
+      version TEXT NOT NULL,
+      accepted_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_legal_acceptances_user ON legal_acceptances(user_id, document, version);
+
+    CREATE TABLE IF NOT EXISTS content_reports (
+      id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'submitted',
+      reporter_user_id TEXT,
+      reporter_name TEXT NOT NULL,
+      reporter_email TEXT NOT NULL,
+      company TEXT NOT NULL DEFAULT '',
+      reason TEXT NOT NULL DEFAULT '',
+      right_type TEXT NOT NULL DEFAULT '',
+      protected_work TEXT NOT NULL DEFAULT '',
+      content_url TEXT NOT NULL DEFAULT '',
+      product_id TEXT,
+      owner_user_id TEXT,
+      description TEXT NOT NULL DEFAULT '',
+      evidence TEXT NOT NULL DEFAULT '',
+      signature TEXT NOT NULL DEFAULT '',
+      accurate INTEGER NOT NULL DEFAULT 0,
+      policy_version TEXT NOT NULL DEFAULT '',
+      admin_note TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_content_reports_status ON content_reports(status, created_at);
+
+    CREATE TABLE IF NOT EXISTS moderation_events (
+      id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_kind TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      from_status TEXT NOT NULL DEFAULT '',
+      to_status TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_moderation_events_target ON moderation_events(target_kind, target_id, created_at);
+  `);
 }
 
 function backfillOrders(database: DatabaseSync) {
@@ -679,6 +734,12 @@ function mapProduct(row: Row): Product {
     deactivatesAt: row.deactivates_at ? str(row.deactivates_at) : null,
     deactivatedAt: row.deactivated_at ? str(row.deactivated_at) : null,
     billingStartedAt: row.billing_started_at ? str(row.billing_started_at) : null,
+    moderationStatus: str(row.moderation_status) === "restricted" ? "restricted" : "",
+    rightsConfirmed: num(row.rights_confirmed) === 1,
+    rightsConfirmedAt: row.rights_confirmed_at ? str(row.rights_confirmed_at) : null,
+    rightsUserId: str(row.rights_user_id),
+    rightsTermsVersion: str(row.rights_terms_version),
+    rightsIpVersion: str(row.rights_ip_version),
   };
 }
 
@@ -754,6 +815,7 @@ function mapUser(row: Row): User {
     payoutInterac: str(row.payout_interac),
     payoutVenmo: str(row.payout_venmo),
     payoutZelle: str(row.payout_zelle),
+    suspended: num(row.suspended) === 1,
   };
 }
 
@@ -984,6 +1046,255 @@ export function listUsers() {
 
 export function updateUserRole(id: string, role: UserRole) {
   db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
+}
+
+export function setUserSuspended(id: string, suspended: boolean) {
+  db.prepare("UPDATE users SET suspended = ? WHERE id = ?").run(suspended ? 1 : 0, id);
+}
+
+export function setProductModeration(id: string, status: "" | "restricted") {
+  db.prepare("UPDATE products SET moderation_status = ?, updated_at = ? WHERE id = ?").run(status, new Date().toISOString(), id);
+}
+
+export function confirmListingRights(id: string, userId: string, termsVersion: string, ipVersion: string) {
+  db.prepare(
+    `UPDATE products
+     SET rights_confirmed = 1, rights_confirmed_at = ?, rights_user_id = ?, rights_terms_version = ?, rights_ip_version = ?
+     WHERE id = ?`,
+  ).run(new Date().toISOString(), userId, termsVersion, ipVersion, id);
+}
+
+export function recordLegalAcceptance(userId: string, document: string, version: string) {
+  const id = `acc_${randomBytes(9).toString("base64url")}`;
+  db.prepare("INSERT INTO legal_acceptances (id, user_id, document, version, accepted_at) VALUES (?, ?, ?, ?, ?)").run(
+    id,
+    userId,
+    document,
+    version,
+    new Date().toISOString(),
+  );
+}
+
+export type ContentReportInput = {
+  kind: "listing" | "ip";
+  reporterUserId: string | null;
+  reporterName: string;
+  reporterEmail: string;
+  company: string;
+  reason: string;
+  rightType: string;
+  protectedWork: string;
+  contentUrl: string;
+  productId: string | null;
+  ownerUserId: string | null;
+  description: string;
+  evidence: string;
+  signature: string;
+  policyVersion: string;
+};
+
+export function findListingByPath(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  let pathname = trimmed;
+  try {
+    pathname = new URL(trimmed, "https://twigigi.com").pathname;
+  } catch {
+    pathname = trimmed;
+  }
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] === "legal" || parts.length < 2) return null;
+  const seller = parts[0].toLowerCase();
+  const slug = parts[1].toLowerCase();
+  const row = one(
+    `SELECT p.id, p.user_id, p.title, p.slug, u.public_id, u.display_name, u.email
+     FROM products p JOIN users u ON u.id = p.user_id
+     WHERE lower(p.slug) = ? AND (lower(u.public_id) = ? OR lower(u.username) = ?)`,
+    slug,
+    seller,
+    seller,
+  );
+  if (!row) return null;
+  return {
+    id: str(row.id),
+    userId: str(row.user_id),
+    title: str(row.title),
+    slug: str(row.slug),
+    publicId: str(row.public_id),
+    displayName: str(row.display_name),
+    email: str(row.email),
+  };
+}
+
+export function insertContentReport(input: ContentReportInput) {
+  const id = `rpt_${randomBytes(9).toString("base64url")}`;
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO content_reports (
+      id, created_at, updated_at, kind, status, reporter_user_id, reporter_name, reporter_email, company,
+      reason, right_type, protected_work, content_url, product_id, owner_user_id, description, evidence,
+      signature, accurate, policy_version, admin_note
+    ) VALUES (?, ?, ?, ?, 'submitted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, '')`,
+  ).run(
+    id,
+    now,
+    now,
+    input.kind,
+    input.reporterUserId,
+    input.reporterName,
+    input.reporterEmail,
+    input.company,
+    input.reason,
+    input.rightType,
+    input.protectedWork,
+    input.contentUrl,
+    input.productId,
+    input.ownerUserId,
+    input.description,
+    input.evidence,
+    input.signature,
+    input.policyVersion,
+  );
+  return id;
+}
+
+export type ContentReport = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  kind: "listing" | "ip";
+  status: string;
+  reporterUserId: string | null;
+  reporterName: string;
+  reporterEmail: string;
+  company: string;
+  reason: string;
+  rightType: string;
+  protectedWork: string;
+  contentUrl: string;
+  productId: string | null;
+  ownerUserId: string | null;
+  description: string;
+  evidence: string;
+  signature: string;
+  policyVersion: string;
+  adminNote: string;
+  productTitle: string;
+  productSlug: string;
+  ownerName: string;
+  ownerEmail: string;
+  publicId: string;
+  moderationStatus: string;
+};
+
+function mapReport(row: Row): ContentReport {
+  return {
+    id: str(row.id),
+    createdAt: str(row.created_at),
+    updatedAt: str(row.updated_at),
+    kind: row.kind === "ip" ? "ip" : "listing",
+    status: str(row.status),
+    reporterUserId: row.reporter_user_id ? str(row.reporter_user_id) : null,
+    reporterName: str(row.reporter_name),
+    reporterEmail: str(row.reporter_email),
+    company: str(row.company),
+    reason: str(row.reason),
+    rightType: str(row.right_type),
+    protectedWork: str(row.protected_work),
+    contentUrl: str(row.content_url),
+    productId: row.product_id ? str(row.product_id) : null,
+    ownerUserId: row.owner_user_id ? str(row.owner_user_id) : null,
+    description: str(row.description),
+    evidence: str(row.evidence),
+    signature: str(row.signature),
+    policyVersion: str(row.policy_version),
+    adminNote: str(row.admin_note),
+    productTitle: str(row.product_title),
+    productSlug: str(row.product_slug),
+    ownerName: str(row.owner_name),
+    ownerEmail: str(row.owner_email),
+    publicId: str(row.public_id),
+    moderationStatus: str(row.moderation_status),
+  };
+}
+
+const REPORT_SELECT = `
+  SELECT r.*,
+    COALESCE(p.title, '') AS product_title,
+    COALESCE(p.slug, '') AS product_slug,
+    COALESCE(owner.display_name, '') AS owner_name,
+    COALESCE(owner.email, '') AS owner_email,
+    COALESCE(owner.public_id, '') AS public_id,
+    COALESCE(p.moderation_status, '') AS moderation_status
+  FROM content_reports r
+  LEFT JOIN products p ON p.id = r.product_id
+  LEFT JOIN users owner ON owner.id = r.owner_user_id
+`;
+
+export function listContentReports(status = "") {
+  const rows = status
+    ? many(`${REPORT_SELECT} WHERE r.status = ? ORDER BY r.created_at DESC`, status)
+    : many(`${REPORT_SELECT} ORDER BY r.created_at DESC`);
+  return rows.map(mapReport);
+}
+
+export function getContentReport(id: string) {
+  const row = one(`${REPORT_SELECT} WHERE r.id = ?`, id);
+  return row ? mapReport(row) : null;
+}
+
+export function updateContentReport(id: string, patch: { status?: string; adminNote?: string }) {
+  const current = one("SELECT status, admin_note FROM content_reports WHERE id = ?", id);
+  if (!current) return null;
+  const status = patch.status ?? str(current.status);
+  const note = patch.adminNote ?? str(current.admin_note);
+  db.prepare("UPDATE content_reports SET status = ?, admin_note = ?, updated_at = ? WHERE id = ?").run(status, note, new Date().toISOString(), id);
+  return { fromStatus: str(current.status), status, note };
+}
+
+export function insertModerationEvent(input: {
+  actorId: string;
+  action: string;
+  targetKind: string;
+  targetId: string;
+  note?: string;
+  fromStatus?: string;
+  toStatus?: string;
+}) {
+  db.prepare(
+    `INSERT INTO moderation_events (id, created_at, actor_id, action, target_kind, target_id, note, from_status, to_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    `mod_${randomBytes(9).toString("base64url")}`,
+    new Date().toISOString(),
+    input.actorId,
+    input.action,
+    input.targetKind,
+    input.targetId,
+    input.note ?? "",
+    input.fromStatus ?? "",
+    input.toStatus ?? "",
+  );
+}
+
+export function listModerationEvents(targetKind: string, targetId: string) {
+  return many(
+    `SELECT e.*, u.display_name
+     FROM moderation_events e LEFT JOIN users u ON u.id = e.actor_id
+     WHERE e.target_kind = ? AND e.target_id = ?
+     ORDER BY e.created_at ASC`,
+    targetKind,
+    targetId,
+  ).map((row) => ({
+    id: str(row.id),
+    createdAt: str(row.created_at),
+    actorId: str(row.actor_id),
+    actorName: str(row.display_name),
+    action: str(row.action),
+    note: str(row.note),
+    fromStatus: str(row.from_status),
+    toStatus: str(row.to_status),
+  }));
 }
 
 export function updatePassword(userId: string, passwordHash: string) {

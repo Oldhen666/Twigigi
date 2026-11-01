@@ -34,6 +34,7 @@ export type User = {
   payoutInterac: string;
   payoutVenmo: string;
   payoutZelle: string;
+  suspended: boolean;
 };
 
 export type ProductOption = {
@@ -133,6 +134,12 @@ export type Product = ProductInput & {
   deactivatesAt: string | null;
   deactivatedAt: string | null;
   billingStartedAt: string | null;
+  moderationStatus: "" | "restricted";
+  rightsConfirmed: boolean;
+  rightsConfirmedAt: string | null;
+  rightsUserId: string;
+  rightsTermsVersion: string;
+  rightsIpVersion: string;
 };
 
 export type PublicProduct = Product & {

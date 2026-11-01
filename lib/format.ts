@@ -103,7 +103,8 @@ export function formatDay(iso: string | null) {
 
 const BILLING_ZONE = "America/Edmonton";
 
-export function isTwigLive(product: { status: string; deactivatesAt?: string | null }, now?: number) {
+export function isTwigLive(product: { status: string; deactivatesAt?: string | null; moderationStatus?: string }, now?: number) {
+  if (product.moderationStatus === "restricted") return false;
   if (product.status !== "published") return false;
   if (!product.deactivatesAt) return true;
   const ends = Date.parse(product.deactivatesAt);

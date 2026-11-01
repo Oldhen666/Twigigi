@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import type { FormState } from "@/lib/types";
 
@@ -82,6 +83,11 @@ export function PublishAccount({
             <input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} defaultValue={values.current.password} onInput={remember} className={inputClass} />
           </Field>
         </div>
+        {mode === "login" ? null : (
+          <p className="mt-4 text-sm leading-6 text-muted">
+            By creating an account, you agree to Twigigi&apos;s <Link href="/legal/terms" className="text-forest">Terms of Service</Link> and <Link href="/legal/privacy" className="text-forest">Privacy Policy</Link>.
+          </p>
+        )}
         <button name="intent" value={intent} disabled={pending} className={`${buttonClass} mt-5 w-full`}>
           {pending
             ? "Saving…"

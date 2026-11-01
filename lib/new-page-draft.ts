@@ -13,7 +13,7 @@ export type NewPageDraft = {
   savedImages?: string[];
 };
 
-const SKIP = new Set(["id", "slug", "cta", "kept", "photoSlot", "intent", "accountMode", "displayName", "username", "email", "password"]);
+const SKIP = new Set(["id", "slug", "cta", "kept", "photoSlot", "intent", "accountMode", "displayName", "username", "email", "password", "contentRights"]);
 
 export function captureDraft(form: HTMLFormElement, images: DraftImage[]): NewPageDraft {
   const fields: Record<string, string> = {};
@@ -23,6 +23,7 @@ export function captureDraft(form: HTMLFormElement, images: DraftImage[]): NewPa
   }
   const checks: Record<string, boolean> = {};
   form.querySelectorAll<HTMLInputElement>('input[type="checkbox"][name]').forEach((box) => {
+    if (SKIP.has(box.name)) return;
     checks[box.name] = box.checked;
   });
   return { fields, checks, images };

@@ -12,6 +12,7 @@ import { ViewTracker } from "@/components/view-tracker";
 import { Logo } from "@/components/logo";
 import { BackButton } from "@/components/back-button";
 import { PayMethods } from "@/components/pay-methods";
+import { ReportListing } from "@/components/report-listing";
 import { Stars } from "@/components/stars";
 import { toggleLikeAction, toggleSaved } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
@@ -166,7 +167,7 @@ export async function ProductView({
                   ))}
                 </ul>
               ) : null}
-              <SellerCredit username={product.publicId} name={product.displayName} rating={rating} />
+              <SellerCredit username={product.publicId} name={product.displayName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
               <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
               {product.cta === "buy" || product.cta === "file" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </BuyPicker>
@@ -187,7 +188,7 @@ export async function ProductView({
                   ))}
                 </ul>
               ) : null}
-              <SellerCredit username={product.publicId} name={product.displayName} rating={rating} />
+              <SellerCredit username={product.publicId} name={product.displayName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
               <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
               {product.cta === "buy" || product.cta === "file" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </>
@@ -277,21 +278,43 @@ export async function ProductView({
   );
 }
 
-function SellerCredit({ username, name, rating }: { username: string; name: string; rating: { average: number | null; count: number } }) {
+function SellerCredit({
+  username,
+  name,
+  rating,
+  productId,
+  path,
+  title,
+  reporterName,
+  reporterEmail,
+}: {
+  username: string;
+  name: string;
+  rating: { average: number | null; count: number };
+  productId: string;
+  path: string;
+  title: string;
+  reporterName: string;
+  reporterEmail: string;
+}) {
   return (
-    <p className="mt-3 flex flex-wrap items-center gap-x-2 text-sm text-muted">
-      <span>
-        Sold by{" "}
-        <Link href={`/${username}`} className="text-ink underline-offset-2 hover:underline">{name}</Link>
-      </span>
-      {rating.count > 0 && rating.average != null ? (
-        <span className="inline-flex items-center gap-1 text-forest">
-          <Stars value={rating.average} />
-          <span className="font-medium text-ink">{rating.average.toFixed(1)}</span>
-          <span className="text-muted">({rating.count})</span>
+    <div className="mt-3">
+      <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted">
+        <span>
+          Listed by{" "}
+          <Link href={`/${username}`} className="text-ink underline-offset-2 hover:underline">{name}</Link>
         </span>
-      ) : null}
-    </p>
+        {rating.count > 0 && rating.average != null ? (
+          <span className="inline-flex items-center gap-1 text-forest">
+            <Stars value={rating.average} />
+            <span className="font-medium text-ink">{rating.average.toFixed(1)}</span>
+            <span className="text-muted">({rating.count})</span>
+          </span>
+        ) : null}
+      </p>
+      <p className="mt-1 text-xs text-muted">Listing information provided by the seller.</p>
+      <ReportListing productId={productId} path={path} title={title} defaultName={reporterName} defaultEmail={reporterEmail} />
+    </div>
   );
 }
 
