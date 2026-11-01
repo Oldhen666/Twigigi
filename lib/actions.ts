@@ -9,10 +9,10 @@ import { updateTag } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, interacEmailProblem, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
+import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
 import { clearSession, getCurrentUser, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
-import { deliverPaidFile } from "@/lib/file-delivery";
+import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
 import { parseFileLinks } from "@/lib/files";
 import { resolveUpload, uploadDirectory } from "@/lib/uploads";
 import {
@@ -73,6 +73,7 @@ import {
   updateUserRole,
   userHasTwigs,
   updateMessageStatus,
+  markFileSent,
   completePayout,
   setDispute,
   startPayout,
@@ -551,7 +552,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     if (cta !== "file" && paymentMethods.length === 0) {
       errors.paymentMethods = payCountry ? "Choose at least one way buyers can pay." : "Choose a country before choosing how buyers pay.";
     }
-    if (cta === "file" || paymentMethods.includes("card")) {
+    if (cta === "file") {
+      const problem = digitalPayProblem(cardPaymentUrl, text(formData, "digitalPayMode"));
+      if (problem) errors.cardPaymentUrl = problem;
+    } else if (paymentMethods.includes("card")) {
       const problem = cardLinkProblem(cardPaymentUrl);
       if (problem) errors.cardPaymentUrl = problem;
     }
@@ -1038,7 +1042,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       choice.payment ? `Payment: ${methodLabel(choice.payment)}` : null,
       `Total: ${formatMoney(total, product.currency)}`,
       order?.publicRef ? `Order: ${order.publicRef}` : null,
-      digital ? "Do not send the file link yourself. Twigigi emails it when you mark this order paid." : null,
+      digital ? "After the money arrives, mark the order paid, then email the file link from the order page." : null,
       "",
       `Open the order: ${appUrl()}/order/${orderId}`,
     ].filter((line): line is string => line !== null);
@@ -1606,6 +1610,20 @@ export async function closeOrderDispute(formData: FormData) {
   return recordMoneyAction(formData, (id) => setDispute(id, false));
 }
 
+export async function sendOrderFile(formData: FormData) {
+  const user = await requireSeller();
+  const id = text(formData, "id");
+  const order = getOrder(id);
+  const back = `/dashboard/orders/${id}`;
+  if (!order || order.sellerId !== user.id) redirect("/dashboard");
+  const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
+  if (!paid || order.fulfillment !== "digital" || order.fileLinks.length === 0) redirect(`${back}?file=wait`);
+  const sent = await deliverPaidFile(id);
+  if (!sent) redirect(`${back}?file=mail`);
+  markFileSent(id, user.id);
+  redirect(`${back}?file=sent`);
+}
+
 export async function setLeadStatus(formData: FormData) {
   const user = await requireSeller();
   const kind = text(formData, "kind");
@@ -1613,7 +1631,7 @@ export async function setLeadStatus(formData: FormData) {
   const status = text(formData, "status");
   if (kind === "order" && ["unpaid", "paid", "fulfilled", "canceled"].includes(status)) {
     const result = updateOrderStatus(id, user.id, status as OrderStatus);
-    if (result.justPaid) await deliverPaidFile(id);
+    if (result.justPaid) await sendPaymentConfirmed(id);
   } else if (kind === "quote" && ["new", "contacted", "closed"].includes(status)) {
     updateQuoteStatus(id, user.id, status as "new" | "contacted" | "closed");
   } else if (kind === "message" && ["new", "read", "closed"].includes(status)) {

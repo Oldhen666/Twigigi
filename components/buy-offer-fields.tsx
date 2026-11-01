@@ -7,7 +7,30 @@ import type { Product, ProductOption, ProductVariant } from "@/lib/types";
 import { MAX_VALUES, OPTION_NAMES, normalizeVariants, variantLabel } from "@/lib/variants";
 import { inputClass, labelClass } from "@/components/ui";
 import { CA_PROVINCES, US_STATES, joinLocation, lookupCurrentPlace, lookupIpPlace, splitLocation } from "@/lib/places";
-import { parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile } from "@/lib/payments";
+import { digitalPayModeOf, digitalPayProblem, parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile, type DigitalPayMode } from "@/lib/payments";
+
+const DIGITAL_PAY_CHOICES: Record<DigitalPayMode, { label: string; placeholder: string; instruction: string }> = {
+  paypal_email: {
+    label: "PayPal email",
+    placeholder: "name@email.com (PayPal email)",
+    instruction: "Enter the PayPal email you already use. Buyers pay you directly, and Twigigi fills in this file's price. PayPal lets them pay by card.",
+  },
+  stripe: {
+    label: "Stripe payment link",
+    placeholder: "https://buy.stripe.com/…",
+    instruction: "In the Stripe Dashboard, open Payment Links and create one for this file's price. Paste the link that starts with https://buy.stripe.com/.",
+  },
+  square: {
+    label: "Square payment link",
+    placeholder: "https://square.link/…",
+    instruction: "In Square, create a payment link for this file's price, then paste that https link here. Buyers pay you directly.",
+  },
+  paypal_link: {
+    label: "PayPal payment link",
+    placeholder: "https://paypal.me/…",
+    instruction: "Paste a PayPal checkout link for this file's price, or your paypal.me link. Twigigi adds this file's price to a paypal.me link. Buyers pay you directly.",
+  },
+};
 
 function readOptions(seed: NewPageDraft | null, product?: Product): ProductOption[] {
   let saved: ProductOption[] = [];
@@ -221,7 +244,7 @@ export function BuyOfferFields({
             <input type="hidden" name="samePrice" value="1" />
             <input type="hidden" name="optionsJson" value="[]" />
             <input type="hidden" name="variantsJson" value="[]" />
-            <p className="text-sm text-muted">There is no pickup or shipping. Twigigi emails the file link and password after you mark the order paid.</p>
+            <p className="text-sm text-muted">There is no pickup or shipping. After you confirm payment, email the file link and password from the order.</p>
           </>
         ) : (
         <div>
@@ -386,7 +409,7 @@ export function BuyOfferFields({
         <Check name="requirePhone" defaultChecked={seed ? seed.checks.requirePhone !== false : (product?.requirePhone ?? true)} label="Phone" />
         <p className="text-sm text-muted">
           {digital
-            ? "Email is required. The file link and password are sent there after payment."
+            ? "Email is required. You email the file link and password there after you confirm payment."
             : needsAddress
               ? "Address is required when Delivery/Shipping is turned on."
               : "Address is asked only when the buyer chooses Delivery/Shipping."}
@@ -421,6 +444,7 @@ export function BuyOfferFields({
               className={inputClass}
             />
           </Field>
+          {digital ? <p className="text-sm text-muted">Buyers receive this with the payment confirmation email.</p> : null}
         </div>
       </div>
 
@@ -513,21 +537,45 @@ function PaymentChoices({
   onZelleMode: (mode: "phone" | "email") => void;
   onZelleContact: (value: string) => void;
 }) {
+  const [payMode, setPayMode] = useState<DigitalPayMode>(digitalPayModeOf(cardUrl));
   const choices = paymentsForCountry(country);
   if (digital) {
+    const payChoice = DIGITAL_PAY_CHOICES[payMode];
     return (
-      <div className="mt-4">
+      <div className="mt-4 space-y-3">
         <input type="hidden" name="paymentMethods" value='["card"]' />
-        <Field label="Credit card payment link" required error={cardError}>
+        <input type="hidden" name="digitalPayMode" value={payMode} />
+        <label className="block">
+          <span className={labelClass}>Payment setup</span>
+          <select
+            value={payMode}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (next !== "paypal_email" && next !== "stripe" && next !== "square" && next !== "paypal_link") return;
+              setPayMode(next);
+              if (cardUrl.trim() && digitalPayProblem(cardUrl, next)) onCardUrl("");
+            }}
+            aria-label="Payment setup"
+            className={inputClass}
+          >
+            <option value="paypal_email">PayPal email</option>
+            <option value="stripe">Stripe payment link</option>
+            <option value="square">Square payment link</option>
+            <option value="paypal_link">PayPal payment link</option>
+          </select>
+        </label>
+        <Field label={payChoice.label} required error={cardError}>
           <input
             ref={cardRef}
             name="cardPaymentUrl"
             value={cardUrl}
             onChange={(event) => onCardUrl(event.target.value)}
-            placeholder="https://buy.stripe.com/… (http or https)"
+            placeholder={payChoice.placeholder}
+            inputMode={payMode === "paypal_email" ? "email" : "url"}
+            autoComplete={payMode === "paypal_email" ? "email" : "off"}
             className={inputClass}
           />
-          <span className="mt-1 block text-sm text-muted">Buyers pay by credit card. Paste a Stripe Payment Link, Square link, or PayPal checkout link.</span>
+          <span className="mt-1 block text-sm text-muted">{payChoice.instruction}</span>
         </Field>
       </div>
     );

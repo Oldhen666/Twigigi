@@ -1,4 +1,4 @@
-import { methodLabel } from "@/lib/payments";
+import { methodLabel, safeEmail } from "@/lib/payments";
 
 export type PaymentFlow = "seller_direct" | "twigigi_checkout";
 
@@ -38,6 +38,7 @@ export const SELLER_SALES_SQL = `
 export function cardLinkProvider(url: string) {
   const trimmed = url.trim();
   if (!trimmed) return "";
+  if (safeEmail(trimmed)) return "PayPal";
   try {
     const host = new URL(trimmed).hostname.toLowerCase().replace(/^www\./, "");
     if (host === "stripe.com" || host.endsWith(".stripe.com")) return "Stripe";

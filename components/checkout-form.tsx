@@ -80,7 +80,7 @@ export function CheckoutForm({
   const fee = mode === "file" ? 0 : shippingCharge(merchandise, baseFee, selected?.freeOverCents);
   const shippingWaived = mode === "buy" && baseFee > 0 && fee === 0;
   const total = paying && priceCents != null && (mode === "file" || selected) ? merchandise + fee : null;
-  const label = paying ? "Place order" : mode === "quote" ? "Request quote" : "Send message";
+  const label = mode === "file" ? "Continue to payment" : paying ? "Place order" : mode === "quote" ? "Request quote" : "Send message";
   const payFulfillment = mode === "file" || !(fulfillment === "delivery" || fulfillment === "shipping") ? "pickup" : fulfillment;
   const payMethods = payments ? methodsForFulfillment(payments.methods, payFulfillment) : [];
   const methodKey = payMethods.join("|");
@@ -103,7 +103,7 @@ export function CheckoutForm({
 
       {mode === "file" ? (
         <p className="rounded-xl bg-paper-deep px-3 py-2 text-sm text-muted">
-          The file link and password are emailed after payment is confirmed. They are not shown on the public page.
+          Pay the seller by card on the next page. The file link is emailed after they confirm payment. It is not shown on the public page.
         </p>
       ) : null}
 
@@ -173,7 +173,7 @@ export function CheckoutForm({
           methods={payMethods}
           selected={paymentMethod}
           onSelect={setPaymentMethod}
-          cardPaymentUrl={payments.cardPaymentUrl}
+          cardPaymentUrl={mode === "file" ? "" : payments.cardPaymentUrl}
           interacEmail={payments.interacEmail}
           venmoUsername={payments.venmoUsername}
           zelleMode={payments.zelleMode}
@@ -182,6 +182,7 @@ export function CheckoutForm({
           empty={needsTransfer ? "Delivery and shipping have to be paid by transfer first. This seller has not set one up." : ""}
         />
       ) : null}
+      {mode === "file" ? <p className="text-sm text-muted">Next you pay the seller by card. The file is emailed after they confirm the payment.</p> : null}
 
       {mode === "buy" && fulfillment !== "pickup" ? (
         <Field label="Address" name="address" required error={fieldErrors?.address}>

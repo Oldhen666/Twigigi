@@ -210,6 +210,16 @@ function openDatabase() {
   return db;
 }
 
+function addFileSentAt(database: DatabaseSync) {
+  const rows = database.prepare(`PRAGMA table_info(orders)`).all() as Array<{ name: string }>;
+  if (rows.some((row) => row.name === "file_sent_at")) return;
+  database.exec(`ALTER TABLE orders ADD COLUMN file_sent_at TEXT`);
+  database.exec(
+    `UPDATE orders SET file_sent_at = COALESCE(NULLIF(paid_at, ''), created_at)
+     WHERE fulfillment = 'digital' AND (payment_status = 'paid' OR status IN ('paid', 'fulfilled'))`,
+  );
+}
+
 function ensureColumns(database: DatabaseSync) {
   const add = (table: string, column: string, definition: string) => {
     const rows = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
@@ -246,6 +256,7 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "file_password", "file_password TEXT NOT NULL DEFAULT ''");
   add("orders", "file_links", "file_links TEXT NOT NULL DEFAULT '[]'");
   add("orders", "file_password", "file_password TEXT NOT NULL DEFAULT ''");
+  addFileSentAt(database);
   add("orders", "lines_json", "lines_json TEXT NOT NULL DEFAULT '[]'");
   add("orders", "buyer_payment", "buyer_payment TEXT NOT NULL DEFAULT ''");
   add("orders", "pickup_window", "pickup_window TEXT NOT NULL DEFAULT ''");
@@ -896,6 +907,7 @@ function mapOrder(row: Row): OrderRecord {
     src: str(row.src),
     fileLinks: readStoredFileLinks(str(row.file_links)),
     filePassword: str(row.file_password),
+    fileSentAt: row.file_sent_at ? str(row.file_sent_at) : null,
     lines: parseOrderLines(str(row.lines_json)),
     createdAt: str(row.created_at),
   };
@@ -2636,6 +2648,10 @@ export function setDispute(orderId: string, open: boolean) {
     return { ok: false as const, error: error instanceof Error && error.message.includes("did not change") ? "That dispute is already recorded." : "Could not record the dispute." };
   }
   return { ok: true as const };
+}
+
+export function markFileSent(id: string, userId: string) {
+  db.prepare(`UPDATE orders SET file_sent_at = ? WHERE id = ? AND seller_id = ?`).run(new Date().toISOString(), id, userId);
 }
 
 export function updateOrderStatus(id: string, userId: string, status: OrderStatus) {

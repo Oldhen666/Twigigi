@@ -214,6 +214,7 @@ export type OrderRecord = {
   src: string;
   fileLinks: string[];
   filePassword: string;
+  fileSentAt: string | null;
   lines: OrderLine[];
   createdAt: string;
 };

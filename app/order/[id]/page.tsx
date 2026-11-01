@@ -7,9 +7,9 @@ import { PayMethods } from "@/components/pay-methods";
 import { InteractionLine } from "@/components/interaction-line";
 import { OrderPaymentFacts } from "@/components/order-payment-facts";
 import { getCurrentUser } from "@/lib/auth";
-import { getInteractionBySource, getOrder, getProductById } from "@/lib/db";
+import { findUserById, getInteractionBySource, getOrder, getProductById } from "@/lib/db";
 import { formatMoney, orderHeading } from "@/lib/format";
-import { methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
+import { buyerPayUrl, methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
 import { confirmStripeSession } from "@/lib/stripe";
 
 async function OrderView({
@@ -29,9 +29,10 @@ async function OrderView({
   const account = await getCurrentUser();
   const interaction = getInteractionBySource(order.id);
   const product = getProductById(order.productId);
+  const seller = findUserById(order.sellerId);
   const paid = order.status === "paid" || order.status === "fulfilled";
   const digital = product?.cta === "file" || order.fulfillment === "digital";
-  const fileReady = paid && order.fileLinks.length > 0;
+  const fileReady = Boolean(order.fileSentAt) && order.fileLinks.length > 0;
   return (
     <Stage>
       <div className="bg-card px-6 py-10 sm:rounded-[28px]">
@@ -64,8 +65,10 @@ async function OrderView({
         <p className="mt-3 text-sm leading-6 text-muted">
           {digital
             ? fileReady
-              ? `The seller confirmed payment. The file link and password were emailed to ${order.email}. They are also listed below.`
-              : `Pay ${order.displayName} directly. After they confirm payment, Twigigi emails the file link and password to ${order.email}.`
+              ? `The file link and password were emailed to ${order.email}. They are also listed below.`
+              : paid
+                ? `Payment confirmed. A confirmation with the seller's contact was emailed to ${order.email}. The file link arrives when the seller sends it.`
+                : `Pay ${formatMoney(order.totalCents || order.amountCents, order.currency)} to ${order.displayName} by card. After they confirm the payment, they email the file link and password to ${order.email}.`
             : paid
               ? `${order.displayName} confirmed your payment. They will follow up at ${order.email}.`
               : order.fulfillment === "pickup"
@@ -90,7 +93,15 @@ async function OrderView({
               const offered = methodsForFulfillment(product.paymentMethods, order.fulfillment === "digital" ? "pickup" : order.fulfillment);
               return order.buyerPayment && offered.includes(order.buyerPayment) ? [order.buyerPayment] : offered;
             })()}
-            cardPaymentUrl={product.cardPaymentUrl}
+            cardPaymentUrl={
+              product.cta === "file"
+                ? buyerPayUrl(product.cardPaymentUrl, {
+                    amountCents: order.totalCents || order.amountCents,
+                    currency: order.currency,
+                    itemName: order.productTitle,
+                  })
+                : product.cardPaymentUrl
+            }
             interacEmail={product.interacEmail}
             venmoUsername={product.venmoUsername}
             zelleMode={product.zelleMode}
@@ -98,7 +109,15 @@ async function OrderView({
             showContacts
           />
         ) : null}
-        {product?.cta === "buy" ? <SellerReach mode={product.sellerContactMode} contact={product.sellerContact} name={order.displayName} /> : null}
+        {product?.cta === "file" ? (
+          <SellerReach
+            mode={product.sellerContact.trim() ? product.sellerContactMode : "email"}
+            contact={product.sellerContact.trim() || seller?.email || ""}
+            name={order.displayName}
+          />
+        ) : product?.cta === "buy" ? (
+          <SellerReach mode={product.sellerContactMode} contact={product.sellerContact} name={order.displayName} />
+        ) : null}
         {interaction && account && (account.id === interaction.buyerId || account.email.toLowerCase() === interaction.buyerEmail) ? (
           <div className="mt-6"><InteractionLine item={interaction} nextPath={`/order/${order.id}`} side="buyer" /></div>
         ) : interaction && account && account.id === interaction.sellerId ? (

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { signOut } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { BackButton } from "@/components/back-button";
 import { Logo } from "@/components/logo";
@@ -22,7 +23,12 @@ async function Header() {
     <header className="mx-auto w-full max-w-5xl px-5 py-5">
       <div className="flex items-center justify-between gap-3">
         <Logo />
-        <Link href="/dashboard" className="text-sm text-forest">Seller dashboard</Link>
+        <div className="flex items-center gap-6 text-sm">
+          <Link href="/dashboard" className="text-forest">Seller dashboard</Link>
+          <form action={signOut}>
+            <button className="text-muted">Sign out</button>
+          </form>
+        </div>
       </div>
       <nav className="mt-4 flex flex-wrap gap-2">
         {LINKS.map(([label, href]) => (

@@ -1,14 +1,23 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { confirmInteraction, setLeadStatus } from "@/lib/actions";
+import { confirmInteraction, sendOrderFile, setLeadStatus } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { getInteractionBySource, getOrder, getProductById } from "@/lib/db";
 import { formatDate, formatMoney, interactionLabel, orderHeading, srcLabel } from "@/lib/format";
+import { buttonClass } from "@/components/ui";
 import { OrderPaymentFacts } from "@/components/order-payment-facts";
 
-async function OrderScreen({ params }: { params: Promise<{ id: string }> }) {
+async function OrderScreen({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireSeller();
   const { id } = await params;
+  const query = await searchParams;
+  const fileNote = typeof query.file === "string" ? query.file : "";
   const order = getOrder(id);
   if (!order || order.sellerId !== user.id) notFound();
   const product = getProductById(order.productId);
@@ -35,11 +44,22 @@ async function OrderScreen({ params }: { params: Promise<{ id: string }> }) {
       {order.fulfillment === "pickup" && product?.pickupNote ? <p className="text-sm text-muted">Pickup location: {product.pickupNote}</p> : null}
       {order.pickupWindow ? <p className="text-sm text-muted">Pickup time: {order.pickupWindow}</p> : null}
       {order.fulfillment === "digital" ? (
-        <p className="mt-3 text-sm text-muted">
-          {order.status === "paid" || order.status === "fulfilled"
-            ? "Twigigi emailed the file link and password to the buyer."
-            : "Mark this order paid after you receive the money. Twigigi then emails the file link and password."}
-        </p>
+        <div className="mt-4 rounded-2xl border border-line bg-card p-4 text-sm">
+          <p className="text-muted">
+            {order.status === "paid" || order.status === "fulfilled"
+              ? `Payment is confirmed. The buyer was emailed a confirmation and your contact. Send the file to ${order.email} when you are ready.`
+              : "After the money arrives, mark this order paid. Then email the file link and password to the buyer."}
+          </p>
+          {fileNote === "sent" ? <p className="mt-2 text-forest">The file link and password were emailed to {order.email}.</p> : null}
+          {fileNote === "mail" ? <p className="mt-2 text-danger">The email could not be sent. Check the mail settings, then try again.</p> : null}
+          {fileNote === "wait" ? <p className="mt-2 text-danger">Confirm the payment before emailing the file.</p> : null}
+          {order.status === "paid" || order.status === "fulfilled" ? (
+            <form action={sendOrderFile} className="mt-3">
+              <input type="hidden" name="id" value={order.id} />
+              <button className={buttonClass}>{order.fileSentAt ? "Email the file link again" : "Email file link and password"}</button>
+            </form>
+          ) : null}
+        </div>
       ) : null}
       <p className="mt-2 text-sm text-muted">{srcLabel(order.src)} · {formatDate(order.createdAt)}</p>
       <form action={setLeadStatus} className="mt-4 flex items-center gap-2">
@@ -70,10 +90,16 @@ async function OrderScreen({ params }: { params: Promise<{ id: string }> }) {
   );
 }
 
-export default function Page({ params }: { params: Promise<{ id: string }> }) {
+export default function Page({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   return (
     <Suspense fallback={<p className="px-5 text-muted">Loading order…</p>}>
-      <OrderScreen params={params} />
+      <OrderScreen params={params} searchParams={searchParams} />
     </Suspense>
   );
 }

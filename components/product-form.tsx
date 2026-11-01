@@ -15,7 +15,7 @@ import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui
 import { categoryProblem } from "@/lib/categories";
 import { parseFileLinks } from "@/lib/files";
 import { PROVINCES, joinLocation, lookupCurrentPlace, placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
+import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
 
 type Action = (state: FormState, formData: FormData) => Promise<FormState>;
 
@@ -333,7 +333,7 @@ export function ProductForm({
       return null;
     }
     if (name === "cardPaymentUrl") {
-      if (cta === "file") return cardLinkProblem(value);
+      if (cta === "file") return digitalPayProblem(value, fieldValue(form, "digitalPayMode"));
       if (cta !== "buy") return null;
       const methods = parsePaymentMethods(fieldValue(form, "paymentMethods") || "[]", splitLocation(fieldValue(form, "location")).country);
       if (!methods.includes("card")) return null;

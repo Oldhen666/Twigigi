@@ -177,7 +177,7 @@ export async function ProductView({
                 {product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}
               </p>
               {product.cta === "file" ? (
-                <p className="mt-2 text-sm text-muted">The file link and password are emailed after payment.</p>
+                <p className="mt-2 text-sm text-muted">Pay the seller by card. They email the file link and password after confirming payment.</p>
               ) : null}
               {options.length > 0 ? (
                 <ul className="mt-3 flex flex-wrap gap-2">

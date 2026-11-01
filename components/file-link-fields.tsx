@@ -23,7 +23,7 @@ export function FileLinkFields({
         <span className="text-base text-danger"> *</span>
       </h2>
       <p className="mt-2 text-sm text-muted">
-        Paste one or more https links, such as Google Drive, Dropbox, or OneDrive. Set each share to anyone with the link. Buyers only receive the links and password after the order is paid.
+        Paste one or more https links, such as Google Drive, Dropbox, or OneDrive. Set each share to anyone with the link. After you confirm payment, click Email file link on the order to send these links and the password.
       </p>
       {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
       <div className="mt-4 space-y-3">
@@ -68,7 +68,7 @@ export function FileLinkFields({
           className={inputClass}
         />
         <p className="mt-1 text-sm text-muted">
-          Optional. Google Drive cannot password a share link, so put the password on the zip and type it here. It is emailed with the links only after payment.
+          Optional. Google Drive cannot password a share link, so put the password on the zip and type it here. It is emailed with the links when you send the file.
         </p>
       </div>
     </section>
