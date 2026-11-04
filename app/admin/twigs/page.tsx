@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { adminSetTwig } from "@/lib/actions";
+import { adminSetTwig, setListingFree } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { listAllProducts } from "@/lib/db";
 
@@ -15,10 +15,16 @@ export default async function Page() {
           <li key={product.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card px-4 py-3 text-sm">
             <div>
               <p className="font-medium">{product.title}</p>
-              <p className="text-muted">{product.displayName} · {product.status}{product.deactivatesAt ? " · ending" : ""}</p>
+              <p className="text-muted">{product.displayName} · {product.status}{product.deactivatesAt ? " · ending" : ""}{product.feeExempt ? " · free forever" : ""}</p>
             </div>
             <div className="flex items-center gap-3">
               <Link href={`/dashboard/products/${product.id}`} className="text-forest">Edit</Link>
+              <form action={setListingFree}>
+                <input type="hidden" name="id" value={product.id} />
+                <input type="hidden" name="free" value={product.feeExempt ? "0" : "1"} />
+                <input type="hidden" name="next" value="/admin/twigs" />
+                <button className="text-forest">{product.feeExempt ? "Charge this Twig" : "Make free forever"}</button>
+              </form>
               {product.status === "published" ? <Link href={`/${product.publicId}/${product.slug}`} className="text-forest">Open</Link> : null}
               {product.status === "published" && !product.deactivatesAt ? (
                 <form action={adminSetTwig}>

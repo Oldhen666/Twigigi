@@ -134,6 +134,7 @@ export type Product = ProductInput & {
   deactivatesAt: string | null;
   deactivatedAt: string | null;
   billingStartedAt: string | null;
+  feeExempt: boolean;
   moderationStatus: "" | "restricted";
   rightsConfirmed: boolean;
   rightsConfirmedAt: string | null;

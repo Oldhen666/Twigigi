@@ -6,7 +6,7 @@ import { Stars } from "@/components/stars";
 import { BackButton } from "@/components/back-button";
 import { SellerListings } from "@/components/seller-listings";
 import { listingStillPaid } from "@/lib/billing";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, getImpersonation } from "@/lib/auth";
 import { UsernameForm } from "@/components/username-form";
 import { filterLiveTwigs, getPublicSeller, staticProductParams } from "@/lib/catalog";
 import { sellerPath } from "@/lib/seller-route";
@@ -27,6 +27,7 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
   const seller = await getPublicSeller(publicId);
   if (!seller) notFound();
   const account = await getCurrentUser();
+  const acting = Boolean(await getImpersonation());
   const owner = Boolean(account && account.publicId === seller.publicId);
   const products = account && owner
     ? sellerProducts(account.id).filter((product) => product.status === "deactivated" || isTwigLive(product))
@@ -63,7 +64,7 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
             image: product.images[0] ?? "",
             inactive: product.status === "deactivated",
             editHref: owner ? `/dashboard/products/${product.id}` : "",
-            manage: owner ? manageListing(product, pagePath) : undefined,
+            manage: owner ? manageListing(product, pagePath, acting) : undefined,
             categoryKind: product.categoryKind,
             categoryGroup: product.categoryGroup,
             category: product.category,
@@ -82,7 +83,7 @@ export default function Page({ params }: { params: Promise<{ username: string }>
   );
 }
 
-function manageListing(product: Product, next: string) {
+function manageListing(product: Product, next: string, waiveFee: boolean) {
   const ending = isTwigLive(product) && Boolean(product.deactivatesAt);
   const anchor = product.status === "deactivated" && product.deactivatedAt ? product.deactivatedAt : product.deactivatesAt || nextBillingDate();
   return {
@@ -91,6 +92,7 @@ function manageListing(product: Product, next: string) {
     endsLabel: formatBillingDate(product.deactivatesAt || nextBillingDate()),
     deleteLabel: formatBillingDate(addDays(anchor, DEACTIVATION_GRACE_DAYS), true),
     stillPaid: listingStillPaid(product),
+    waiveFee,
     next,
   };
 }

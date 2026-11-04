@@ -10,7 +10,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
-import { clearSession, getCurrentUser, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
+import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
 import { parseFileLinks } from "@/lib/files";
@@ -58,6 +58,7 @@ import {
   setBillingMethod,
   setPayoutDetails,
   setBillingStarted,
+  setListingFeeExempt,
   recordTwigBill,
   reactivateProduct,
   replacePasswordReset,
@@ -615,6 +616,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     if (!user) return { error: "Could not open the account." };
     sessionStamp = { signedIn: true, displayName: user.displayName };
   }
+  const acting = await getImpersonation();
   const adminEdit = Boolean(existing && user.role === "admin" && existing.userId !== user.id);
   const owner = adminEdit && existing ? findUserById(existing.userId) : user;
   if (!owner || (id && (!existing || existing.userId !== owner.id))) {
@@ -707,7 +709,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   };
 
   const savedProductId = existing?.id ?? newId("prd");
-  const needsBilling = intent === "publish" && !adminEdit && !user.billingMethod;
+  const needsBilling = intent === "publish" && !adminEdit && !acting && !existing?.feeExempt && !user.billingMethod;
   if (needsBilling) input.status = "draft";
   try {
     if (existing) {
@@ -727,8 +729,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   if (needsBilling) redirect(`/billing?next=${encodeURIComponent(`/dashboard/products/${savedProductId}`)}`);
   if (input.status === "published" && (!existing || existing.status !== "published")) {
     setBillingStarted(savedProductId, owner.id);
-    const cents = listingFeeCents(input.cta);
-    if (cents && user.billingMethod) {
+    const cents = listingFeeCents(input.cta, Boolean(existing?.feeExempt));
+    if (cents && user.billingMethod && !acting) {
       const window = activeWindow(new Date().toISOString());
       recordTwigBill({
         id: newId("bill"),
@@ -817,6 +819,7 @@ export async function saveBillingMethod(formData: FormData) {
 
 export async function payAndPublish(formData: FormData) {
   const user = await requireSeller();
+  const acting = await getImpersonation();
   const product = getProductById(text(formData, "id"));
   const back = safeNext(text(formData, "next"));
   if (!product || product.userId !== user.id || product.status === "published") redirect(back);
@@ -826,11 +829,12 @@ export async function payAndPublish(formData: FormData) {
     updateTag(sellerTag(user.publicId));
     redirect(back);
   }
-  if (!user.billingMethod) redirect(`/billing?next=${encodeURIComponent(back)}`);
+  const waived = Boolean(acting) || product.feeExempt;
+  if (!waived && !user.billingMethod) redirect(`/billing?next=${encodeURIComponent(back)}`);
   if (product.status === "draft" && (product.title.trim().length < 2 || product.images.length < 1)) {
     redirect(`/dashboard/products/${product.id}`);
   }
-  const cents = listingFeeCents(product.cta);
+  const cents = waived ? 0 : listingFeeCents(product.cta);
   const currency = listingFeeCurrency(product.cta, product.location);
   const stripe = getStripe();
   if (stripe && cents && (user.billingMethod === "card" || user.billingMethod === "stripe")) {
@@ -1596,6 +1600,42 @@ export async function adminRenameUser(formData: FormData) {
   if (name.length < 2 || name.length > 60) redirect("/admin/users?error=Enter%20a%20name.");
   updateDisplayName(text(formData, "id"), name);
   redirect("/admin/users");
+}
+
+export async function enterSellerAccount(formData: FormData) {
+  if (await getImpersonation()) redirect("/dashboard");
+  const admin = await requireAdmin();
+  const seller = findUserById(text(formData, "id"));
+  if (!seller || seller.id === admin.id) redirect("/admin/users");
+  await setSession(seller.id, admin.id);
+  redirect("/dashboard");
+}
+
+export async function exitSellerAccount() {
+  const admin = await getImpersonation();
+  if (!admin) redirect("/dashboard");
+  await setSession(admin.id);
+  redirect("/admin/users");
+}
+
+export async function setListingFree(formData: FormData) {
+  const actor = await getImpersonation();
+  const admin = actor ?? (await getCurrentUser());
+  const back = safeNext(text(formData, "next"));
+  if (!admin || admin.role !== "admin") redirect("/dashboard");
+  const product = getProductById(text(formData, "id"));
+  if (!product) redirect(back || "/admin/twigs");
+  if (actor) {
+    const seller = await getCurrentUser();
+    if (!seller || product.userId !== seller.id) redirect("/dashboard");
+  }
+  setListingFeeExempt(product.id, text(formData, "free") === "1");
+  const owner = findUserById(product.userId);
+  if (owner) {
+    updateTag(productTag(owner.publicId, product.slug));
+    updateTag(sellerTag(owner.publicId));
+  }
+  redirect(back || "/admin/twigs");
 }
 
 export async function adminSetTwig(formData: FormData) {

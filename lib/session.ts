@@ -8,10 +8,13 @@ function key() {
   return new TextEncoder().encode(secret);
 }
 
-export async function signSession(userId: string) {
+export async function signSession(userId: string, actorId = "") {
   const secret = key();
   if (!secret) throw new Error("AUTH_SECRET is not set");
-  return new SignJWT({ sub: userId })
+  const claims: Record<string, string> = {};
+  if (actorId) claims.act = actorId;
+  return new SignJWT(claims)
+    .setSubject(userId)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("30d")
@@ -23,7 +26,10 @@ export async function readSession(token: string | undefined) {
   if (!secret || !token) return null;
   try {
     const { payload } = await jwtVerify(token, secret);
-    return typeof payload.sub === "string" ? payload.sub : null;
+    const userId = typeof payload.sub === "string" ? payload.sub : "";
+    if (!userId) return null;
+    const actorId = typeof payload.act === "string" ? payload.act : "";
+    return { userId, actorId };
   } catch {
     return null;
   }

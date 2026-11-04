@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { adminRenameUser, adminSuspendAccount, setUserRole } from "@/lib/actions";
+import { adminRenameUser, adminSuspendAccount, enterSellerAccount, setUserRole } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { listUsers } from "@/lib/db";
 import { formatDate } from "@/lib/format";
@@ -43,6 +43,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                     </form>
                     <p className="text-muted">{user.username}{user.suspended ? " · Suspended" : ""}</p>
                     <Link href={`/${user.publicId}`} className="text-forest">twigigi.com/{user.publicId}</Link>
+                    {yours ? null : (
+                      <form action={enterSellerAccount} className="mt-2">
+                        <input type="hidden" name="id" value={user.id} />
+                        <button className="text-forest">Open account</button>
+                      </form>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-muted">{formatDate(user.createdAt)}</td>
                   <td className="px-4 py-3">{user.productCount}</td>

@@ -19,7 +19,8 @@ export function formatListingFee(currency: string) {
   return currency === "USD" ? "USD$1.49" : "C$1.49";
 }
 
-export function listingFeeCents(cta: string) {
+export function listingFeeCents(cta: string, feeExempt = false) {
+  if (feeExempt) return 0;
   return cta === "buy" || cta === "quote" || cta === "file" ? LISTING_CENTS : 0;
 }
 
@@ -34,10 +35,10 @@ export function billingMethodLabel(method: string) {
 }
 
 export function listingStillPaid(
-  product: { cta: string; deactivatedAt: string | null; billingStartedAt: string | null; createdAt: string },
+  product: { cta: string; deactivatedAt: string | null; billingStartedAt: string | null; createdAt: string; feeExempt?: boolean },
   now = new Date(),
 ) {
-  if (listingFeeCents(product.cta) === 0) return true;
+  if (product.feeExempt || listingFeeCents(product.cta) === 0) return true;
   const anchor = product.deactivatedAt || product.billingStartedAt || product.createdAt;
   const until = Date.parse(nextBillingDate(new Date(anchor)));
   return Number.isFinite(until) && until > now.getTime();

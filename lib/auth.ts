@@ -11,8 +11,8 @@ const cookieOptions = {
   maxAge: 60 * 60 * 24 * 30,
 };
 
-export async function setSession(userId: string) {
-  const token = await signSession(userId);
+export async function setSession(userId: string, actorId = "") {
+  const token = await signSession(userId, actorId);
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, cookieOptions);
 }
@@ -22,13 +22,26 @@ export async function clearSession() {
   jar.delete(SESSION_COOKIE);
 }
 
-export async function getCurrentUser() {
+async function activeSession() {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  const userId = await readSession(token);
-  if (!userId) return null;
-  const user = findUserById(userId);
-  if (!user || user.suspended) return null;
-  return user;
+  const session = await readSession(token);
+  if (!session) return null;
+  const user = findUserById(session.userId);
+  if (!user) return null;
+  const actor = session.actorId && session.actorId !== session.userId ? findUserById(session.actorId) : null;
+  const impersonating = Boolean(actor && !actor.suspended && actor.role === "admin");
+  if (user.suspended && !impersonating) return null;
+  return { user, actor: impersonating ? actor : null };
+}
+
+export async function getCurrentUser() {
+  const active = await activeSession();
+  return active?.user ?? null;
+}
+
+export async function getImpersonation() {
+  const active = await activeSession();
+  return active?.actor ?? null;
 }
 
 export async function requireUser() {

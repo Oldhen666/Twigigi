@@ -7,8 +7,8 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const needsAuth = pathname === "/dashboard" || pathname.startsWith("/dashboard/") || pathname === "/admin" || pathname.startsWith("/admin/");
   if (needsAuth) {
-    const userId = await readSession(request.cookies.get(SESSION_COOKIE)?.value);
-    if (!userId) {
+    const session = await readSession(request.cookies.get(SESSION_COOKIE)?.value);
+    if (!session?.userId) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
       url.search = "";

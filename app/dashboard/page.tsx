@@ -1,8 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
-import { requireSeller } from "@/lib/auth";
-import { payAndPublish, reactivateTwig } from "@/lib/actions";
+import { getImpersonation, requireSeller } from "@/lib/auth";
+import { payAndPublish, reactivateTwig, setListingFree } from "@/lib/actions";
 import { activeWindow, formatListingFee, listingFeeCents, listingFeeCurrency, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
@@ -14,6 +14,7 @@ import { storedUpload } from "@/lib/uploads";
 
 async function DashboardBody() {
   const user = await requireSeller();
+  const acting = Boolean(await getImpersonation());
   const stats = sellerStats(user.id);
   const sales = sellerSales(user.id);
   const products = sellerProducts(user.id);
@@ -33,7 +34,7 @@ async function DashboardBody() {
           <Link href="/dashboard/payments" className="font-medium text-forest">Payment settings</Link>
           <Link href={`/${user.publicId}`} className="font-medium text-forest">Your page</Link>
         </p>
-        {user.billingMethod ? null : (
+        {user.billingMethod || acting ? null : (
           <p className="mt-3 text-sm">
             <Link href="/billing?next=/dashboard" className="font-medium text-forest">Add a payment method</Link>
             <span className="text-muted"> before a Twig can be published.</span>
@@ -102,6 +103,8 @@ async function DashboardBody() {
             const badge = restricted ? "Restricted" : product.status === "deactivated" ? "Deactivated" : ending ? "Deactivating" : live ? "Live" : "Draft";
             const period = activeWindow(product.billingStartedAt || product.createdAt);
             const activeLabel = `${formatBillingDate(period.start)} – ${formatBillingDate(period.end)}`;
+            const free = product.feeExempt;
+            const skipPay = free || acting;
             const currency = listingFeeCurrency(product.cta, product.location);
             const money = (cents: number) => `${formatMoney(cents, currency)} ${currency}`;
             const listingLabel = formatListingFee(currency);
@@ -152,7 +155,7 @@ async function DashboardBody() {
                     {product.status === "published" && !ending && !restricted ? (
                       <>
                         <p>Active {activeLabel}</p>
-                        {listingFeeCents(product.cta) > 0 ? <p>Next charge {billingEndsLabel} · {listingLabel} / month</p> : <p>No listing fee</p>}
+                        {free ? <p>Free forever</p> : listingFeeCents(product.cta) > 0 ? <p>Next charge {billingEndsLabel} · {listingLabel} / month</p> : <p>No listing fee</p>}
                         {product.cta === "quote" ? <p>Each quote {quoteEach}{quoteUse && quoteUse.count > 0 ? ` · ${quoteUse.count} this period · ${money(quoteUse.cents)}` : ""}</p> : null}
                       </>
                     ) : null}
@@ -168,11 +171,11 @@ async function DashboardBody() {
                       <>
                         <p>Inactive{deactivatedLabel ? ` since ${deactivatedLabel}` : ""}</p>
                         {listingStillPaid(product) ? (
-                          <p>Paid through {billingEndsLabel}. Next charge {billingEndsLabel}.</p>
+                          free ? <p>Free forever</p> : <p>Paid through {billingEndsLabel}. Next charge {billingEndsLabel}.</p>
                         ) : (
                           <>
                             <p>Next charge none</p>
-                            {listingFeeCents(product.cta) > 0 ? <p>Reactivate for {listingLabel} / month</p> : <p>No listing fee</p>}
+                            {free ? <p>Free forever</p> : listingFeeCents(product.cta) > 0 ? <p>Reactivate for {listingLabel} / month</p> : <p>No listing fee</p>}
                           </>
                         )}
                         {product.cta === "quote" ? <p>Each quote {quoteEach}</p> : null}
@@ -182,13 +185,21 @@ async function DashboardBody() {
                     {product.status === "draft" ? (
                       <>
                         <p>Not active</p>
-                        {listingFeeCents(product.cta) > 0 ? <p>Listing {listingLabel} / month when you publish</p> : <p>No listing fee</p>}
+                        {free ? <p>Free forever</p> : listingFeeCents(product.cta) > 0 ? <p>Listing {listingLabel} / month when you publish</p> : <p>No listing fee</p>}
                         {product.cta === "quote" ? <p>Each quote {quoteEach}</p> : null}
                       </>
                     ) : null}
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
                     <Link href={`/dashboard/products/${product.id}`} className="font-medium text-forest">Edit</Link>
+                    {acting ? (
+                      <form action={setListingFree}>
+                        <input type="hidden" name="id" value={product.id} />
+                        <input type="hidden" name="free" value={free ? "0" : "1"} />
+                        <input type="hidden" name="next" value="/dashboard" />
+                        <button className="font-medium text-forest">{free ? "Charge this Twig" : "Make free forever"}</button>
+                      </form>
+                    ) : null}
                     {live ? <CopyLink url={url} /> : null}
                     {product.status === "published" ? (
                       <DeactivateTwig productId={product.id} mode={ending ? "ending" : "live"} endsLabel={endsLabel} deleteLabel={deleteLabel} />
@@ -203,7 +214,7 @@ async function DashboardBody() {
                         ) : (
                           <form action={payAndPublish}>
                             <input type="hidden" name="id" value={product.id} />
-                            <button className="font-medium text-forest">Pay and reactivate</button>
+                            <button className="font-medium text-forest">{skipPay ? "Reactivate" : "Pay and reactivate"}</button>
                           </form>
                         )}
                         <DeleteTwig productId={product.id} mode="deactivated" />
@@ -213,7 +224,7 @@ async function DashboardBody() {
                       <>
                         <form action={payAndPublish}>
                           <input type="hidden" name="id" value={product.id} />
-                          <button className="font-medium text-forest">Pay and publish</button>
+                          <button className="font-medium text-forest">{skipPay ? "Publish" : "Pay and publish"}</button>
                         </form>
                         <DeleteTwig productId={product.id} />
                       </>

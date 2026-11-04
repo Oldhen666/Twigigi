@@ -265,6 +265,7 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "deactivates_at", "deactivates_at TEXT");
   add("products", "deactivated_at", "deactivated_at TEXT");
   add("products", "billing_started_at", "billing_started_at TEXT");
+  add("products", "fee_exempt", "fee_exempt INTEGER NOT NULL DEFAULT 0");
   add("users", "role", "role TEXT NOT NULL DEFAULT 'seller'");
   add("users", "billing_method", "billing_method TEXT NOT NULL DEFAULT ''");
   add("users", "payout_interac", "payout_interac TEXT NOT NULL DEFAULT ''");
@@ -756,6 +757,7 @@ function mapProduct(row: Row): Product {
     deactivatesAt: row.deactivates_at ? str(row.deactivates_at) : null,
     deactivatedAt: row.deactivated_at ? str(row.deactivated_at) : null,
     billingStartedAt: row.billing_started_at ? str(row.billing_started_at) : null,
+    feeExempt: num(row.fee_exempt) === 1,
     moderationStatus: str(row.moderation_status) === "restricted" ? "restricted" : "",
     rightsConfirmed: num(row.rights_confirmed) === 1,
     rightsConfirmedAt: row.rights_confirmed_at ? str(row.rights_confirmed_at) : null,
@@ -1644,6 +1646,10 @@ export function publishDraft(id: string, userId: string) {
 
 export function setBillingStarted(id: string, userId: string) {
   db.prepare("UPDATE products SET billing_started_at = ? WHERE id = ? AND user_id = ?").run(new Date().toISOString(), id, userId);
+}
+
+export function setListingFeeExempt(id: string, exempt: boolean) {
+  db.prepare("UPDATE products SET fee_exempt = ?, updated_at = ? WHERE id = ?").run(exempt ? 1 : 0, new Date().toISOString(), id);
 }
 
 export function setBillingMethod(userId: string, method: string) {

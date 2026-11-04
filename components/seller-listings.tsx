@@ -23,6 +23,7 @@ export type SellerCard = {
     endsLabel: string;
     deleteLabel: string;
     stillPaid: boolean;
+    waiveFee?: boolean;
     next: string;
   };
   categoryKind: string;
@@ -164,7 +165,7 @@ export function SellerListings({ username, listings }: { username: string; listi
                         <form action={payAndPublish}>
                           <input type="hidden" name="id" value={product.manage.productId} />
                           <input type="hidden" name="next" value={product.manage.next} />
-                          <button className="font-medium text-forest">Pay and reactivate</button>
+                          <button className="font-medium text-forest">{product.manage.waiveFee ? "Reactivate" : "Pay and reactivate"}</button>
                         </form>
                       )
                     ) : null}

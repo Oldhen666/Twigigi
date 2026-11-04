@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Outfit } from "next/font/google";
+import { Suspense } from "react";
+import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { NewPageEntry } from "@/components/new-page-entry";
 import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
@@ -24,6 +26,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${outfit.variable} ${fraunces.variable} h-full antialiased`}>
       <body className="min-h-full font-sans text-ink">
+        <Suspense fallback={null}>
+          <ImpersonationBanner />
+        </Suspense>
         <NewPageEntry>{children}</NewPageEntry>
         <SiteFooter />
       </body>
