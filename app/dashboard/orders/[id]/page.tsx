@@ -4,6 +4,7 @@ import { confirmInteraction, sendOrderFile, setLeadStatus } from "@/lib/actions"
 import { requireSeller } from "@/lib/auth";
 import { getInteractionBySource, getOrder, getProductById } from "@/lib/db";
 import { formatDate, formatMoney, interactionLabel, orderHeading, srcLabel } from "@/lib/format";
+import { formatPickupChoice } from "@/lib/pickup";
 import { buttonClass } from "@/components/ui";
 import { OrderPaymentFacts } from "@/components/order-payment-facts";
 
@@ -41,8 +42,10 @@ async function OrderScreen({
       <p className="mt-4 text-sm">{order.buyerName}</p>
       <p className="text-sm text-muted">{order.email}{order.phone ? ` · ${order.phone}` : ""}</p>
       {order.address ? <p className="text-sm text-muted">{order.address}</p> : null}
+      {order.deliveryNote ? <p className="text-sm text-muted">Delivery instructions: {order.deliveryNote}</p> : null}
+      {order.buyerNote ? <p className="text-sm text-muted">Note to seller: {order.buyerNote}</p> : null}
       {order.fulfillment === "pickup" && product?.pickupNote ? <p className="text-sm text-muted">Pickup location: {product.pickupNote}</p> : null}
-      {order.pickupWindow ? <p className="text-sm text-muted">Pickup time: {order.pickupWindow}</p> : null}
+      {order.pickupWindow ? <p className="text-sm text-muted">Pickup time: {formatPickupChoice(order.pickupWindow)}</p> : null}
       {order.fulfillment === "digital" ? (
         <div className="mt-4 rounded-2xl border border-line bg-card p-4 text-sm">
           <p className="text-muted">

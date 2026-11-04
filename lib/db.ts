@@ -260,6 +260,8 @@ function ensureColumns(database: DatabaseSync) {
   add("orders", "lines_json", "lines_json TEXT NOT NULL DEFAULT '[]'");
   add("orders", "buyer_payment", "buyer_payment TEXT NOT NULL DEFAULT ''");
   add("orders", "pickup_window", "pickup_window TEXT NOT NULL DEFAULT ''");
+  add("orders", "delivery_note", "delivery_note TEXT NOT NULL DEFAULT ''");
+  add("orders", "buyer_note", "buyer_note TEXT NOT NULL DEFAULT ''");
   add("products", "deactivates_at", "deactivates_at TEXT");
   add("products", "deactivated_at", "deactivated_at TEXT");
   add("products", "billing_started_at", "billing_started_at TEXT");
@@ -879,6 +881,8 @@ function mapOrder(row: Row): OrderRecord {
     address: str(row.address),
     buyerPayment: str(row.buyer_payment),
     pickupWindow: str(row.pickup_window),
+    deliveryNote: str(row.delivery_note),
+    buyerNote: str(row.buyer_note),
     amountCents: num(row.amount_cents),
     subtotalCents: num(row.subtotal),
     shippingCents: num(row.shipping),
@@ -1929,8 +1933,14 @@ export function insertOrder(input: {
   );
 }
 
-export function setOrderChoices(id: string, payment: string, pickupWindow: string) {
-  db.prepare("UPDATE orders SET buyer_payment = ?, pickup_window = ? WHERE id = ?").run(payment, pickupWindow, id);
+export function setOrderChoices(id: string, payment: string, pickupWindow: string, deliveryNote = "", buyerNote = "") {
+  db.prepare("UPDATE orders SET buyer_payment = ?, pickup_window = ?, delivery_note = ?, buyer_note = ? WHERE id = ?").run(
+    payment,
+    pickupWindow,
+    deliveryNote,
+    buyerNote,
+    id,
+  );
 }
 
 export function reserveStock(productId: string, quantity: number) {

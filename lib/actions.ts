@@ -81,11 +81,11 @@ import {
   updateProduct,
   updateQuoteStatus,
 } from "@/lib/db";
+import { formatPickupChoice, pickupChoiceProblem } from "@/lib/pickup";
 import {
   appUrl,
   formatMoney,
   fulfillmentOptions,
-  pickupTimes,
   cartFulfillmentCharge,
   isPrivateUsername,
   isTwigLive,
@@ -905,21 +905,34 @@ const personSchema = {
   phone: z.string().trim().min(7, "Enter a phone number.").max(30),
 };
 
-function chosenOrderDetails(formData: FormData, fulfillment: string, methods: string[], times: string[]):
+function chosenOrderDetails(formData: FormData, fulfillment: string, methods: string[], schedules: string[]):
   { ok: false; fieldErrors: Record<string, string> } | { ok: true; payment: string; pickupWindow: string } {
   const payment = text(formData, "paymentMethod");
   if (methods.length > 0 && !methods.includes(payment)) {
     return { ok: false, fieldErrors: { paymentMethod: "Choose how you will pay." } };
   }
-  const pickupTime = text(formData, "pickupTime");
-  if (fulfillment === "pickup" && times.length > 1 && !times.includes(pickupTime)) {
-    return { ok: false, fieldErrors: { pickupTime: "Choose a pickup time." } };
+  if (fulfillment === "pickup") {
+    const problem = pickupChoiceProblem(schedules, text(formData, "pickupTime"));
+    if (problem) return { ok: false, fieldErrors: { pickupTime: problem } };
   }
   return {
     ok: true,
     payment: methods.includes(payment) ? payment : "",
-    pickupWindow: fulfillment === "pickup" ? (times.includes(pickupTime) ? pickupTime : times[0] ?? "") : "",
+    pickupWindow: fulfillment === "pickup" ? text(formData, "pickupTime") : "",
   };
+}
+
+function deliveryInstructions(formData: FormData, fulfillment: string) {
+  if (fulfillment !== "shipping") return { ok: true as const, note: "" };
+  const note = text(formData, "deliveryNote").trim();
+  if (note.length > 200) return { ok: false as const, fieldErrors: { deliveryNote: "Keep the delivery instructions under 200 characters." } };
+  return { ok: true as const, note };
+}
+
+function sellerNoteOf(formData: FormData) {
+  const note = text(formData, "sellerNote").trim();
+  if (note.length > 400) return { ok: false as const, fieldErrors: { sellerNote: "Keep the note under 400 characters." } };
+  return { ok: true as const, note };
 }
 
 export async function placeOrder(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -969,9 +982,11 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   }
   const payFulfillment = parsed.data.fulfillment === "delivery" || parsed.data.fulfillment === "shipping" ? parsed.data.fulfillment : "pickup";
   const payMethods = digital ? ["card"] : methodsForFulfillment(product.paymentMethods, payFulfillment);
-  const times = parsed.data.fulfillment === "pickup" ? pickupTimes(product.pickupTime) : [];
-  const choice = chosenOrderDetails(formData, parsed.data.fulfillment, payMethods, times);
+  const schedules = parsed.data.fulfillment === "pickup" ? [product.pickupTime] : [];
+  const choice = chosenOrderDetails(formData, parsed.data.fulfillment, payMethods, schedules);
   if (!choice.ok) return { fieldErrors: choice.fieldErrors };
+  const instructions = deliveryInstructions(formData, parsed.data.fulfillment);
+  if (!instructions.ok) return { fieldErrors: instructions.fieldErrors };
   const subtotal = selection.priceCents * parsed.data.quantity;
   const amount = digital ? subtotal : orderAmount(selection.priceCents, parsed.data.quantity, parsed.data.fulfillment, product);
   if (amount == null) return { error: "Could not calculate the total." };
@@ -1007,7 +1022,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       fileLinks: digital ? product.fileLinks : [],
       filePassword: digital ? product.filePassword : "",
     });
-    setOrderChoices(orderId, choice.payment, choice.pickupWindow);
+    setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note);
     openInteraction({
       kind: "order",
       sourceId: orderId,
@@ -1037,8 +1052,9 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       `Quantity: ${parsed.data.quantity}`,
       digital ? "Delivery: emailed after you mark the order paid" : `Fulfillment: ${parsed.data.fulfillment}`,
       parsed.data.fulfillment === "pickup" && product.pickupNote.trim() ? `Pickup location: ${product.pickupNote.trim()}` : null,
-      choice.pickupWindow ? `Pickup time: ${choice.pickupWindow}` : null,
+      choice.pickupWindow ? `Pickup time: ${formatPickupChoice(choice.pickupWindow)}` : null,
       !digital && parsed.data.fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
+      instructions.note ? `Delivery instructions: ${instructions.note}` : null,
       choice.payment ? `Payment: ${methodLabel(choice.payment)}` : null,
       `Total: ${formatMoney(total, product.currency)}`,
       order?.publicRef ? `Order: ${order.publicRef}` : null,
@@ -1107,9 +1123,13 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
   if (fulfillment !== "pickup" && parsed.data.address.length < 4) {
     return { fieldErrors: { address: "Enter an address for delivery or shipping." } };
   }
-  const times = fulfillment === "pickup" ? [...new Set(prepared.flatMap((line) => pickupTimes(line.product.pickupTime)))] : [];
-  const choice = chosenOrderDetails(formData, fulfillment, sharedMethods, times);
+  const schedules = fulfillment === "pickup" ? prepared.map((line) => line.product.pickupTime) : [];
+  const choice = chosenOrderDetails(formData, fulfillment, sharedMethods, schedules);
   if (!choice.ok) return { fieldErrors: choice.fieldErrors };
+  const instructions = deliveryInstructions(formData, fulfillment);
+  if (!instructions.ok) return { fieldErrors: instructions.fieldErrors };
+  const sellerNote = sellerNoteOf(formData);
+  if (!sellerNote.ok) return { fieldErrors: sellerNote.fieldErrors };
   const pickupLocation = fulfillment === "pickup"
     ? [...new Set(prepared.map((line) => line.product.pickupNote.trim()).filter(Boolean))].join("; ")
     : "";
@@ -1163,7 +1183,7 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
       filePassword: "",
       lines: lines.length > 1 ? lines : [],
     });
-    setOrderChoices(orderId, choice.payment, choice.pickupWindow);
+    setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note, sellerNote.note);
     openInteraction({
       kind: "order",
       sourceId: orderId,
@@ -1194,8 +1214,10 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
       parsed.data.phone ? `Phone: ${parsed.data.phone}` : null,
       `Fulfillment: ${fulfillment}`,
       pickupLocation ? `Pickup location: ${pickupLocation}` : null,
-      choice.pickupWindow ? `Pickup time: ${choice.pickupWindow}` : null,
+      choice.pickupWindow ? `Pickup time: ${formatPickupChoice(choice.pickupWindow)}` : null,
       fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
+      instructions.note ? `Delivery instructions: ${instructions.note}` : null,
+      sellerNote.note ? `Note to seller: ${sellerNote.note}` : null,
       choice.payment ? `Payment: ${methodLabel(choice.payment)}` : null,
       `Items: ${formatMoney(merchandise, first.product.currency)}`,
       `Shipping: ${shipping === 0 ? "Free" : formatMoney(shipping, first.product.currency)}`,

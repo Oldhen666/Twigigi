@@ -302,6 +302,7 @@ export type FulfillmentOption = {
   freeOverCents?: number | null;
   location?: string;
   times?: string[];
+  schedule?: string;
 };
 
 export function pickupTimes(value: string) {
@@ -371,6 +372,7 @@ export function fulfillmentOptions(product: Pick<
       feeCents: 0,
       location: quote ? "" : product.pickupNote.trim(),
       times: quote ? [] : pickupTimes(product.pickupTime),
+      schedule: quote ? "" : product.pickupTime,
     });
   }
   if (product.deliveryEnabled) {

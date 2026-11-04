@@ -1,50 +1,31 @@
 "use client";
 
+import { PickupCalendar } from "@/components/pickup-calendar";
 import { methodLabel, safeCardUrl, safeEmail, safePhone, safeVenmo } from "@/lib/payments";
 import { buttonClass } from "@/components/ui";
 
 export function PickupFacts({
   location,
-  times,
+  schedules,
+  summary,
   selectedTime,
   onTime,
+  error = "",
 }: {
   location: string;
-  times: string[];
+  schedules: string[];
+  summary: string[];
   selectedTime: string;
   onTime: (value: string) => void;
+  error?: string;
 }) {
   return (
-    <div className="mt-2 space-y-3 pl-6 text-sm">
+    <div className="mt-2 space-y-3 pl-6 text-sm" onClick={(event) => event.stopPropagation()}>
       <p>
         <span className="block text-xs font-medium uppercase tracking-[0.14em] text-muted">Pickup location</span>
         <span className="mt-1 block">{location || "The seller has not added a pickup location."}</span>
       </p>
-      <div>
-        <span className="block text-xs font-medium uppercase tracking-[0.14em] text-muted">Pickup time</span>
-        {times.length > 1 ? (
-          <div className="mt-1 space-y-1">
-            {times.map((time) => (
-              <label key={time} className="flex items-start gap-2">
-                <input
-                  type="radio"
-                  name="pickupTime"
-                  value={time}
-                  checked={selectedTime === time}
-                  onChange={() => onTime(time)}
-                  className="mt-1"
-                />
-                <span>{time}</span>
-              </label>
-            ))}
-          </div>
-        ) : (
-          <>
-            <span className="mt-1 block">{times[0] || "The seller has not added a pickup time."}</span>
-            <input type="hidden" name="pickupTime" value={times[0] ?? ""} />
-          </>
-        )}
-      </div>
+      <PickupCalendar schedules={schedules} summary={summary} selectedTime={selectedTime} onTime={onTime} error={error} />
     </div>
   );
 }

@@ -6,9 +6,11 @@ import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { placeCartOrder } from "@/lib/actions";
 import { readCart, writeCart, type CartItem } from "@/components/add-to-cart";
 import { PayChoice, PickupFacts } from "@/components/checkout-choices";
-import { buttonClass, inputClass, labelClass } from "@/components/ui";
+import { useKeepFormValues } from "@/components/keep-form-values";
+import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { cartFulfillmentCharge, formatMoney, type FulfillmentOption } from "@/lib/format";
-import { methodsForFulfillment } from "@/lib/payments";
+import { methodLabel, methodsForFulfillment } from "@/lib/payments";
+import { formatPickupChoice } from "@/lib/pickup";
 import type { FormState, ProductOption, ProductVariant } from "@/lib/types";
 import { resolveSelection } from "@/lib/variants";
 
@@ -54,7 +56,11 @@ export function CartCheckout({
   const [fulfillment, setFulfillment] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [pickupTime, setPickupTime] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [review, setReview] = useState<OrderReview | null>(null);
   const saved = useRef<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const rememberForm = useKeepFormValues(formRef, state, pending);
   const byId = useMemo(() => new Map(catalog.map((item) => [item.id, item])), [catalog]);
 
   useEffect(() => {
@@ -110,12 +116,18 @@ export function CartCheckout({
   }, [chosen, fulfillment]);
 
   const methodKey = payMethods.join("|");
-  const timeKey = (chosen?.times ?? []).join("|");
+  const pickupSchedules = available.map((row) => row.product?.fulfillments.find((item) => item.id === "pickup")?.schedule ?? "");
+  const pickupSummaries = available.map((row) => row.product?.fulfillments.find((item) => item.id === "pickup")?.times ?? []);
+  const pickupSummary = pickupSummaries.every((list) => list.join("|") === (pickupSummaries[0]?.join("|") ?? "")) ? pickupSummaries[0] ?? [] : [];
   useEffect(() => {
     setPaymentMethod((current) => (payMethods.length === 1 ? payMethods[0] : payMethods.includes(current) ? current : ""));
-    const times = chosen?.id === "pickup" ? chosen.times ?? [] : [];
-    setPickupTime((current) => (times.length <= 1 ? times[0] ?? "" : times.includes(current) ? current : ""));
-  }, [methodKey, chosen?.id, timeKey]);
+  }, [methodKey]);
+  useEffect(() => {
+    if (chosen?.id !== "pickup") setPickupTime("");
+  }, [chosen?.id]);
+  useEffect(() => {
+    if (state.error || state.fieldErrors) setConfirming(false);
+  }, [state]);
 
   if (!ready) return <p className="mt-6 text-sm text-muted">Loading…</p>;
   if (items.length === 0) {
@@ -131,10 +143,12 @@ export function CartCheckout({
 
   return (
     <form
+      ref={formRef}
       action={action}
       noValidate
       className="mt-6 space-y-4"
-      onSubmit={() => {
+      onSubmit={(event) => {
+        rememberForm(event.currentTarget);
         saved.current = localStorage.getItem(`twigigi-cart:${publicId}`);
         localStorage.removeItem(`twigigi-cart:${publicId}`);
       }}
@@ -212,16 +226,17 @@ export function CartCheckout({
                 {option.id === "pickup" && fulfillment === option.id ? (
                   <PickupFacts
                     location={option.location ?? ""}
-                    times={option.times ?? []}
+                    schedules={pickupSchedules}
+                    summary={pickupSummary}
                     selectedTime={pickupTime}
                     onTime={setPickupTime}
+                    error={state.fieldErrors?.pickupTime}
                   />
                 ) : null}
               </label>
             ))}
           </div>
           {state.fieldErrors?.fulfillment ? <p className="mt-1 text-sm text-danger">{state.fieldErrors.fulfillment}</p> : null}
-          {state.fieldErrors?.pickupTime ? <p className="mt-1 text-sm text-danger">{state.fieldErrors.pickupTime}</p> : null}
         </fieldset>
       )}
 
@@ -264,14 +279,30 @@ export function CartCheckout({
         <input type="hidden" name="phone" value="" />
       )}
       {chosen && chosen.id !== "pickup" ? (
-        <label className="block">
-          <span className={labelClass}>Address<span className="text-danger"> *</span></span>
-          <textarea name="address" rows={3} autoComplete="street-address" className={`${inputClass} h-auto py-3`} />
-          {state.fieldErrors?.address ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.address}</span> : null}
-        </label>
+        <>
+          <label className="block">
+            <span className={labelClass}>Address<span className="text-danger"> *</span></span>
+            <textarea name="address" rows={3} autoComplete="street-address" className={`${inputClass} h-auto py-3`} />
+            {state.fieldErrors?.address ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.address}</span> : null}
+          </label>
+          {chosen.id === "shipping" ? (
+            <label className="block">
+              <span className={labelClass}>Delivery instructions (optional)</span>
+              <input name="deliveryNote" maxLength={200} placeholder="Gate code, buzzer, where to leave it" className={inputClass} />
+              {state.fieldErrors?.deliveryNote ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.deliveryNote}</span> : null}
+            </label>
+          ) : null}
+        </>
       ) : (
         <input type="hidden" name="address" value="" />
       )}
+      {chosen ? (
+        <label className="block">
+          <span className={labelClass}>Note to seller (optional)</span>
+          <textarea name="sellerNote" rows={3} maxLength={400} placeholder="Anything the seller should know" className={`${inputClass} h-auto py-3`} />
+          {state.fieldErrors?.sellerNote ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.sellerNote}</span> : null}
+        </label>
+      ) : null}
 
       {total != null ? (
         <div className="space-y-1 text-sm">
@@ -287,11 +318,65 @@ export function CartCheckout({
           <p className="text-muted">Shipping is calculated once for everything from {sellerName}.</p>
         </div>
       ) : null}
-      <button disabled={pending || available.length === 0 || !chosen || needsTransfer} className={`${buttonClass} h-14 w-full rounded-2xl text-lg`}>
-        {pending ? "Sending…" : "Place order"}
+      <button
+        type="button"
+        disabled={pending || available.length === 0 || !chosen || needsTransfer || total == null}
+        onClick={openReview}
+        className={`${buttonClass} h-14 w-full rounded-2xl text-lg`}
+      >
+        Place order
       </button>
+      {confirming && review && chosen && total != null ? (
+        <OrderReviewDialog
+          sellerName={sellerName}
+          lines={available.map((row) => ({
+            title: row.product?.title ?? "Twig",
+            label: row.selection?.label ?? "",
+            quantity: row.item.quantity,
+            amount: formatMoney((row.selection?.priceCents ?? 0) * row.item.quantity, currency),
+          }))}
+          fulfillment={chosen.label}
+          pickup={chosen.id === "pickup"}
+          pickupLocation={chosen.location ?? ""}
+          pickupTime={pickupTime ? formatPickupChoice(pickupTime) : ""}
+          address={review.address}
+          deliveryNote={chosen.id === "shipping" ? review.deliveryNote : ""}
+          sellerNote={review.sellerNote}
+          payment={paymentMethod ? methodLabel(paymentMethod) : ""}
+          merchandise={formatMoney(merchandise, currency)}
+          shipping={chosen.id === "pickup" ? "" : fee === 0 ? "Free" : formatMoney(fee, currency)}
+          total={formatMoney(total, currency)}
+          gaps={reviewGaps(review, {
+            requireName,
+            requirePhone,
+            pickup: chosen.id === "pickup",
+            needsAddress: chosen.id !== "pickup",
+            needsPayment: payMethods.length > 0,
+            paymentMethod,
+            pickupTime,
+          })}
+          pending={pending}
+          onClose={() => setConfirming(false)}
+        />
+      ) : null}
     </form>
   );
+
+  function openReview() {
+    const form = formRef.current;
+    if (!form) return;
+    const data = new FormData(form);
+    const read = (key: string) => String(data.get(key) ?? "").trim();
+    setReview({
+      name: read("name"),
+      email: read("email"),
+      phone: read("phone"),
+      address: read("address"),
+      deliveryNote: read("deliveryNote"),
+      sellerNote: read("sellerNote"),
+    });
+    setConfirming(true);
+  }
 }
 
 function sharedFulfillment(lists: FulfillmentOption[][]) {
@@ -305,4 +390,130 @@ function changeQuantity(items: CartItem[], target: CartItem, quantity: number, r
 
 function firstText(items: CartCatalogItem[], pick: (item: CartCatalogItem) => string) {
   return items.map(pick).find((value) => value.trim()) ?? "";
+}
+
+type OrderReview = {
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  deliveryNote: string;
+  sellerNote: string;
+};
+
+function reviewGaps(review: OrderReview, rules: {
+  requireName: boolean;
+  requirePhone: boolean;
+  pickup: boolean;
+  needsAddress: boolean;
+  needsPayment: boolean;
+  paymentMethod: string;
+  pickupTime: string;
+}) {
+  const gaps: string[] = [];
+  if (rules.requireName && review.name.length < 2) gaps.push("Add your name.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(review.email)) gaps.push("Add a valid email.");
+  if (rules.requirePhone && review.phone.length < 7) gaps.push("Add your phone number.");
+  if (rules.needsAddress && review.address.length < 4) gaps.push("Add the address.");
+  if (rules.pickup && !rules.pickupTime) gaps.push("Choose a pickup time.");
+  if (rules.needsPayment && !rules.paymentMethod) gaps.push("Choose how you will pay.");
+  if (review.sellerNote.length > 400) gaps.push("Keep the note under 400 characters.");
+  return gaps;
+}
+
+function OrderReviewDialog({
+  sellerName,
+  lines,
+  fulfillment,
+  pickup,
+  pickupLocation,
+  pickupTime,
+  address,
+  deliveryNote,
+  sellerNote,
+  payment,
+  merchandise,
+  shipping,
+  total,
+  gaps,
+  pending,
+  onClose,
+}: {
+  sellerName: string;
+  lines: { title: string; label: string; quantity: number; amount: string }[];
+  fulfillment: string;
+  pickup: boolean;
+  pickupLocation: string;
+  pickupTime: string;
+  address: string;
+  deliveryNote: string;
+  sellerNote: string;
+  payment: string;
+  merchandise: string;
+  shipping: string;
+  total: string;
+  gaps: string[];
+  pending: boolean;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !pending) onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, pending]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" onClick={() => { if (!pending) onClose(); }}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="order-review-title"
+        className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[28px] bg-card p-5 shadow-[0_24px_80px_rgba(70,48,16,0.18)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 id="order-review-title" className="font-serif text-3xl">Confirm your order</h2>
+        <p className="mt-1 text-sm text-muted">Check the payment and details before this goes to {sellerName}.</p>
+        <div className="mt-4 space-y-2 text-sm">
+          {lines.map((line) => (
+            <p key={`${line.title}-${line.label}`} className="flex justify-between gap-3">
+              <span>{line.title}{line.label ? ` · ${line.label}` : ""} × {line.quantity}</span>
+              <span>{line.amount}</span>
+            </p>
+          ))}
+        </div>
+        <dl className="mt-4 space-y-2 border-t border-line pt-4 text-sm">
+          <div className="flex justify-between gap-3"><dt className="text-muted">Receive it</dt><dd>{fulfillment}</dd></div>
+          {pickup ? (
+            <>
+              <div><dt className="text-muted">Pickup location</dt><dd>{pickupLocation || "The seller has not added a pickup location."}</dd></div>
+              <div><dt className="text-muted">Pickup time</dt><dd>{pickupTime || "Not chosen"}</dd></div>
+            </>
+          ) : (
+            <div><dt className="text-muted">Address</dt><dd>{address || "Not entered"}</dd></div>
+          )}
+          {deliveryNote ? <div><dt className="text-muted">Delivery instructions</dt><dd>{deliveryNote}</dd></div> : null}
+          {sellerNote ? <div><dt className="text-muted">Note to seller</dt><dd>{sellerNote}</dd></div> : null}
+          <div className="flex justify-between gap-3"><dt className="text-muted">Pay by</dt><dd>{payment || "Not chosen"}</dd></div>
+          <div className="flex justify-between gap-3"><dt className="text-muted">Items</dt><dd>{merchandise}</dd></div>
+          {shipping ? <div className="flex justify-between gap-3"><dt className="text-muted">Shipping</dt><dd>{shipping}</dd></div> : null}
+          <div className="flex justify-between gap-3 font-serif text-2xl text-forest"><dt>Total</dt><dd>{total}</dd></div>
+        </dl>
+        {gaps.length > 0 ? (
+          <ul className="mt-4 space-y-1 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">
+            {gaps.map((gap) => <li key={gap}>{gap}</li>)}
+          </ul>
+        ) : (
+          <p className="mt-4 text-sm text-muted">You pay {sellerName} directly. Twigigi does not take the payment.</p>
+        )}
+        <div className="mt-5 flex gap-2">
+          <button type="button" disabled={pending} onClick={onClose} className={`${ghostClass} flex-1`}>Back</button>
+          <button type="submit" disabled={pending || gaps.length > 0} className={`${buttonClass} flex-1`}>
+            {pending ? "Sending…" : "Confirm order"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

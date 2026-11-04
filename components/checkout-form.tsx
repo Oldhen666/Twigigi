@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useActionState } from "react";
+import { useKeepFormValues } from "@/components/keep-form-values";
 import type { FulfillmentOption } from "@/lib/format";
 import { formatMoney, shippingCharge } from "@/lib/format";
 import { methodsForFulfillment } from "@/lib/payments";
@@ -65,6 +66,7 @@ export function CheckoutForm({
   const formRef = useRef<HTMLFormElement>(null);
   const [uploadKey, setUploadKey] = useState(0);
   const [hideErrors, setHideErrors] = useState(false);
+  const rememberForm = useKeepFormValues(formRef, state, pending);
   function clearAll() {
     formRef.current?.reset();
     setQuantity(Math.min(Math.max(initialQuantity, 1), Math.max(quantityCap, 1)));
@@ -84,18 +86,27 @@ export function CheckoutForm({
   const payFulfillment = mode === "file" || !(fulfillment === "delivery" || fulfillment === "shipping") ? "pickup" : fulfillment;
   const payMethods = payments ? methodsForFulfillment(payments.methods, payFulfillment) : [];
   const methodKey = payMethods.join("|");
-  const timeKey = (selected?.times ?? []).join("|");
   useEffect(() => {
     setPaymentMethod((current) => (payMethods.length === 1 ? payMethods[0] : payMethods.includes(current) ? current : ""));
-    const times = selected?.id === "pickup" ? selected.times ?? [] : [];
-    setPickupTime((current) => (times.length <= 1 ? times[0] ?? "" : times.includes(current) ? current : ""));
-  }, [methodKey, selected?.id, timeKey]);
+  }, [methodKey]);
+  useEffect(() => {
+    if (selected?.id !== "pickup") setPickupTime("");
+  }, [selected?.id]);
   const fieldErrors = hideErrors || pending ? undefined : state.fieldErrors;
   const formError = hideErrors || pending ? undefined : state.error;
   const needsTransfer = mode === "buy" && payFulfillment !== "pickup" && payMethods.length === 0;
 
   return (
-    <form ref={formRef} action={formAction} noValidate className="space-y-4" onSubmit={() => setHideErrors(false)}>
+    <form
+      ref={formRef}
+      action={formAction}
+      noValidate
+      className="space-y-4"
+      onSubmit={(event) => {
+        setHideErrors(false);
+        rememberForm(event.currentTarget);
+      }}
+    >
       <input type="hidden" name="productId" value={productId} />
       {variantKey ? <input type="hidden" name="variant" value={variantKey} /> : null}
       {variantLabel ? <p className="text-sm text-muted">{variantLabel}</p> : null}
@@ -155,16 +166,17 @@ export function CheckoutForm({
                 {fulfillment === option.id && option.id === "pickup" ? (
                   <PickupFacts
                     location={option.location ?? ""}
-                    times={option.times ?? []}
+                    schedules={[option.schedule ?? ""]}
+                    summary={option.times ?? []}
                     selectedTime={pickupTime}
                     onTime={setPickupTime}
+                    error={fieldErrors?.pickupTime}
                   />
                 ) : null}
               </label>
             ))}
           </div>
           {fieldErrors?.fulfillment ? <p className="mt-1 text-sm text-danger">{fieldErrors.fulfillment}</p> : null}
-          {fieldErrors?.pickupTime ? <p className="mt-1 text-sm text-danger">{fieldErrors.pickupTime}</p> : null}
         </fieldset>
       ) : null}
 
@@ -185,9 +197,16 @@ export function CheckoutForm({
       {mode === "file" ? <p className="text-sm text-muted">Next you pay the seller by card. The file is emailed after they confirm the payment.</p> : null}
 
       {mode === "buy" && fulfillment !== "pickup" ? (
-        <Field label="Address" name="address" required error={fieldErrors?.address}>
-          <textarea name="address" rows={3} autoComplete="street-address" aria-required="true" className={`${inputClass} h-auto py-3`} />
-        </Field>
+        <>
+          <Field label="Address" name="address" required error={fieldErrors?.address}>
+            <textarea name="address" rows={3} autoComplete="street-address" aria-required="true" className={`${inputClass} h-auto py-3`} />
+          </Field>
+          {fulfillment === "shipping" ? (
+            <Field label="Delivery instructions (optional)" name="deliveryNote" error={fieldErrors?.deliveryNote}>
+              <input name="deliveryNote" maxLength={200} placeholder="Gate code, buzzer, where to leave it" className={inputClass} />
+            </Field>
+          ) : null}
+        </>
       ) : null}
 
       {mode === "quote" && quoteForm ? (
