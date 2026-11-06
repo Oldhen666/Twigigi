@@ -91,6 +91,8 @@ export function BuyOfferFields({
   );
   const [cardUrl, setCardUrl] = useState(seed?.fields.cardPaymentUrl ?? product?.cardPaymentUrl ?? "");
   const [interacEmail, setInteracEmail] = useState(seed?.fields.interacEmail ?? product?.interacEmail ?? "");
+  const [interacQuestion, setInteracQuestion] = useState(seed?.fields.interacQuestion ?? product?.interacQuestion ?? "");
+  const [interacPassword, setInteracPassword] = useState(seed?.fields.interacPassword ?? product?.interacPassword ?? "");
   const [venmoUsername, setVenmoUsername] = useState(seed?.fields.venmoUsername ?? product?.venmoUsername ?? "");
   const [zelleMode, setZelleMode] = useState<"phone" | "email">(() => {
     if (seed) return seed.fields.zelleMode === "email" ? "email" : "phone";
@@ -123,7 +125,7 @@ export function BuyOfferFields({
       return;
     }
     notify.current?.();
-  }, [price, unlimited, samePrice, options, variants, enabled, variable, pickup, ship, methods, cardUrl, interacEmail, venmoUsername, zelleContact, zelleMode, deliveryArea, sellerContact, sellerMode]);
+  }, [price, unlimited, samePrice, options, variants, enabled, variable, pickup, ship, methods, cardUrl, interacEmail, interacQuestion, interacPassword, venmoUsername, zelleContact, zelleMode, deliveryArea, sellerContact, sellerMode]);
   useEffect(() => {
     const allowed = new Set((digital ? paymentsForDigitalFile() : paymentsForCountry(payCountry)).map((method) => method.id));
     setMethods((current) => {
@@ -460,6 +462,8 @@ export function BuyOfferFields({
           methods={methods}
           cardUrl={cardUrl}
           interacEmail={interacEmail}
+          interacQuestion={interacQuestion}
+          interacPassword={interacPassword}
           venmoUsername={venmoUsername}
           zelleMode={zelleMode}
           zelleContact={zelleContact}
@@ -476,6 +480,8 @@ export function BuyOfferFields({
           onToggle={toggleMethod}
           onCardUrl={setCardUrl}
           onInteracEmail={setInteracEmail}
+          onInteracQuestion={setInteracQuestion}
+          onInteracPassword={setInteracPassword}
           onVenmoUsername={setVenmoUsername}
           onZelleMode={chooseZelle}
           onZelleContact={setZelleContact}
@@ -492,6 +498,8 @@ function PaymentChoices({
   methods,
   cardUrl,
   interacEmail,
+  interacQuestion,
+  interacPassword,
   venmoUsername,
   zelleMode,
   zelleContact,
@@ -508,6 +516,8 @@ function PaymentChoices({
   onToggle,
   onCardUrl,
   onInteracEmail,
+  onInteracQuestion,
+  onInteracPassword,
   onVenmoUsername,
   onZelleMode,
   onZelleContact,
@@ -517,6 +527,8 @@ function PaymentChoices({
   methods: string[];
   cardUrl: string;
   interacEmail: string;
+  interacQuestion: string;
+  interacPassword: string;
   venmoUsername: string;
   zelleMode: "phone" | "email";
   zelleContact: string;
@@ -533,6 +545,8 @@ function PaymentChoices({
   onToggle: (id: string) => void;
   onCardUrl: (value: string) => void;
   onInteracEmail: (value: string) => void;
+  onInteracQuestion: (value: string) => void;
+  onInteracPassword: (value: string) => void;
   onVenmoUsername: (value: string) => void;
   onZelleMode: (mode: "phone" | "email") => void;
   onZelleContact: (value: string) => void;
@@ -594,7 +608,7 @@ function PaymentChoices({
             {method.label}
           </label>
           {method.id === "interac" && interacOn ? (
-            <div className="mt-3 pl-8">
+            <div className="mt-3 space-y-3 pl-8">
               <Field label="Email" required error={interacError}>
                 <input
                   ref={interacRef}
@@ -605,6 +619,27 @@ function PaymentChoices({
                   placeholder="name@email.com (email)"
                   className={inputClass}
                 />
+              </Field>
+              <Field label="Security question">
+                <input
+                  name="interacQuestion"
+                  value={interacQuestion}
+                  onChange={(event) => onInteracQuestion(event.target.value)}
+                  maxLength={120}
+                  placeholder="If applicable"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Password">
+                <input
+                  name="interacPassword"
+                  value={interacPassword}
+                  onChange={(event) => onInteracPassword(event.target.value)}
+                  maxLength={80}
+                  placeholder="If applicable"
+                  className={inputClass}
+                />
+                <span className="mt-1 block text-sm text-muted">If applicable. Buyers use this question and password to deposit the e-Transfer.</span>
               </Field>
             </div>
           ) : null}
@@ -651,7 +686,13 @@ function PaymentChoices({
       ))}
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <input ref={methodsRef} type="hidden" name="paymentMethods" value={JSON.stringify(methods)} />
-      {interacOn ? null : <input ref={interacRef} type="hidden" name="interacEmail" value={interacEmail} />}
+      {interacOn ? null : (
+        <>
+          <input ref={interacRef} type="hidden" name="interacEmail" value={interacEmail} />
+          <input type="hidden" name="interacQuestion" value={interacQuestion} />
+          <input type="hidden" name="interacPassword" value={interacPassword} />
+        </>
+      )}
       {venmoOn ? null : <input ref={venmoRef} type="hidden" name="venmoUsername" value={venmoUsername} />}
       {zelleOn ? null : (
         <>
@@ -812,7 +853,7 @@ const DAY_SHORT: Record<(typeof DAY_NAMES)[number], string> = {
   Sunday: "Sun",
 };
 
-type TimeMode = "" | "before" | "after" | "between";
+type TimeMode = "anytime" | "before" | "after" | "between";
 
 type PickupSlot = {
   key: string;
@@ -916,20 +957,24 @@ function PickupTimeSlot({ slot, onChange }: { slot: PickupSlot; onChange: (patch
           </button>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-1 rounded-full bg-paper-deep p-1">
-        {(["before", "after", "between"] as const).map((item) => (
+      <div className="mt-3 grid grid-cols-4 gap-1 rounded-full bg-paper-deep p-1">
+        {(["before", "after", "between", "anytime"] as const).map((item) => (
           <button
             key={item}
             type="button"
             aria-pressed={slot.mode === item}
-            onClick={() => onChange({ mode: slot.mode === item ? "" : item })}
-            className={`h-10 rounded-full text-sm font-medium ${slot.mode === item ? "bg-forest text-card" : "text-muted"}`}
+            onClick={() => onChange({ mode: item })}
+            className={`flex h-12 items-center justify-center rounded-full px-1 text-xs font-medium leading-tight sm:text-sm ${slot.mode === item ? "bg-forest text-card" : "text-muted"}`}
           >
-            {item[0].toUpperCase() + item.slice(1)}
+            {item === "anytime" ? (
+              <span>Anytime<span className="mt-0.5 block text-[10px] font-normal sm:text-xs">8am - 8pm</span></span>
+            ) : (
+              item[0].toUpperCase() + item.slice(1)
+            )}
           </button>
         ))}
       </div>
-      {slot.mode ? (
+      {slot.mode !== "anytime" ? (
         <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
           <input
             type="time"
@@ -954,7 +999,7 @@ function PickupTimeSlot({ slot, onChange }: { slot: PickupSlot; onChange: (patch
 }
 
 function blankSlot(key: string): PickupSlot {
-  return { key, days: [], mode: "", start: "", end: "", custom: "" };
+  return { key, days: [], mode: "anytime", start: "", end: "", custom: "" };
 }
 
 function slotsFrom(value: string): PickupSlot[] {
@@ -985,6 +1030,7 @@ function composePickupTime(days: string[], mode: TimeMode, start: string, end: s
   if (phrase) parts.push(phrase);
   const from = formatClock(start);
   const to = formatClock(end);
+  if (mode === "anytime" && phrase) parts.push("anytime (8am - 8pm)");
   if (mode === "before" && from) parts.push(`before ${from}`);
   if (mode === "after" && from) parts.push(`after ${from}`);
   if (mode === "between" && from && to) parts.push(`between ${from} and ${to}`);
@@ -1005,17 +1051,18 @@ function dayPhrase(days: string[]) {
 
 function parsePickupTime(value: string) {
   const trimmed = value.trim();
-  const empty = { days: [] as string[], mode: "" as TimeMode, start: "", end: "", custom: "" };
+  const empty = { days: [] as string[], mode: "anytime" as TimeMode, start: "", end: "", custom: "" };
   if (!trimmed) return empty;
   let rest = trimmed;
-  let mode: TimeMode = "";
+  let mode: TimeMode = "anytime";
   let start = "";
   let end = "";
   const between = rest.match(/,\s*between\s+(\d{1,2}:\d{2}\s*(?:AM|PM)?)\s+and\s+(\d{1,2}:\d{2}\s*(?:AM|PM)?)\s*$/i);
   const before = rest.match(/,\s*before\s+(\d{1,2}:\d{2}\s*(?:AM|PM)?)\s*$/i);
   const after = rest.match(/,\s*after\s+(\d{1,2}:\d{2}\s*(?:AM|PM)?)\s*$/i);
+  const anytime = rest.match(/,\s*anytime(?:\s*\([^)]*\))?\s*$/i);
   const range = rest.match(/,\s*(\d{1,2}:\d{2})\s*[–-]\s*(\d{1,2}:\d{2})\s*(AM|PM)?\s*$/i);
-  const hit = between ?? before ?? after ?? range;
+  const hit = between ?? before ?? after ?? anytime ?? range;
   if (between) {
     mode = "between";
     start = to24(between[1]);
@@ -1026,6 +1073,8 @@ function parsePickupTime(value: string) {
   } else if (after) {
     mode = "after";
     start = to24(after[1]);
+  } else if (anytime) {
+    mode = "anytime";
   } else if (range) {
     mode = "between";
     const suffix = range[3] ?? "";
@@ -1037,7 +1086,7 @@ function parsePickupTime(value: string) {
   if (!days) return { ...empty, custom: trimmed };
   if ((mode === "before" || mode === "after") && !start) return { ...empty, custom: trimmed };
   if (mode === "between" && (!start || !end)) return { ...empty, custom: trimmed };
-  return { days, mode, start, end, custom: "" };
+  return { days, mode: mode || "anytime", start, end, custom: "" };
 }
 
 function expandDays(value: string) {

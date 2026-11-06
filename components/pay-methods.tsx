@@ -5,6 +5,8 @@ export function PayMethods({
   methods,
   cardPaymentUrl,
   interacEmail = "",
+  interacQuestion = "",
+  interacPassword = "",
   venmoUsername = "",
   zelleMode = "phone",
   zelleContact = "",
@@ -15,6 +17,8 @@ export function PayMethods({
   methods: string[];
   cardPaymentUrl: string;
   interacEmail?: string;
+  interacQuestion?: string;
+  interacPassword?: string;
   venmoUsername?: string;
   zelleMode?: "phone" | "email";
   zelleContact?: string;
@@ -34,7 +38,8 @@ export function PayMethods({
     <div className="mt-4">
       {labels.length > 0 ? (
         <>
-          <p className="text-sm font-medium">Pay the seller</p>
+          <p className="text-sm font-medium">Payment method</p>
+
           <ul className="mt-2 flex flex-wrap gap-2">
             {labels.map((label) => (
               <li key={label} className="rounded-full bg-moss px-3 py-1 text-sm text-forest">
@@ -52,6 +57,12 @@ export function PayMethods({
             {email}
           </a>
         </p>
+      ) : null}
+      {email && (interacQuestion || interacPassword) ? (
+        <div className="mt-2 text-sm">
+          {interacQuestion ? <p>Security question: {interacQuestion}</p> : null}
+          {interacPassword ? <p>Password: {interacPassword}</p> : null}
+        </div>
       ) : null}
       {venmo ? <p className="mt-3 text-sm">Venmo: @{venmo}</p> : null}
       {zelle ? (

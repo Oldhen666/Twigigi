@@ -9,13 +9,16 @@ export function ReviewSeller({
   kind,
   productTitle,
   reviewed,
+  enabled = true,
 }: {
   interactionId: string;
   kind: "order" | "quote";
   productTitle: string;
   reviewed: boolean;
+  enabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  if (!enabled) return null;
   if (reviewed) return <p className="mt-3 text-sm text-muted">Reviewed</p>;
   if (!open) {
     return (

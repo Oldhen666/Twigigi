@@ -17,6 +17,7 @@ import {
   type OwnerKind,
 } from "@/lib/ledger";
 import { MARKETPLACE_GMV_SQL, PLATFORM_REVENUE_SQL, SELLER_SALES_SQL, paymentFlowOf } from "@/lib/order-money";
+import { fulfillmentDone, orderCanComplete, paymentNeedsConfirm } from "@/lib/order-flow";
 import { readStoredFileLinks } from "@/lib/files";
 import { parseQuoteForm } from "@/lib/quote-form";
 import { DEACTIVATION_GRACE_DAYS, RESERVED_USERNAMES, addDays, isPrivateUsername, slugify } from "@/lib/format";
@@ -246,6 +247,8 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "payment_methods", "payment_methods TEXT NOT NULL DEFAULT '[]'");
   add("products", "card_payment_url", "card_payment_url TEXT NOT NULL DEFAULT ''");
   add("products", "interac_email", "interac_email TEXT NOT NULL DEFAULT ''");
+  add("products", "interac_question", "interac_question TEXT NOT NULL DEFAULT ''");
+  add("products", "interac_password", "interac_password TEXT NOT NULL DEFAULT ''");
   add("products", "venmo_username", "venmo_username TEXT NOT NULL DEFAULT ''");
   add("products", "zelle_mode", "zelle_mode TEXT NOT NULL DEFAULT 'phone'");
   add("products", "zelle_contact", "zelle_contact TEXT NOT NULL DEFAULT ''");
@@ -262,6 +265,29 @@ function ensureColumns(database: DatabaseSync) {
   add("orders", "pickup_window", "pickup_window TEXT NOT NULL DEFAULT ''");
   add("orders", "delivery_note", "delivery_note TEXT NOT NULL DEFAULT ''");
   add("orders", "buyer_note", "buyer_note TEXT NOT NULL DEFAULT ''");
+  add("orders", "review_state", "review_state TEXT NOT NULL DEFAULT 'requested'");
+  add("orders", "proposal_note", "proposal_note TEXT NOT NULL DEFAULT ''");
+  add("orders", "proposal_cents", "proposal_cents INTEGER NOT NULL DEFAULT 0");
+  add("orders", "fulfillment_state", "fulfillment_state TEXT NOT NULL DEFAULT ''");
+  add("orders", "ready_at", "ready_at TEXT");
+  add("orders", "buyer_received_at", "buyer_received_at TEXT");
+  add("orders", "interac_question", "interac_question TEXT NOT NULL DEFAULT ''");
+  add("orders", "interac_password", "interac_password TEXT NOT NULL DEFAULT ''");
+  database.exec(`
+    UPDATE orders SET review_state = 'accepted'
+    WHERE review_state = 'requested' AND status IN ('paid', 'fulfilled');
+    UPDATE orders SET review_state = 'declined'
+    WHERE status = 'canceled' AND review_state = 'requested';
+    UPDATE orders SET
+      fulfillment_state = CASE WHEN fulfillment = 'pickup' THEN 'ready' ELSE 'sent' END,
+      ready_at = COALESCE(NULLIF(ready_at, ''), NULLIF(paid_at, ''), created_at)
+    WHERE status = 'fulfilled' AND (fulfillment_state IS NULL OR fulfillment_state = '');
+    UPDATE orders SET
+      fulfillment_state = 'sent',
+      ready_at = COALESCE(NULLIF(ready_at, ''), NULLIF(file_sent_at, ''), NULLIF(paid_at, ''), created_at)
+    WHERE fulfillment = 'digital' AND file_sent_at IS NOT NULL AND file_sent_at != ''
+      AND (fulfillment_state IS NULL OR fulfillment_state = '');
+  `);
   add("products", "deactivates_at", "deactivates_at TEXT");
   add("products", "deactivated_at", "deactivated_at TEXT");
   add("products", "billing_started_at", "billing_started_at TEXT");
@@ -744,6 +770,8 @@ function mapProduct(row: Row): Product {
     paymentMethods: parseStoredMethods(str(row.payment_methods)),
     cardPaymentUrl: str(row.card_payment_url),
     interacEmail: str(row.interac_email),
+    interacQuestion: str(row.interac_question),
+    interacPassword: str(row.interac_password),
     venmoUsername: str(row.venmo_username),
     zelleMode: row.zelle_mode === "email" ? "email" : "phone",
     zelleContact: str(row.zelle_contact),
@@ -847,6 +875,7 @@ const ORDER_SELECT = `
   SELECT o.*,
     COALESCE(p.title, 'Removed Twig') AS product_title,
     COALESCE(p.slug, '') AS product_slug,
+    COALESCE(p.location, '') AS product_location,
     u.username,
     u.public_id,
     u.display_name
@@ -872,6 +901,7 @@ function mapOrder(row: Row): OrderRecord {
     buyerId: row.buyer_id ? str(row.buyer_id) : null,
     productSlug: str(row.product_slug),
     productTitle: str(row.product_title),
+    productLocation: str(row.product_location),
     username: str(row.username),
     publicId: str(row.public_id),
     displayName: str(row.display_name),
@@ -915,6 +945,14 @@ function mapOrder(row: Row): OrderRecord {
     filePassword: str(row.file_password),
     fileSentAt: row.file_sent_at ? str(row.file_sent_at) : null,
     lines: parseOrderLines(str(row.lines_json)),
+    reviewState: row.review_state === "accepted" || row.review_state === "changes" || row.review_state === "declined" ? row.review_state : "requested",
+    proposalNote: str(row.proposal_note),
+    proposalCents: num(row.proposal_cents),
+    fulfillmentState: row.fulfillment_state === "ready" || row.fulfillment_state === "sent" ? row.fulfillment_state : "",
+    readyAt: row.ready_at ? str(row.ready_at) : null,
+    buyerReceivedAt: row.buyer_received_at ? str(row.buyer_received_at) : null,
+    interacQuestion: str(row.interac_question),
+    interacPassword: str(row.interac_password),
     createdAt: str(row.created_at),
   };
 }
@@ -1451,9 +1489,10 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
       status, images_json, view_count, created_at, updated_at,
       quantity_available, button_label, has_options, same_price, options_json, variants_json,
       require_name, require_email, require_phone, payment_methods, card_payment_url, interac_email,
+      interac_question, interac_password,
       venmo_username, zelle_mode, zelle_contact, seller_contact_mode, seller_contact,
       category_kind, category_group, category, file_links, file_password
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     userId,
@@ -1497,6 +1536,8 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     JSON.stringify(input.paymentMethods),
     input.cardPaymentUrl,
     input.interacEmail,
+    input.interacQuestion,
+    input.interacPassword,
     input.venmoUsername,
     input.zelleMode,
     input.zelleContact,
@@ -1523,6 +1564,7 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
         quantity_available = ?, button_label = ?, has_options = ?, same_price = ?,
         options_json = ?, variants_json = ?, require_name = ?, require_email = ?, require_phone = ?,
         payment_methods = ?, card_payment_url = ?, interac_email = ?,
+        interac_question = ?, interac_password = ?,
         venmo_username = ?, zelle_mode = ?, zelle_contact = ?, seller_contact_mode = ?, seller_contact = ?,
         category_kind = ?, category_group = ?, category = ?,
         file_links = ?, file_password = ?
@@ -1568,6 +1610,8 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
       JSON.stringify(input.paymentMethods),
       input.cardPaymentUrl,
       input.interacEmail,
+      input.interacQuestion,
+      input.interacPassword,
       input.venmoUsername,
       input.zelleMode,
       input.zelleContact,
@@ -1939,6 +1983,10 @@ export function insertOrder(input: {
   );
 }
 
+export function setInteracPrompt(id: string, question: string, password: string) {
+  db.prepare("UPDATE orders SET interac_question = ?, interac_password = ? WHERE id = ?").run(question, password, id);
+}
+
 export function setOrderChoices(id: string, payment: string, pickupWindow: string, deliveryNote = "", buyerNote = "") {
   db.prepare("UPDATE orders SET buyer_payment = ?, pickup_window = ?, delivery_note = ?, buyer_note = ? WHERE id = ?").run(
     payment,
@@ -2039,6 +2087,25 @@ export function listBuyerOrders(userId: string, email: string) {
     userId,
     email.toLowerCase(),
   ).map(mapOrder);
+}
+
+export function soldCount(productId: string) {
+  const row = one(
+    `SELECT COUNT(*) AS n
+     FROM orders
+     WHERE status = 'fulfilled'
+       AND (
+         product_id = ?
+         OR EXISTS (
+           SELECT 1
+           FROM json_each(CASE WHEN json_valid(lines_json) THEN lines_json ELSE '[]' END)
+           WHERE json_extract(value, '$.productId') = ?
+         )
+       )`,
+    productId,
+    productId,
+  );
+  return num(row?.n);
 }
 
 export function likeCount(productId: string) {
@@ -2667,7 +2734,110 @@ export function setDispute(orderId: string, open: boolean) {
 }
 
 export function markFileSent(id: string, userId: string) {
-  db.prepare(`UPDATE orders SET file_sent_at = ? WHERE id = ? AND seller_id = ?`).run(new Date().toISOString(), id, userId);
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE orders SET file_sent_at = ?, fulfillment_state = 'sent', ready_at = COALESCE(NULLIF(ready_at, ''), ?)
+     WHERE id = ? AND seller_id = ?`,
+  ).run(now, now, id, userId);
+}
+
+export function sellerReviewOrder(
+  id: string,
+  sellerId: string,
+  decision: "accept" | "propose" | "decline",
+  note = "",
+  cents = 0,
+) {
+  const order = getOrder(id);
+  if (!order || order.sellerId !== sellerId) return false;
+  if (order.status === "fulfilled" || order.status === "canceled" || order.reviewState === "declined") return false;
+  if (decision === "decline") {
+    const result = db.prepare(`UPDATE orders SET review_state = 'declined', status = 'canceled' WHERE id = ? AND seller_id = ?`).run(id, sellerId);
+    return result.changes > 0;
+  }
+  if (order.reviewState === "accepted" || fulfillmentDone(order.fulfillmentState)) return false;
+  if (decision === "propose") {
+    const result = db
+      .prepare(`UPDATE orders SET review_state = 'changes', proposal_note = ?, proposal_cents = ? WHERE id = ? AND seller_id = ?`)
+      .run(note, cents, id, sellerId);
+    return result.changes > 0;
+  }
+  const result = db
+    .prepare(`UPDATE orders SET review_state = 'accepted', proposal_note = '', proposal_cents = 0 WHERE id = ? AND seller_id = ?`)
+    .run(id, sellerId);
+  return result.changes > 0;
+}
+
+export function acceptOrderProposal(id: string) {
+  const order = getOrder(id);
+  if (!order || order.reviewState !== "changes" || order.status === "canceled") return false;
+  if (order.proposalCents > 0) {
+    const result = db
+      .prepare(`UPDATE orders SET review_state = 'accepted', amount_cents = ?, total = ? WHERE id = ?`)
+      .run(order.proposalCents, order.proposalCents, id);
+    return result.changes > 0;
+  }
+  const result = db.prepare(`UPDATE orders SET review_state = 'accepted' WHERE id = ?`).run(id);
+  return result.changes > 0;
+}
+
+export function confirmOrderPaymentReceived(id: string, sellerId: string) {
+  const order = getOrder(id);
+  if (!order || order.sellerId !== sellerId) return false;
+  if (order.reviewState !== "accepted" || order.status === "canceled" || order.status === "fulfilled") return false;
+  if (order.paymentStatus === "paid" || order.status === "paid") return true;
+  db.prepare(`UPDATE orders SET status = 'paid' WHERE id = ? AND seller_id = ? AND status = 'unpaid'`).run(id, sellerId);
+  beginPaymentProtection(id);
+  return true;
+}
+
+export function markOrderFulfillment(id: string, sellerId: string, state: "ready" | "sent") {
+  const order = getOrder(id);
+  if (!order || order.sellerId !== sellerId) return false;
+  if (order.reviewState !== "accepted" || order.status === "canceled" || order.status === "fulfilled") return false;
+  if (order.fulfillment === "digital") return false;
+  if (state === "ready" && order.fulfillment !== "pickup") return false;
+  if (state === "sent" && !ships(order.fulfillment)) return false;
+  const paid = order.paymentStatus === "paid" || order.status === "paid";
+  if (paymentNeedsConfirm(order.buyerPayment) && !paid) return false;
+  const now = new Date().toISOString();
+  const result = db
+    .prepare(
+      `UPDATE orders SET fulfillment_state = ?, ready_at = COALESCE(NULLIF(ready_at, ''), ?)
+       WHERE id = ? AND seller_id = ?`,
+    )
+    .run(state, now, id, sellerId);
+  return result.changes > 0;
+}
+
+function ships(fulfillment: string) {
+  return fulfillment === "delivery" || fulfillment === "shipping";
+}
+
+export function confirmBuyerReceipt(id: string) {
+  const order = getOrder(id);
+  if (!order || order.status === "canceled" || order.reviewState === "declined") return false;
+  if (!fulfillmentDone(order.fulfillmentState)) return false;
+  const now = new Date().toISOString();
+  db.prepare(`UPDATE orders SET buyer_received_at = COALESCE(NULLIF(buyer_received_at, ''), ?) WHERE id = ?`).run(now, id);
+  db.prepare(`UPDATE interactions SET buyer_confirmed_at = COALESCE(buyer_confirmed_at, ?) WHERE source_id = ?`).run(now, id);
+  return true;
+}
+
+export function completeSellerOrder(id: string, sellerId: string) {
+  const order = getOrder(id);
+  if (!order || order.sellerId !== sellerId || !orderCanComplete(order)) return false;
+  const result = db.prepare(`UPDATE orders SET status = 'fulfilled' WHERE id = ? AND seller_id = ? AND status != 'fulfilled'`).run(id, sellerId);
+  if (result.changes < 1) return false;
+  const interaction = one("SELECT id FROM interactions WHERE source_id = ?", id);
+  if (interaction) {
+    db.prepare(`UPDATE interactions SET seller_confirmed_at = COALESCE(seller_confirmed_at, ?) WHERE id = ?`).run(new Date().toISOString(), str(interaction.id));
+  }
+  return true;
+}
+
+export function hasReview(interactionId: string) {
+  return Boolean(one("SELECT id FROM reviews WHERE interaction_id = ?", interactionId));
 }
 
 export function updateOrderStatus(id: string, userId: string, status: OrderStatus) {

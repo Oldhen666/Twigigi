@@ -14,6 +14,8 @@ type PayDetails = {
   methods: string[];
   cardPaymentUrl: string;
   interacEmail: string;
+  interacQuestion?: string;
+  interacPassword?: string;
   venmoUsername: string;
   zelleMode: "phone" | "email";
   zelleContact: string;
@@ -187,6 +189,8 @@ export function CheckoutForm({
           onSelect={setPaymentMethod}
           cardPaymentUrl={mode === "file" ? "" : payments.cardPaymentUrl}
           interacEmail={payments.interacEmail}
+          interacQuestion={payments.interacQuestion}
+          interacPassword={payments.interacPassword}
           venmoUsername={payments.venmoUsername}
           zelleMode={payments.zelleMode}
           zelleContact={payments.zelleContact}

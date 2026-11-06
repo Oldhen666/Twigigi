@@ -50,6 +50,8 @@ async function CartScreen({ params }: { params: Promise<{ username: string }> })
             paymentMethods: product.paymentMethods,
             cardPaymentUrl: product.cardPaymentUrl,
             interacEmail: product.interacEmail,
+            interacQuestion: product.interacQuestion,
+            interacPassword: product.interacPassword,
             venmoUsername: product.venmoUsername,
             zelleMode: product.zelleMode,
             zelleContact: product.zelleContact,

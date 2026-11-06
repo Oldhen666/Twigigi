@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { requireSeller } from "@/lib/auth";
 import { listOrders } from "@/lib/db";
 import { formatDate, formatMoney, orderHeading } from "@/lib/format";
+import { orderStage } from "@/lib/order-flow";
 
 async function OrdersScreen() {
   const user = await requireSeller();
@@ -19,8 +20,8 @@ async function OrdersScreen() {
               <Link href={`/dashboard/orders/${order.id}`} className="block rounded-2xl border border-line bg-card p-4 text-sm">
                 <p className="font-medium">{order.publicRef || order.buyerName}</p>
                 <p className="text-muted">{orderHeading(order)}{order.lines.length <= 1 && order.variantLabel ? ` · ${order.variantLabel}` : ""} · {order.buyerName}</p>
-                <p className="mt-1">{formatMoney(order.amountCents, order.currency)} · {order.status}</p>
-                <p className="text-muted">{formatDate(order.createdAt)}</p>
+                <p className="mt-1">{formatMoney(order.amountCents, order.currency)} · {orderStage(order)}</p>
+                <p className="text-muted">{formatDate(order.createdAt, order.productLocation)}</p>
               </Link>
             </li>
           ))}

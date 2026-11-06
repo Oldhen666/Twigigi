@@ -195,8 +195,9 @@ function parseSlot(value: string) {
   const between = rest.match(/,\s*between\s+(\d{1,2}:\d{2}\s*(?:AM|PM)?)\s+and\s+(\d{1,2}:\d{2}\s*(?:AM|PM)?)\s*$/i);
   const before = rest.match(/,\s*before\s+(\d{1,2}:\d{2}\s*(?:AM|PM)?)\s*$/i);
   const after = rest.match(/,\s*after\s+(\d{1,2}:\d{2}\s*(?:AM|PM)?)\s*$/i);
+  const anytime = rest.match(/,\s*anytime(?:\s*\([^)]*\))?\s*$/i);
   const range = rest.match(/,\s*(\d{1,2}:\d{2})\s*[–-]\s*(\d{1,2}:\d{2})\s*(AM|PM)?\s*$/i);
-  const hit = between ?? before ?? after ?? range;
+  const hit = between ?? before ?? after ?? anytime ?? range;
   if (between) {
     mode = "between";
     start = to24(between[1]);
@@ -207,6 +208,8 @@ function parseSlot(value: string) {
   } else if (after) {
     mode = "after";
     start = to24(after[1]);
+  } else if (anytime) {
+    mode = "";
   } else if (range) {
     mode = "between";
     const suffix = range[3] ?? "";

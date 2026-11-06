@@ -16,7 +16,7 @@ import { ReportListing } from "@/components/report-listing";
 import { Stars } from "@/components/stars";
 import { toggleLikeAction, toggleSaved } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
-import { isFavorite, isGuestLiked, isLiked, likeCount, listProductReviews, sellerReviewSummary } from "@/lib/db";
+import { isFavorite, isGuestLiked, isLiked, likeCount, listProductReviews, sellerReviewSummary, soldCount } from "@/lib/db";
 import { readVisitor } from "@/lib/visitor";
 import { categoryHref, categoryLabel, resolveCategory } from "@/lib/categories";
 import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
@@ -39,6 +39,7 @@ export async function ProductView({
   const visitor = account ? "" : await readVisitor();
   const liked = account ? isLiked(account.id, product.id) : visitor ? isGuestLiked(visitor, product.id) : false;
   const likes = likeCount(product.id);
+  const sold = soldCount(product.id);
   const reviews = listProductReviews(product.id);
   const rating = sellerReviewSummary(product.userId);
   const reviewAverage = reviews.length ? reviews.reduce((sum, review) => sum + review.overall, 0) / reviews.length : null;
@@ -168,7 +169,7 @@ export async function ProductView({
                 </ul>
               ) : null}
               <SellerCredit username={product.publicId} name={product.displayName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
-              <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
+              <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} sold={sold} />
               {product.cta === "file" ? <PayMethods methods={["card"]} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </BuyPicker>
           ) : (
@@ -189,7 +190,7 @@ export async function ProductView({
                 </ul>
               ) : null}
               <SellerCredit username={product.publicId} name={product.displayName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
-              <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} />
+              <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} sold={sold} />
               {product.cta === "file" ? <PayMethods methods={["card"]} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </>
           )}
@@ -312,7 +313,6 @@ function SellerCredit({
           </span>
         ) : null}
       </p>
-      <p className="mt-1 text-xs text-muted">Listing information provided by the seller.</p>
       <ReportListing productId={productId} path={path} title={title} defaultName={reporterName} defaultEmail={reporterEmail} />
     </div>
   );
@@ -326,6 +326,7 @@ function ProductMarks({
   saved,
   liked,
   likes,
+  sold,
 }: {
   productId: string;
   path: string;
@@ -334,35 +335,37 @@ function ProductMarks({
   saved: boolean;
   liked: boolean;
   likes: number;
+  sold: number;
 }) {
   const login = `/login?next=${encodeURIComponent(path)}`;
   return (
     <div className="mt-3 flex items-center gap-4">
       {ownTwig ? (
-        <span className="inline-flex items-center gap-1.5 text-muted">
+        <span className="inline-flex h-6 items-center gap-1.5 text-muted">
           <HeartIcon filled={false} />
-          <span className="text-sm text-ink">{likes}</span>
+          <span className="text-sm leading-none text-ink">{likes}</span>
         </span>
       ) : (
-        <form action={toggleLikeAction}>
+        <form action={toggleLikeAction} className="flex items-center">
           <input type="hidden" name="productId" value={productId} />
           <input type="hidden" name="next" value={path} />
-          <button aria-label={liked ? "Unlike" : "Like"} className={`inline-flex items-center gap-1.5 bg-transparent p-0 ${liked ? "text-forest" : "text-muted"}`}>
+          <button aria-label={liked ? "Unlike" : "Like"} className={`inline-flex h-6 items-center gap-1.5 bg-transparent p-0 leading-none ${liked ? "text-forest" : "text-muted"}`}>
             <HeartIcon filled={liked} />
-            <span className="text-sm text-ink">{likes}</span>
+            <span className="text-sm leading-none text-ink">{likes}</span>
           </button>
         </form>
       )}
+      <span className="inline-flex h-6 items-center text-sm leading-none text-ink">{sold} sold</span>
       {ownTwig ? null : signedIn ? (
-        <form action={toggleSaved}>
+        <form action={toggleSaved} className="flex items-center">
           <input type="hidden" name="productId" value={productId} />
           <input type="hidden" name="next" value={path} />
-          <button aria-label={saved ? "Saved" : "Save"} className={`bg-transparent p-0 ${saved ? "text-forest" : "text-muted"}`}>
+          <button aria-label={saved ? "Saved" : "Save"} className={`inline-flex h-6 items-center bg-transparent p-0 leading-none ${saved ? "text-forest" : "text-muted"}`}>
             <BookmarkIcon filled={saved} />
           </button>
         </form>
       ) : (
-        <Link href={login} aria-label="Save" className="text-muted">
+        <Link href={login} aria-label="Save" className="inline-flex h-6 items-center text-muted">
           <BookmarkIcon filled={false} />
         </Link>
       )}
@@ -372,7 +375,7 @@ function ProductMarks({
 
 function HeartIcon({ filled }: { filled: boolean }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden className="block">
       <path
         d="M12 20.5 10.6 19.2C5.4 14.5 2 11.6 2 8.1 2 5.2 4.2 3 7.1 3c1.7 0 3.3.8 4.9 2.3C13.6 3.8 15.2 3 16.9 3 19.8 3 22 5.2 22 8.1c0 3.5-3.4 6.4-8.6 11.1L12 20.5Z"
         fill={filled ? "currentColor" : "none"}
@@ -386,7 +389,7 @@ function HeartIcon({ filled }: { filled: boolean }) {
 
 function BookmarkIcon({ filled }: { filled: boolean }) {
   return (
-    <svg width="16" height="18" viewBox="0 0 24 24" aria-hidden>
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden className="block">
       <path
         d="M7 3.5h10a1 1 0 0 1 1 1V21l-6-3.4L6 21V4.5a1 1 0 0 1 1-1Z"
         fill={filled ? "currentColor" : "none"}

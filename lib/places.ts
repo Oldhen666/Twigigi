@@ -115,6 +115,78 @@ export function splitLocation(value: string) {
   return { city, province: PROVINCES[country]?.[province] ? province : "", country };
 }
 
+const REGION_ZONE: Record<string, string> = {
+  "CA:BC": "America/Vancouver",
+  "CA:YT": "America/Whitehorse",
+  "CA:AB": "America/Edmonton",
+  "CA:NT": "America/Yellowknife",
+  "CA:SK": "America/Regina",
+  "CA:MB": "America/Winnipeg",
+  "CA:NU": "America/Iqaluit",
+  "CA:ON": "America/Toronto",
+  "CA:QC": "America/Toronto",
+  "CA:NB": "America/Halifax",
+  "CA:NS": "America/Halifax",
+  "CA:PE": "America/Halifax",
+  "CA:NL": "America/St_Johns",
+  "US:AL": "America/Chicago",
+  "US:AK": "America/Anchorage",
+  "US:AZ": "America/Phoenix",
+  "US:AR": "America/Chicago",
+  "US:CA": "America/Los_Angeles",
+  "US:CO": "America/Denver",
+  "US:CT": "America/New_York",
+  "US:DE": "America/New_York",
+  "US:DC": "America/New_York",
+  "US:FL": "America/New_York",
+  "US:GA": "America/New_York",
+  "US:HI": "America/Honolulu",
+  "US:ID": "America/Boise",
+  "US:IL": "America/Chicago",
+  "US:IN": "America/Indiana/Indianapolis",
+  "US:IA": "America/Chicago",
+  "US:KS": "America/Chicago",
+  "US:KY": "America/New_York",
+  "US:LA": "America/Chicago",
+  "US:ME": "America/New_York",
+  "US:MD": "America/New_York",
+  "US:MA": "America/New_York",
+  "US:MI": "America/Detroit",
+  "US:MN": "America/Chicago",
+  "US:MS": "America/Chicago",
+  "US:MO": "America/Chicago",
+  "US:MT": "America/Denver",
+  "US:NE": "America/Chicago",
+  "US:NV": "America/Los_Angeles",
+  "US:NH": "America/New_York",
+  "US:NJ": "America/New_York",
+  "US:NM": "America/Denver",
+  "US:NY": "America/New_York",
+  "US:NC": "America/New_York",
+  "US:ND": "America/Chicago",
+  "US:OH": "America/New_York",
+  "US:OK": "America/Chicago",
+  "US:OR": "America/Los_Angeles",
+  "US:PA": "America/New_York",
+  "US:RI": "America/New_York",
+  "US:SC": "America/New_York",
+  "US:SD": "America/Chicago",
+  "US:TN": "America/Chicago",
+  "US:TX": "America/Chicago",
+  "US:UT": "America/Denver",
+  "US:VT": "America/New_York",
+  "US:VA": "America/New_York",
+  "US:WA": "America/Los_Angeles",
+  "US:WV": "America/New_York",
+  "US:WI": "America/Chicago",
+  "US:WY": "America/Denver",
+};
+
+export function timeZoneForLocation(location: string) {
+  const place = splitLocation(location);
+  return REGION_ZONE[`${place.country}:${place.province}`] ?? "America/Edmonton";
+}
+
 export function joinLocation(city: string, province: string, country: string) {
   return [city, province, country].map((item) => item.trim()).filter(Boolean).join(", ");
 }

@@ -115,6 +115,8 @@ export type ProductInput = {
   paymentMethods: string[];
   cardPaymentUrl: string;
   interacEmail: string;
+  interacQuestion: string;
+  interacPassword: string;
   venmoUsername: string;
   zelleMode: "phone" | "email";
   zelleContact: string;
@@ -176,6 +178,7 @@ export type OrderRecord = {
   buyerId: string | null;
   productSlug: string;
   productTitle: string;
+  productLocation: string;
   username: string;
   publicId: string;
   displayName: string;
@@ -219,6 +222,14 @@ export type OrderRecord = {
   filePassword: string;
   fileSentAt: string | null;
   lines: OrderLine[];
+  reviewState: "requested" | "accepted" | "changes" | "declined";
+  proposalNote: string;
+  proposalCents: number;
+  fulfillmentState: "" | "ready" | "sent";
+  readyAt: string | null;
+  buyerReceivedAt: string | null;
+  interacQuestion: string;
+  interacPassword: string;
   createdAt: string;
 };
 

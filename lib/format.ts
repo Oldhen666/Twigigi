@@ -1,3 +1,4 @@
+import { timeZoneForLocation } from "@/lib/places";
 import type { Cta, Fulfillment, Product } from "@/lib/types";
 
 export const SRC_COOKIE = "twg_src";
@@ -186,15 +187,17 @@ export function billingYear(iso: string) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: BILLING_ZONE, year: "numeric" }).format(date);
 }
 
-export function formatDate(iso: string) {
+export function formatDate(iso: string, location?: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("en-CA", {
+  const options: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-  }).format(date);
+  };
+  if (location !== undefined) options.timeZone = timeZoneForLocation(location);
+  return new Intl.DateTimeFormat("en-CA", options).format(date);
 }
 
 export function centsToInput(cents: number | null) {

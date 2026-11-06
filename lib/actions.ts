@@ -13,6 +13,8 @@ import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isTransferMeth
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
+import { acceptNote, notifyBuyer, readyNote } from "@/lib/order-notices";
+import { fulfillmentDone, shipsToBuyer } from "@/lib/order-flow";
 import { parseFileLinks } from "@/lib/files";
 import { resolveUpload, uploadDirectory } from "@/lib/uploads";
 import {
@@ -45,11 +47,19 @@ import {
   updateDisplayName,
   getContentReport,
   getInteraction,
+  getInteractionBySource,
   productHasActivity,
   recordLegalAcceptance,
   releaseStock,
   reserveStock,
   setOrderChoices,
+  setInteracPrompt,
+  sellerReviewOrder,
+  acceptOrderProposal,
+  confirmOrderPaymentReceived,
+  markOrderFulfillment,
+  confirmBuyerReceipt,
+  completeSellerOrder,
   deactivateNow,
   resumePublished,
   publishDraft,
@@ -544,6 +554,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const paymentMethods = cta === "file" ? ["card"] : priced ? parsePaymentMethods(text(formData, "paymentMethods"), payCountry) : [];
   const cardPaymentUrl = text(formData, "cardPaymentUrl").trim().slice(0, 500);
   const interacEmail = text(formData, "interacEmail").trim().slice(0, 80);
+  const interacQuestion = text(formData, "interacQuestion").trim().slice(0, 120);
+  const interacPassword = text(formData, "interacPassword").trim().slice(0, 80);
   const venmoUsername = text(formData, "venmoUsername").trim().replace(/^@/, "").slice(0, 30);
   const zelleMode = text(formData, "zelleMode") === "email" ? "email" : "phone";
   const zelleContact = text(formData, "zelleContact").trim().slice(0, 80);
@@ -699,6 +711,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     paymentMethods,
     cardPaymentUrl,
     interacEmail,
+    interacQuestion: paymentMethods.includes("interac") ? interacQuestion : "",
+    interacPassword: paymentMethods.includes("interac") ? interacPassword : "",
     venmoUsername,
     zelleMode,
     zelleContact,
@@ -1027,6 +1041,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       filePassword: digital ? product.filePassword : "",
     });
     setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note);
+    if (choice.payment === "interac") setInteracPrompt(orderId, product.interacQuestion, product.interacPassword);
     openInteraction({
       kind: "order",
       sourceId: orderId,
@@ -1041,9 +1056,8 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   }
 
   const seller = findUserById(product.userId);
-  const reserved = product.contactEmail.trim().toLowerCase();
-  const notify = z.string().email().safeParse(reserved).success ? reserved : seller?.email ?? "";
-  if (notify) {
+  const notify = sellerNotifyEmails(product, seller?.email ?? "");
+  if (notify.length > 0) {
     const order = getOrder(orderId);
     const lines = [
       "You have a new order on Twigigi.",
@@ -1062,11 +1076,12 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       choice.payment ? `Payment: ${methodLabel(choice.payment)}` : null,
       `Total: ${formatMoney(total, product.currency)}`,
       order?.publicRef ? `Order: ${order.publicRef}` : null,
-      digital ? "After the money arrives, mark the order paid, then email the file link from the order page." : null,
+      "Accept the order, propose a change, or decline it from the order page.",
+      digital ? "After the money arrives, confirm the payment, then email the file link from the order page." : null,
       "",
-      `Open the order: ${appUrl()}/order/${orderId}`,
+      `Open the order: ${appUrl()}/dashboard/orders/${orderId}`,
     ].filter((line): line is string => line !== null);
-    await sendOrderEmail(notify, { subject: `New order: ${product.title}`, text: lines.join("\n") });
+    await sendOrderEmail(notify, { subject: `New order: ${product.title}`, text: lines.join("\n"), replyTo: parsed.data.email });
   }
 
   redirect(`/order/${orderId}`);
@@ -1188,6 +1203,10 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
       lines: lines.length > 1 ? lines : [],
     });
     setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note, sellerNote.note);
+    if (choice.payment === "interac") {
+      const prompt = prepared.find((line) => line.product.interacQuestion || line.product.interacPassword)?.product;
+      if (prompt) setInteracPrompt(orderId, prompt.interacQuestion, prompt.interacPassword);
+    }
     openInteraction({
       kind: "order",
       sourceId: orderId,
@@ -1202,9 +1221,8 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
   }
 
   const seller = findUserById(first.product.userId);
-  const reservedEmail = first.product.contactEmail.trim().toLowerCase();
-  const notify = z.string().email().safeParse(reservedEmail).success ? reservedEmail : seller?.email ?? "";
-  if (notify) {
+  const notify = sellerNotifyEmails(first.product, seller?.email ?? "");
+  if (notify.length > 0) {
     const order = getOrder(orderId);
     const itemLines = lines.flatMap((line) => [
       `${line.title}${line.variantLabel ? ` (${line.variantLabel})` : ""} × ${line.quantity} · ${formatMoney(line.subtotalCents, first.product.currency)}`,
@@ -1227,13 +1245,29 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
       `Shipping: ${shipping === 0 ? "Free" : formatMoney(shipping, first.product.currency)}`,
       `Total: ${formatMoney(total, first.product.currency)}`,
       order?.publicRef ? `Order: ${order.publicRef}` : null,
+      "Accept the order, propose a change, or decline it from the order page.",
       "",
-      `Open the order: ${appUrl()}/order/${orderId}`,
+      `Open the order: ${appUrl()}/dashboard/orders/${orderId}`,
     ].filter((line): line is string => line !== null);
-    await sendOrderEmail(notify, { subject: `New order from ${parsed.data.name}`, text: text.join("\n") });
+    await sendOrderEmail(notify, { subject: `New order from ${parsed.data.name}`, text: text.join("\n"), replyTo: parsed.data.email });
   }
 
   redirect(`/order/${orderId}`);
+}
+
+function sellerNotifyEmails(
+  product: { contactEmail: string; sellerContact: string; sellerContactMode: string },
+  accountEmail: string,
+) {
+  const candidates = [product.contactEmail, accountEmail];
+  if (product.sellerContactMode !== "phone") candidates.push(product.sellerContact);
+  const emails: string[] = [];
+  for (const item of candidates) {
+    const email = item.trim().toLowerCase();
+    if (!z.string().email().safeParse(email).success || emails.includes(email)) continue;
+    emails.push(email);
+  }
+  return emails;
 }
 
 function readCartRequest(raw: string) {
@@ -1484,9 +1518,155 @@ export async function confirmInteraction(formData: FormData) {
   const user = await requireUser();
   const side = text(formData, "side") === "seller" ? "seller" : "buyer";
   const next = safeNext(text(formData, "next"));
+  const interaction = getInteraction(text(formData, "id"));
+  if (interaction?.kind === "order") {
+    if (side === "seller") redirect(`${next}?error=${encodeURIComponent("Complete the order from the seller order page.")}`);
+    const owns = (interaction.buyerId && interaction.buyerId === user.id) || interaction.buyerEmail === user.email.toLowerCase();
+    if (!owns) redirect(`${next}?error=${encodeURIComponent("That interaction is not yours.")}`);
+    const order = getOrder(interaction.sourceId);
+    if (!order || !fulfillmentDone(order.fulfillmentState)) {
+      redirect(`${next}?error=${encodeURIComponent("You can confirm receipt after the seller marks it ready or sent.")}`);
+    }
+    confirmBuyerReceipt(order.id);
+  }
   const ok = confirmInteractionParty(text(formData, "id"), user.id, user.email, side);
   if (!ok) redirect(`${next}?error=${encodeURIComponent("That interaction is not yours.")}`);
   redirect(next);
+}
+
+export async function reviewSellerOrder(formData: FormData) {
+  const user = await requireSeller();
+  const id = text(formData, "id");
+  const back = `/dashboard/orders/${id}`;
+  const order = getOrder(id);
+  if (!order || order.sellerId !== user.id) redirect("/dashboard/orders");
+  const decision = text(formData, "decision");
+  if (decision === "propose") {
+    const note = text(formData, "proposalNote").trim().slice(0, 500);
+    if (note.length < 4) redirect(`${back}?mail=note`);
+    const amount = proposalAmount(text(formData, "proposalAmount"));
+    if (amount === "invalid") redirect(`${back}?mail=amount`);
+    if (!sellerReviewOrder(id, user.id, "propose", note, amount ?? 0)) redirect(back);
+    const next = getOrder(id);
+    if (!next) redirect(back);
+    const sent = await notifyBuyer(next, `Change proposed: ${next.productTitle}`, [
+      `${next.displayName} proposed a change to order ${next.publicRef}.`,
+      note,
+      amount ? `New total: ${formatMoney(amount, next.currency)}` : "The total stays the same.",
+      "Open the order to accept the change.",
+    ]);
+    redirect(sent ? back : `${back}?mail=0`);
+  }
+  if (decision === "decline") {
+    if (!sellerReviewOrder(id, user.id, "decline")) redirect(back);
+    if (order.lines.length > 0) {
+      for (const line of order.lines) releaseStock(line.productId, line.quantity);
+    } else releaseStock(order.productId, order.quantity);
+    const next = getOrder(id);
+    if (next) {
+      const sent = await notifyBuyer(next, `Order declined: ${next.productTitle}`, [
+        `${next.displayName} declined order ${next.publicRef}.`,
+      ]);
+      redirect(sent ? back : `${back}?mail=0`);
+    }
+    redirect(back);
+  }
+  if (!sellerReviewOrder(id, user.id, "accept")) redirect(back);
+  const next = getOrder(id);
+  if (!next) redirect(back);
+  const sent = await notifyBuyer(next, `Order confirmed: ${next.productTitle}`, acceptNote(next));
+  redirect(sent ? back : `${back}?mail=0`);
+}
+
+export async function acceptSellerChange(formData: FormData) {
+  const id = text(formData, "id");
+  const order = getOrder(id);
+  const back = `/order/${id}`;
+  if (!order) redirect("/orders");
+  const user = await getCurrentUser();
+  if (user && user.id === order.sellerId && user.email.toLowerCase() !== order.email.toLowerCase()) redirect(back);
+  if (!acceptOrderProposal(id)) redirect(back);
+  const next = getOrder(id);
+  if (next) await notifyBuyer(next, `Order confirmed: ${next.productTitle}`, acceptNote(next));
+  redirect(back);
+}
+
+export async function confirmOrderPayment(formData: FormData) {
+  const user = await requireSeller();
+  const id = text(formData, "id");
+  const back = `/dashboard/orders/${id}`;
+  if (!confirmOrderPaymentReceived(id, user.id)) redirect(back);
+  const order = getOrder(id);
+  if (!order) redirect(back);
+  const sent = order.fulfillment === "digital"
+    ? await sendPaymentConfirmed(id)
+    : await notifyBuyer(order, `Payment confirmed: ${order.productTitle}`, [
+        `${order.displayName} confirmed your payment for order ${order.publicRef}.`,
+        shipsToBuyer(order.fulfillment)
+          ? "They will email you when it is sent out for delivery."
+          : "They will email you when it is ready for pickup.",
+      ]);
+  redirect(sent ? back : `${back}?mail=0`);
+}
+
+export async function markOrderProgress(formData: FormData) {
+  const user = await requireSeller();
+  const id = text(formData, "id");
+  const back = `/dashboard/orders/${id}`;
+  const state = text(formData, "state") === "sent" ? "sent" : "ready";
+  if (!markOrderFulfillment(id, user.id, state)) redirect(back);
+  const order = getOrder(id);
+  if (!order) redirect(back);
+  const product = getProductById(order.productId);
+  const place = order.fulfillment === "pickup" ? product?.pickupNote.trim() ?? "" : "";
+  const sent = await notifyBuyer(
+    order,
+    state === "ready" ? `Ready for pickup: ${order.productTitle}` : `Sent: ${order.productTitle}`,
+    readyNote(order, place),
+  );
+  redirect(sent ? back : `${back}?mail=0`);
+}
+
+export async function confirmReceipt(formData: FormData) {
+  const id = text(formData, "id");
+  const order = getOrder(id);
+  const back = `/order/${id}`;
+  if (!order) redirect("/orders");
+  const user = await getCurrentUser();
+  if (user && user.id === order.sellerId && user.email.toLowerCase() !== order.email.toLowerCase()) redirect(back);
+  if (!confirmBuyerReceipt(id)) redirect(`${back}?error=${encodeURIComponent("You can confirm receipt after the seller marks it ready or sent.")}`);
+  if (user) {
+    const interaction = getInteractionBySource(order.id);
+    if (interaction) confirmInteractionParty(interaction.id, user.id, user.email, "buyer");
+  }
+  const product = getProductById(order.productId);
+  const seller = findUserById(order.sellerId);
+  if (product && seller) {
+    const notify = sellerNotifyEmails(product, seller.email);
+    if (notify.length > 0) {
+      await sendOrderEmail(notify, {
+        subject: `Receipt confirmed: ${order.productTitle}`,
+        text: [`${order.buyerName} confirmed receipt of order ${order.publicRef}.`, "You can mark the order complete.", "", `${appUrl()}/dashboard/orders/${order.id}`].join("\n"),
+        replyTo: order.email,
+      });
+    }
+  }
+  redirect(back);
+}
+
+export async function completeOrder(formData: FormData) {
+  const user = await requireSeller();
+  const id = text(formData, "id");
+  completeSellerOrder(id, user.id);
+  redirect(`/dashboard/orders/${id}`);
+}
+
+function proposalAmount(raw: string) {
+  const trimmed = raw.trim().replace(/[$,]/g, "");
+  if (!trimmed) return null;
+  const value = Number(trimmed);
+  if (!Number.isFinite(value) || value < 0.5) return "invalid" as const;
+  return Math.round(value * 100);
 }
 
 export async function saveReview(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -1494,6 +1674,10 @@ export async function saveReview(_prev: FormState, formData: FormData): Promise<
   const interaction = getInteraction(text(formData, "interactionId"));
   const owns = interaction && (interaction.buyerId === user.id || interaction.buyerEmail === user.email.toLowerCase());
   if (!interaction || !owns) return { error: "That order is not yours." };
+  if (interaction.kind === "order") {
+    const order = getOrder(interaction.sourceId);
+    if (!order || !fulfillmentDone(order.fulfillmentState)) return { error: "You can review after the seller marks the order ready or sent." };
+  }
   if (!interaction.buyerConfirmedAt) confirmInteractionParty(interaction.id, user.id, user.email, "buyer");
   const overall = score(formData, "overall");
   const asDescribed = score(formData, "asDescribed");

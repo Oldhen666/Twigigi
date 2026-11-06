@@ -36,6 +36,8 @@ export function PayChoice({
   onSelect,
   cardPaymentUrl = "",
   interacEmail = "",
+  interacQuestion = "",
+  interacPassword = "",
   venmoUsername = "",
   zelleMode = "phone",
   zelleContact = "",
@@ -47,6 +49,8 @@ export function PayChoice({
   onSelect: (id: string) => void;
   cardPaymentUrl?: string;
   interacEmail?: string;
+  interacQuestion?: string;
+  interacPassword?: string;
   venmoUsername?: string;
   zelleMode?: "phone" | "email";
   zelleContact?: string;
@@ -71,6 +75,12 @@ export function PayChoice({
       </div>
       {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
       {email ? <p className="mt-3 text-sm">Interac e-Transfer: <a className="break-all text-forest" href={`mailto:${email}`}>{email}</a></p> : null}
+      {selected === "interac" && (interacQuestion || interacPassword) ? (
+        <div className="mt-2 text-sm">
+          {interacQuestion ? <p>Security question: {interacQuestion}</p> : null}
+          {interacPassword ? <p>Password: {interacPassword}</p> : null}
+        </div>
+      ) : null}
       {venmo ? <p className="mt-3 text-sm">Venmo: @{venmo}</p> : null}
       {zelle ? (
         <p className="mt-3 text-sm">

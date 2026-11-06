@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { placeCartOrder } from "@/lib/actions";
 import { readCart, writeCart, type CartItem } from "@/components/add-to-cart";
@@ -31,6 +32,8 @@ export type CartCatalogItem = {
   paymentMethods: string[];
   cardPaymentUrl: string;
   interacEmail: string;
+  interacQuestion?: string;
+  interacPassword?: string;
   venmoUsername: string;
   zelleMode: "phone" | "email";
   zelleContact: string;
@@ -43,16 +46,21 @@ export function CartCheckout({
   catalog,
   defaultName,
   defaultEmail,
+  mode = "cart",
 }: {
   publicId: string;
   sellerName: string;
   catalog: CartCatalogItem[];
   defaultName: string;
   defaultEmail: string;
+  mode?: "cart" | "checkout";
 }) {
+  const router = useRouter();
   const [state, action, pending] = useActionState(placeCartOrder, {} as FormState);
   const [items, setItems] = useState<CartItem[]>([]);
   const [ready, setReady] = useState(false);
+  const [draft, setDraft] = useState<CheckoutDraft | null>(null);
+  const [cartGaps, setCartGaps] = useState<string[]>([]);
   const [fulfillment, setFulfillment] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [pickupTime, setPickupTime] = useState("");
@@ -65,6 +73,10 @@ export function CartCheckout({
 
   useEffect(() => {
     setItems(readCart(publicId));
+    const stored = readCheckoutDraft(publicId);
+    setDraft(stored);
+    if (stored?.fulfillment) setFulfillment(stored.fulfillment);
+    if (stored?.pickupTime) setPickupTime(stored.pickupTime);
     setReady(true);
   }, [publicId]);
 
@@ -130,6 +142,14 @@ export function CartCheckout({
   }, [state]);
 
   if (!ready) return <p className="mt-6 text-sm text-muted">Loading…</p>;
+  if (mode === "checkout" && !draft) {
+    return (
+      <div className="mt-6">
+        <p className="text-muted">Add your details in the cart before checkout.</p>
+        <Link href={`/${publicId}/cart`} className={`${buttonClass} mt-4`}>Back to cart</Link>
+      </div>
+    );
+  }
   if (items.length === 0) {
     return (
       <div className="mt-6">
@@ -148,6 +168,11 @@ export function CartCheckout({
       noValidate
       className="mt-6 space-y-4"
       onSubmit={(event) => {
+        if (mode === "cart") {
+          event.preventDefault();
+          goCheckout();
+          return;
+        }
         rememberForm(event.currentTarget);
         saved.current = localStorage.getItem(`twigigi-cart:${publicId}`);
         localStorage.removeItem(`twigigi-cart:${publicId}`);
@@ -155,6 +180,11 @@ export function CartCheckout({
     >
       <input type="hidden" name="lines" value={JSON.stringify(available.map((row) => row.item))} />
       {state.error ? <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{state.error}</p> : null}
+      {mode === "checkout" && state.fieldErrors ? (
+        <ul className="space-y-1 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">
+          {Object.values(state.fieldErrors).map((gap) => <li key={gap}>{gap}</li>)}
+        </ul>
+      ) : null}
       <ul className="space-y-3">
         {rows.map((row) => {
           const product = row.product;
@@ -179,7 +209,8 @@ export function CartCheckout({
                   <p className="text-sm text-forest">{formatMoney((row.selection?.priceCents ?? 0) * row.item.quantity, currency)}</p>
                 )}
                 <div className="mt-2 flex items-center gap-3">
-                  {missing ? null : (
+                  {mode === "checkout" ? <span className="text-sm text-muted">Qty {row.item.quantity}</span> : null}
+                  {mode === "cart" && !missing ? (
                     <div className="inline-flex items-center rounded-full border border-line">
                       <button
                         type="button"
@@ -199,21 +230,40 @@ export function CartCheckout({
                         +
                       </button>
                     </div>
-                  )}
-                  <button type="button" onClick={() => update(items.filter((item) => item !== row.item))} className="text-sm text-danger">
-                    Remove
-                  </button>
+                  ) : null}
+                  {mode === "cart" ? (
+                    <button type="button" onClick={() => update(items.filter((item) => item !== row.item))} className="text-sm text-danger">
+                      Remove
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </li>
           );
         })}
       </ul>
-      <Link href={`/${publicId}`} className="inline-block text-sm font-medium text-forest">
-        Add another Twig
-      </Link>
+      {mode === "cart" ? (
+        <Link href={`/${publicId}`} className="inline-block text-sm font-medium text-forest">
+          Add more products from {sellerName}
+        </Link>
+      ) : (
+        <Link href={`/${publicId}/cart`} className="inline-block text-sm text-muted">← Back to cart</Link>
+      )}
 
-      {available.length === 0 ? null : shared.length === 0 ? (
+      {mode === "checkout" ? (
+        <>
+          <input type="hidden" name="fulfillment" value={chosen?.id ?? ""} />
+          <input type="hidden" name="pickupTime" value={pickupTime} />
+          <input type="hidden" name="name" value={draft?.name ?? defaultName} />
+          <input type="hidden" name="email" value={draft?.email ?? defaultEmail} />
+          <input type="hidden" name="phone" value={draft?.phone ?? ""} />
+          <input type="hidden" name="address" value={draft?.address ?? ""} />
+          <input type="hidden" name="deliveryNote" value={draft?.deliveryNote ?? ""} />
+          <input type="hidden" name="sellerNote" value={draft?.sellerNote ?? ""} />
+        </>
+      ) : null}
+
+      {mode === "checkout" || available.length === 0 ? null : shared.length === 0 ? (
         <p className="rounded-xl bg-paper-deep px-3 py-2 text-sm text-muted">These Twigs cannot be received the same way. Remove one to check out.</p>
       ) : (
         <fieldset>
@@ -240,13 +290,15 @@ export function CartCheckout({
         </fieldset>
       )}
 
-      {chosen ? (
+      {mode === "checkout" && chosen ? (
         <PayChoice
           methods={payMethods}
           selected={paymentMethod}
           onSelect={setPaymentMethod}
           cardPaymentUrl={firstText(contacts, (item) => item.cardPaymentUrl)}
           interacEmail={firstText(contacts, (item) => item.interacEmail)}
+          interacQuestion={firstText(contacts, (item) => item.interacQuestion ?? "")}
+          interacPassword={firstText(contacts, (item) => item.interacPassword ?? "")}
           venmoUsername={firstText(contacts, (item) => item.venmoUsername)}
           zelleMode={contacts.find((item) => item.zelleContact)?.zelleMode ?? "phone"}
           zelleContact={firstText(contacts, (item) => item.zelleContact)}
@@ -255,40 +307,42 @@ export function CartCheckout({
         />
       ) : null}
 
-      {requireName ? (
+      {mode === "checkout" ? null : requireName ? (
         <label className="block">
           <span className={labelClass}>Name<span className="text-danger"> *</span></span>
-          <input name="name" autoComplete="name" defaultValue={defaultName} className={inputClass} />
+          <input name="name" autoComplete="name" defaultValue={draft?.name || defaultName} className={inputClass} />
           {state.fieldErrors?.name ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.name}</span> : null}
         </label>
       ) : (
-        <input type="hidden" name="name" value={defaultName} />
+        <input type="hidden" name="name" value={draft?.name || defaultName} />
       )}
+      {mode === "checkout" ? null : (
       <label className="block">
         <span className={labelClass}>Email<span className="text-danger"> *</span></span>
-        <input name="email" type="email" autoComplete="email" defaultValue={defaultEmail} className={inputClass} />
+        <input name="email" type="email" autoComplete="email" defaultValue={draft?.email || defaultEmail} className={inputClass} />
         {state.fieldErrors?.email ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.email}</span> : null}
       </label>
-      {requirePhone ? (
+      )}
+      {mode === "checkout" ? null : requirePhone ? (
         <label className="block">
           <span className={labelClass}>Phone<span className="text-danger"> *</span></span>
-          <input name="phone" type="tel" autoComplete="tel" className={inputClass} />
+          <input name="phone" type="tel" autoComplete="tel" defaultValue={draft?.phone ?? ""} className={inputClass} />
           {state.fieldErrors?.phone ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.phone}</span> : null}
         </label>
       ) : (
         <input type="hidden" name="phone" value="" />
       )}
-      {chosen && chosen.id !== "pickup" ? (
+      {mode === "checkout" ? null : chosen && chosen.id !== "pickup" ? (
         <>
           <label className="block">
             <span className={labelClass}>Address<span className="text-danger"> *</span></span>
-            <textarea name="address" rows={3} autoComplete="street-address" className={`${inputClass} h-auto py-3`} />
+            <textarea name="address" rows={3} autoComplete="street-address" defaultValue={draft?.address ?? ""} className={`${inputClass} h-auto py-3`} />
             {state.fieldErrors?.address ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.address}</span> : null}
           </label>
           {chosen.id === "shipping" ? (
             <label className="block">
               <span className={labelClass}>Delivery instructions (optional)</span>
-              <input name="deliveryNote" maxLength={200} placeholder="Gate code, buzzer, where to leave it" className={inputClass} />
+              <input name="deliveryNote" maxLength={200} placeholder="Gate code, buzzer, where to leave it" defaultValue={draft?.deliveryNote ?? ""} className={inputClass} />
               {state.fieldErrors?.deliveryNote ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.deliveryNote}</span> : null}
             </label>
           ) : null}
@@ -296,10 +350,10 @@ export function CartCheckout({
       ) : (
         <input type="hidden" name="address" value="" />
       )}
-      {chosen ? (
+      {mode === "checkout" ? null : chosen ? (
         <label className="block">
           <span className={labelClass}>Note to seller (optional)</span>
-          <textarea name="sellerNote" rows={3} maxLength={400} placeholder="Anything the seller should know" className={`${inputClass} h-auto py-3`} />
+          <textarea name="sellerNote" rows={3} maxLength={400} placeholder="Anything the seller should know" defaultValue={draft?.sellerNote ?? ""} className={`${inputClass} h-auto py-3`} />
           {state.fieldErrors?.sellerNote ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.sellerNote}</span> : null}
         </label>
       ) : null}
@@ -318,14 +372,31 @@ export function CartCheckout({
           <p className="text-muted">Shipping is calculated once for everything from {sellerName}.</p>
         </div>
       ) : null}
-      <button
-        type="button"
-        disabled={pending || available.length === 0 || !chosen || needsTransfer || total == null}
-        onClick={openReview}
-        className={`${buttonClass} h-14 w-full rounded-2xl text-lg`}
-      >
-        Place order
-      </button>
+      {mode === "cart" && needsTransfer ? <p className="text-sm text-danger">Delivery and shipping have to be paid by transfer first. This seller has not set one up.</p> : null}
+      {mode === "cart" && cartGaps.length > 0 ? (
+        <ul className="space-y-1 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">
+          {cartGaps.map((gap) => <li key={gap}>{gap}</li>)}
+        </ul>
+      ) : null}
+      {mode === "cart" ? (
+        <button
+          type="button"
+          disabled={available.length === 0 || !chosen || needsTransfer || total == null}
+          onClick={goCheckout}
+          className={`${buttonClass} h-14 w-full rounded-2xl text-lg`}
+        >
+          Checkout
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={pending || available.length === 0 || !chosen || needsTransfer || total == null}
+          onClick={openReview}
+          className={`${buttonClass} h-14 w-full rounded-2xl text-lg`}
+        >
+          Place order
+        </button>
+      )}
       {confirming && review && chosen && total != null ? (
         <OrderReviewDialog
           sellerName={sellerName}
@@ -362,6 +433,36 @@ export function CartCheckout({
     </form>
   );
 
+  function goCheckout() {
+    const form = formRef.current;
+    if (!form || !chosen) return;
+    const data = new FormData(form);
+    const read = (key: string) => String(data.get(key) ?? "").trim();
+    const next = {
+      fulfillment: chosen.id,
+      pickupTime,
+      name: read("name"),
+      email: read("email"),
+      phone: read("phone"),
+      address: read("address"),
+      deliveryNote: read("deliveryNote"),
+      sellerNote: read("sellerNote"),
+    };
+    const gaps = reviewGaps(next, {
+      requireName,
+      requirePhone,
+      pickup: chosen.id === "pickup",
+      needsAddress: chosen.id !== "pickup",
+      needsPayment: false,
+      paymentMethod: "",
+      pickupTime,
+    });
+    setCartGaps(gaps);
+    if (gaps.length > 0) return;
+    writeCheckoutDraft(publicId, next);
+    router.push(`/${publicId}/cart/checkout`);
+  }
+
   function openReview() {
     const form = formRef.current;
     if (!form) return;
@@ -377,6 +478,46 @@ export function CartCheckout({
     });
     setConfirming(true);
   }
+}
+
+type CheckoutDraft = {
+  fulfillment: string;
+  pickupTime: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  deliveryNote: string;
+  sellerNote: string;
+};
+
+function draftKey(publicId: string) {
+  return `twigigi-cart-draft:${publicId}`;
+}
+
+function readCheckoutDraft(publicId: string): CheckoutDraft | null {
+  try {
+    const raw = sessionStorage.getItem(draftKey(publicId));
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<CheckoutDraft>;
+    if (!value || typeof value.fulfillment !== "string") return null;
+    return {
+      fulfillment: value.fulfillment,
+      pickupTime: typeof value.pickupTime === "string" ? value.pickupTime : "",
+      name: typeof value.name === "string" ? value.name : "",
+      email: typeof value.email === "string" ? value.email : "",
+      phone: typeof value.phone === "string" ? value.phone : "",
+      address: typeof value.address === "string" ? value.address : "",
+      deliveryNote: typeof value.deliveryNote === "string" ? value.deliveryNote : "",
+      sellerNote: typeof value.sellerNote === "string" ? value.sellerNote : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCheckoutDraft(publicId: string, draft: CheckoutDraft) {
+  sessionStorage.setItem(draftKey(publicId), JSON.stringify(draft));
 }
 
 function sharedFulfillment(lists: FulfillmentOption[][]) {

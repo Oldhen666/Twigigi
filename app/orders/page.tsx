@@ -8,6 +8,7 @@ import { ReviewSeller } from "@/components/review-seller";
 import { requireUser } from "@/lib/auth";
 import { claimBuyerOrders, getInteraction, getProductById, listBuyerInteractions, listBuyerOrders, listBuyerQuotes, listUserReviews, openInteraction } from "@/lib/db";
 import { formatDate, formatMoney, orderHeading } from "@/lib/format";
+import { fulfillmentDone, orderStage } from "@/lib/order-flow";
 
 async function OrdersScreen() {
   const user = await requireUser();
@@ -56,14 +57,24 @@ async function OrdersScreen() {
                 <Link href={`/order/${order.id}`} className="font-medium">{order.publicRef || order.productTitle}</Link>
                 <p className="text-sm text-muted">{orderHeading(order)} · {order.quantity} · {order.fulfillment}</p>
                 <p className="mt-1">{formatMoney(order.amountCents, order.currency)}</p>
-                <p className="text-sm text-muted">{order.status} · {formatDate(order.createdAt)}</p>
-                {interaction ? <InteractionLine item={interaction} nextPath="/orders" side="buyer" showReview={false} /> : null}
+                <p className="text-sm text-muted">{orderStage(order)} · {formatDate(order.createdAt)}</p>
+                {interaction ? (
+                  <InteractionLine
+                    item={interaction}
+                    nextPath="/orders"
+                    side="buyer"
+                    showReview={false}
+                    allowConfirm={fulfillmentDone(order.fulfillmentState) && !order.buyerReceivedAt}
+                    confirmLabel="Confirm receipt"
+                  />
+                ) : null}
                 {interaction ? (
                   <ReviewSeller
                     interactionId={interaction.id}
                     kind="order"
                     productTitle={orderHeading(order)}
                     reviewed={reviewed.has(interaction.id)}
+                    enabled={fulfillmentDone(order.fulfillmentState)}
                   />
                 ) : null}
               </li>

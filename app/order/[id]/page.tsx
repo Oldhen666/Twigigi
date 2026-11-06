@@ -5,12 +5,15 @@ import { Suspense } from "react";
 import { CopyOrderNumber } from "@/components/copy-order-number";
 import { InteractionLine } from "@/components/interaction-line";
 import { PayMethods } from "@/components/pay-methods";
+import { ReviewSeller } from "@/components/review-seller";
 import { Stage } from "@/components/stage";
 import { buttonClass } from "@/components/ui";
+import { acceptSellerChange, confirmReceipt } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
-import { findUserById, getInteractionBySource, getOrder, getProductById } from "@/lib/db";
+import { findUserById, getInteractionBySource, getOrder, getProductById, hasReview } from "@/lib/db";
 import { formatMoney, orderHeading } from "@/lib/format";
 import { formatPickupChoice, parsePickupChoice } from "@/lib/pickup";
+import { buyerOrderCopy, fulfillmentDone } from "@/lib/order-flow";
 import { buyerPayUrl, methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
 import { confirmStripeSession } from "@/lib/stripe";
 
@@ -32,9 +35,13 @@ async function OrderView({
   const interaction = getInteractionBySource(order.id);
   const product = getProductById(order.productId);
   const seller = findUserById(order.sellerId);
-  const paid = order.status === "paid" || order.status === "fulfilled";
-  const canceled = order.status === "canceled";
+  const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
+  const canceled = order.status === "canceled" || order.reviewState === "declined";
   const digital = product?.cta === "file" || order.fulfillment === "digital";
+  const copy = buyerOrderCopy(order);
+  const question = order.interacQuestion || (order.buyerPayment === "interac" ? product?.interacQuestion ?? "" : "");
+  const password = order.interacPassword || (order.buyerPayment === "interac" ? product?.interacPassword ?? "" : "");
+  const buyerOwns = Boolean(account && (account.id === order.buyerId || account.email.toLowerCase() === order.email.toLowerCase() || (interaction && (account.id === interaction.buyerId || account.email.toLowerCase() === interaction.buyerEmail))));
   const fileReady = Boolean(order.fileSentAt) && order.fileLinks.length > 0;
   const orderNumber = order.publicRef || interaction?.publicRef || "";
   const itemCount = order.lines.length > 0 ? order.lines.reduce((sum, line) => sum + line.quantity, 0) : order.quantity;
@@ -51,13 +58,9 @@ async function OrderView({
     ? "/orders"
     : `/signup?email=${encodeURIComponent(order.email)}&next=${encodeURIComponent("/orders")}`;
   const contact = sellerContact(product, seller?.email ?? "", digital);
-  const title = paid ? "Payment confirmed" : canceled ? "Order canceled" : "Order request sent!";
-  const badge = paid ? "Payment confirmed" : canceled ? "Canceled" : "Awaiting seller";
-  const intro = digital
-    ? `Your request has been sent to ${order.displayName}. The file is emailed after they confirm your payment.`
-    : order.fulfillment === "pickup"
-      ? `Your request has been sent to ${order.displayName}. The seller will confirm availability and pickup details.`
-      : `Your request has been sent to ${order.displayName}. The seller will confirm availability and delivery details.`;
+  const title = copy.title;
+  const badge = copy.badge;
+  const intro = copy.intro;
   return (
     <Stage>
       <div className="bg-card px-5 py-8 sm:rounded-[28px] sm:px-6">
@@ -74,7 +77,7 @@ async function OrderView({
         <section className="mt-4 rounded-2xl bg-ink px-4 py-4 text-card">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-medium uppercase tracking-[0.14em] text-card/70">{orderNumber ? `Order #${orderNumber}` : "Order"}</p>
-            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${paid ? "bg-moss text-forest" : canceled ? "bg-card/15 text-card" : "bg-clay/20 text-clay"}`}>{badge}</span>
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${canceled ? "bg-card/15 text-card" : order.reviewState === "requested" || order.reviewState === "changes" ? "bg-clay/20 text-clay" : "bg-moss text-forest"}`}>{badge}</span>
           </div>
           <h1 className="mt-4 font-serif text-2xl leading-tight">{orderHeading(order)}</h1>
           {order.lines.length > 1 ? (
@@ -100,23 +103,49 @@ async function OrderView({
           ) : null}
         </section>
 
-        {!paid && !canceled ? (
+        {order.reviewState === "changes" && !canceled ? (
+          <section className="mt-6 rounded-2xl border border-line p-4 text-sm">
+            <h2 className="font-serif text-2xl">Proposed change</h2>
+            <p className="mt-2">{order.proposalNote}</p>
+            {order.proposalCents > 0 ? <p className="mt-2">New total: {formatMoney(order.proposalCents, order.currency)}</p> : <p className="mt-2 text-muted">The total stays {formatMoney(order.totalCents || order.amountCents, order.currency)}.</p>}
+            <form action={acceptSellerChange} className="mt-3">
+              <input type="hidden" name="id" value={order.id} />
+              <button className={buttonClass}>Accept change</button>
+            </form>
+          </section>
+        ) : null}
+
+        {copy.next.length > 0 ? (
           <section className="mt-6">
             <h2 className="font-serif text-2xl">What happens next?</h2>
             <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6">
-              <li>Seller reviews and confirms your order.</li>
-              <li>You'll receive the confirmed pickup and payment instructions, if applicable.</li>
-              <li>Pay the seller directly using your selected method.</li>
+              {copy.next.map((step) => <li key={step}>{step}</li>)}
             </ol>
           </section>
-        ) : paid ? (
-          <p className="mt-4 text-sm leading-6 text-muted">
-            {digital
-              ? fileReady
-                ? `The file link and password were emailed to ${order.email}.`
-                : `${order.displayName} confirmed your payment. The file link arrives when they send it.`
-              : `${order.displayName} confirmed your payment. They will follow up at ${order.email}.`}
-          </p>
+        ) : null}
+
+        {order.buyerPayment === "interac" && (question || password) ? (
+          <div className="mt-4 rounded-2xl bg-paper-deep px-4 py-3 text-sm">
+            {question ? <p>e-Transfer question: {question}</p> : null}
+            {password ? <p>e-Transfer password: {password}</p> : null}
+          </div>
+        ) : null}
+
+        {fulfillmentDone(order.fulfillmentState) && !order.buyerReceivedAt && !canceled ? (
+          <form action={confirmReceipt} className="mt-4">
+            <input type="hidden" name="id" value={order.id} />
+            <button className={`${buttonClass} w-full`}>Confirm receipt</button>
+            {account ? null : <p className="mt-2 text-center text-sm text-muted">Sign in with this email afterwards to review the seller.</p>}
+          </form>
+        ) : null}
+
+        {interaction && buyerOwns && fulfillmentDone(order.fulfillmentState) ? (
+          <ReviewSeller
+            interactionId={interaction.id}
+            kind="order"
+            productTitle={orderHeading(order)}
+            reviewed={hasReview(interaction.id)}
+          />
         ) : null}
 
         {fileReady ? (
@@ -129,10 +158,11 @@ async function OrderView({
             {order.filePassword ? <p>Password: {order.filePassword}</p> : null}
           </div>
         ) : null}
-        {!paid && digital && product ? (
+        {!paid && !canceled && order.reviewState === "accepted" && product ? (
           <PayMethods
             methods={(() => {
-              const offered = methodsForFulfillment(product.paymentMethods, "pickup");
+              const fulfillment = order.fulfillment === "delivery" || order.fulfillment === "shipping" ? order.fulfillment : "pickup";
+              const offered = digital ? ["card"] : methodsForFulfillment(product.paymentMethods, fulfillment);
               return order.buyerPayment && offered.includes(order.buyerPayment) ? [order.buyerPayment] : offered;
             })()}
             cardPaymentUrl={buyerPayUrl(product.cardPaymentUrl, {
@@ -140,14 +170,24 @@ async function OrderView({
               currency: order.currency,
               itemName: order.productTitle,
             })}
+            interacEmail={product.interacEmail}
+            venmoUsername={product.venmoUsername}
+            zelleMode={product.zelleMode}
+            zelleContact={product.zelleContact}
             showContacts
           />
         ) : null}
 
-        {interaction && account && (account.id === interaction.buyerId || account.email.toLowerCase() === interaction.buyerEmail) ? (
-          <div className="mt-6"><InteractionLine item={interaction} nextPath={`/order/${order.id}`} side="buyer" /></div>
-        ) : interaction && account && account.id === interaction.sellerId ? (
-          <div className="mt-6"><InteractionLine item={interaction} nextPath={`/order/${order.id}`} side="seller" /></div>
+        {interaction && buyerOwns ? (
+          <div className="mt-6">
+            <InteractionLine
+              item={interaction}
+              nextPath={`/order/${order.id}`}
+              side="buyer"
+              showReview={false}
+              allowConfirm={false}
+            />
+          </div>
         ) : null}
 
         {orderNumber ? <div className="mt-6"><CopyOrderNumber value={orderNumber} /></div> : null}
