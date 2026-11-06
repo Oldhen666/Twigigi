@@ -3299,6 +3299,36 @@ function ensureLandscapeDemo() {
   ).run(JSON.stringify(["/seed/deck-1.jpg"]), JSON.stringify(["/seed/consult-1.jpg"]));
 }
 
+function ensureAvaDemoDetails() {
+  const pickup = "Weekdays, between 4:00 PM and 7:00 PM | Weekends, anytime (8am - 8pm)";
+  db.prepare("UPDATE products SET pickup_time = ? WHERE id = 'prd_cedar' AND user_id = 'usr_ava' AND pickup_time = ''").run(pickup);
+  db.prepare(
+    `UPDATE products SET
+      payment_methods = ?,
+      interac_email = 'ava@twigigi.demo',
+      interac_question = 'What city is pickup in?',
+      interac_password = 'Edmonton'
+     WHERE id = 'prd_cedar' AND user_id = 'usr_ava' AND (payment_methods = '[]' OR payment_methods = '' OR payment_methods IS NULL)`,
+  ).run(JSON.stringify(["interac", "cash_pickup"]));
+  db.prepare(
+    `UPDATE products SET seller_contact = 'ava@twigigi.demo', seller_contact_mode = 'email'
+     WHERE user_id = 'usr_ava' AND (seller_contact IS NULL OR seller_contact = '')`,
+  ).run();
+  db.prepare(
+    "UPDATE products SET pickup_time = ? WHERE id = 'prd_wreath' AND user_id = 'usr_ava' AND pickup_enabled = 1 AND pickup_time = ''",
+  ).run("Thursday, between 6:00 PM and 8:00 PM");
+  db.prepare(
+    "UPDATE products SET pickup_time = ? WHERE id = 'prd_consult' AND user_id = 'usr_ava' AND pickup_enabled = 1 AND pickup_time = ''",
+  ).run("Weekdays, between 10:00 AM and 4:00 PM");
+  db.prepare(
+    `UPDATE products SET pickup_note = ?
+     WHERE id = 'prd_cedar' AND user_id = 'usr_ava' AND pickup_note = ?`,
+  ).run(
+    "Pickup in Windermere. The street address stays private until the order is confirmed.",
+    "Pickup in Windermere. We'll text a two-hour window after you order. The street address stays private.",
+  );
+}
+
 function ensureDemoCategories() {
   const rows = [
     ["prd_cedar", "product", "garden-outdoor", "planters-gardening"],
@@ -3368,4 +3398,5 @@ ensureConsultPage();
 ensureLandscapeDemo();
 ensureDemoReviews();
 ensureDemoCategories();
+ensureAvaDemoDetails();
 ensurePublicIds();

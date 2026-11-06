@@ -30,10 +30,11 @@ function parentFor(path: string) {
   return "/";
 }
 
-export function BackButton() {
+export function BackButton({ href = "" }: { href?: string }) {
   const path = usePathname() || "/";
+  const target = href.startsWith("/") && !href.startsWith("//") && !href.includes("\\") ? href : parentFor(path);
   return (
-    <Link href={parentFor(path)} className="self-start text-left text-sm text-muted">
+    <Link href={target} className="self-start text-left text-sm text-muted">
       ← Back
     </Link>
   );

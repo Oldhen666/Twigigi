@@ -19,7 +19,7 @@ async function LoginScreen({
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-6">
       <Logo />
       <div className="flex flex-1 flex-col justify-center py-6">
-      <BackButton />
+      <BackButton href={nextPath} />
       <h1 className="mt-8 font-serif text-4xl">Log in</h1>
       <div className="mt-6">
         <LoginForm nextPath={nextPath} />

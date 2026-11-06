@@ -122,6 +122,7 @@ export function CartCheckout({
   const payMethods = methodLists[0]?.filter((id) => methodLists.every((list) => list.includes(id))) ?? [];
   const needsTransfer = Boolean(chosen && chosen.id !== "pickup" && payMethods.length === 0);
   const contacts = available.map((row) => row.product).filter((product): product is CartCatalogItem => Boolean(product));
+  const activePickup = chosen?.id === "pickup" ? pickupTime || draft?.pickupTime || "" : "";
 
   useEffect(() => {
     if (chosen && chosen.id !== fulfillment) setFulfillment(chosen.id);
@@ -135,8 +136,9 @@ export function CartCheckout({
     setPaymentMethod((current) => (payMethods.length === 1 ? payMethods[0] : payMethods.includes(current) ? current : ""));
   }, [methodKey]);
   useEffect(() => {
+    if (!ready) return;
     if (chosen?.id !== "pickup") setPickupTime("");
-  }, [chosen?.id]);
+  }, [chosen?.id, ready]);
   useEffect(() => {
     if (state.error || state.fieldErrors) setConfirming(false);
   }, [state]);
@@ -253,7 +255,7 @@ export function CartCheckout({
       {mode === "checkout" ? (
         <>
           <input type="hidden" name="fulfillment" value={chosen?.id ?? ""} />
-          <input type="hidden" name="pickupTime" value={pickupTime} />
+          <input type="hidden" name="pickupTime" value={activePickup} />
           <input type="hidden" name="name" value={draft?.name ?? defaultName} />
           <input type="hidden" name="email" value={draft?.email ?? defaultEmail} />
           <input type="hidden" name="phone" value={draft?.phone ?? ""} />
@@ -278,7 +280,7 @@ export function CartCheckout({
                     location={option.location ?? ""}
                     schedules={pickupSchedules}
                     summary={pickupSummary}
-                    selectedTime={pickupTime}
+                    selectedTime={activePickup}
                     onTime={setPickupTime}
                     error={state.fieldErrors?.pickupTime}
                   />
@@ -409,7 +411,7 @@ export function CartCheckout({
           fulfillment={chosen.label}
           pickup={chosen.id === "pickup"}
           pickupLocation={chosen.location ?? ""}
-          pickupTime={pickupTime ? formatPickupChoice(pickupTime) : ""}
+          pickupTime={activePickup ? formatPickupChoice(activePickup) : ""}
           address={review.address}
           deliveryNote={chosen.id === "shipping" ? review.deliveryNote : ""}
           sellerNote={review.sellerNote}
@@ -424,7 +426,7 @@ export function CartCheckout({
             needsAddress: chosen.id !== "pickup",
             needsPayment: payMethods.length > 0,
             paymentMethod,
-            pickupTime,
+            pickupTime: activePickup,
           })}
           pending={pending}
           onClose={() => setConfirming(false)}
@@ -438,9 +440,10 @@ export function CartCheckout({
     if (!form || !chosen) return;
     const data = new FormData(form);
     const read = (key: string) => String(data.get(key) ?? "").trim();
+    const time = chosen.id === "pickup" ? activePickup || read("pickupTime") : "";
     const next = {
       fulfillment: chosen.id,
-      pickupTime,
+      pickupTime: time,
       name: read("name"),
       email: read("email"),
       phone: read("phone"),
@@ -455,7 +458,7 @@ export function CartCheckout({
       needsAddress: chosen.id !== "pickup",
       needsPayment: false,
       paymentMethod: "",
-      pickupTime,
+      pickupTime: time,
     });
     setCartGaps(gaps);
     if (gaps.length > 0) return;
