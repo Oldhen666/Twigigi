@@ -10,7 +10,7 @@ import { PayChoice, PickupFacts } from "@/components/checkout-choices";
 import { useKeepFormValues } from "@/components/keep-form-values";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { cartFulfillmentCharge, formatMoney, type FulfillmentOption } from "@/lib/format";
-import { methodLabel, methodsForFulfillment } from "@/lib/payments";
+import { methodLabel, methodsForFulfillment, paypalMeUrl } from "@/lib/payments";
 import { formatPickupChoice } from "@/lib/pickup";
 import type { FormState, ProductOption, ProductVariant } from "@/lib/types";
 import { resolveSelection } from "@/lib/variants";
@@ -310,6 +310,7 @@ export function CartCheckout({
           zelleContact={firstText(contacts, (item) => item.zelleContact)}
           error={state.fieldErrors?.paymentMethod}
           empty={needsTransfer ? "Delivery and shipping have to be paid by transfer first. This seller has not set one up." : ""}
+          showPayLink={false}
         />
       ) : null}
 
@@ -420,6 +421,7 @@ export function CartCheckout({
           deliveryNote={chosen.id === "shipping" ? review.deliveryNote : ""}
           sellerNote={review.sellerNote}
           payment={paymentMethod ? methodLabel(paymentMethod) : ""}
+          paypalUrl={paymentMethod === "paypal" ? paypalMeUrl(firstText(contacts, (item) => item.paypalMe ?? ""), { amountCents: total, currency }) : ""}
           shipping={chosen.id === "pickup" ? "" : fee === 0 ? "Free" : formatMoney(fee, currency)}
           total={formatMoney(total, currency)}
           gaps={reviewGaps(review, {
@@ -579,6 +581,7 @@ function OrderReviewDialog({
   deliveryNote,
   sellerNote,
   payment,
+  paypalUrl,
   shipping,
   total,
   gaps,
@@ -595,6 +598,7 @@ function OrderReviewDialog({
   deliveryNote: string;
   sellerNote: string;
   payment: string;
+  paypalUrl: string;
   shipping: string;
   total: string;
   gaps: string[];
@@ -651,6 +655,13 @@ function OrderReviewDialog({
         ) : (
           <p className="mt-4 text-sm text-muted">You pay {sellerName} directly. Twigigi does not take the payment.</p>
         )}
+        {paypalUrl ? (
+          <a href={paypalUrl} target="_blank" rel="noreferrer" className={`${buttonClass} mt-5 w-full`}>
+            Pay {total} with PayPal
+          </a>
+        ) : payment === "PayPal" ? (
+          <p className="mt-4 text-sm text-muted">The seller has not added a PayPal.Me link.</p>
+        ) : null}
         <div className="mt-5 flex gap-2">
           <button type="button" disabled={pending} onClick={onClose} className={`${ghostClass} flex-1`}>Back</button>
           <button type="submit" disabled={pending || gaps.length > 0} className={`${buttonClass} flex-1`}>

@@ -691,7 +691,11 @@ function PaymentChoices({
                   className={inputClass}
                 />
                 <span className="mt-1 block text-sm text-muted">
-                  Example: https://paypal.me/yourname. Paste that link only. Do not add an amount or a currency. At checkout, Twigigi adds the order total and the listing currency, such as https://paypal.me/yourname/149.00CAD.
+                  Create yours at{" "}
+                  <a href="https://www.paypal.com/paypalme/" target="_blank" rel="noreferrer" className="text-forest">
+                    https://www.paypal.com/paypalme/
+                  </a>
+                  , then paste it here. Example: https://paypal.me/yourname. Do not add an amount or a currency. At checkout, Twigigi adds the order total and the listing currency, such as https://paypal.me/yourname/149.00CAD.
                 </span>
               </Field>
             </div>

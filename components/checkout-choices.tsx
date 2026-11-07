@@ -47,6 +47,7 @@ export function PayChoice({
   zelleContact = "",
   error = "",
   empty = "",
+  showPayLink = true,
 }: {
   methods: string[];
   selected: string;
@@ -63,6 +64,7 @@ export function PayChoice({
   zelleContact?: string;
   error?: string;
   empty?: string;
+  showPayLink?: boolean;
 }) {
   if (methods.length === 0) return empty ? <p className="text-sm text-danger">{empty}</p> : null;
   const email = selected === "interac" ? safeEmail(interacEmail) : "";
@@ -84,7 +86,7 @@ export function PayChoice({
       {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
       {email ? <p className="mt-3 text-sm text-muted">e-Transfer instructions arrive after the seller confirms the order.</p> : null}
       {venmo ? <p className="mt-3 text-sm">Venmo: @{venmo}</p> : null}
-      {selected === "paypal" ? (
+      {showPayLink && selected === "paypal" ? (
         paypal ? (
           <a href={paypal} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>
             Pay {formatMoney(amountCents, currency)} with PayPal
