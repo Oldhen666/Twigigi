@@ -5,6 +5,7 @@ import { buyerReportPayment } from "@/lib/actions";
 import { buttonClass } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
 import { isCashMethod, methodLabel, paypalMeUrl, safeCardUrl, safeEmail, venmoPayUrl } from "@/lib/payments";
+import { PaymentRiskNote } from "@/components/payment-risk";
 
 export function BuyerPay({
   orderId,
@@ -32,6 +33,7 @@ export function BuyerPay({
   orderNote?: string;
 }) {
   const [method, setMethod] = useState(methods[0] ?? "");
+  const [confirming, setConfirming] = useState(false);
   const email = method === "interac" ? safeEmail(interacEmail) : "";
   const venmo = method === "venmo" ? venmoPayUrl(venmoUsername, { amountCents, note: orderNote }) : "";
   const paypal = method === "paypal" ? paypalMeUrl(paypalMe, { amountCents, currency }) : "";
@@ -74,11 +76,28 @@ export function BuyerPay({
       {card ? (
         <a href={card} target="_blank" rel="noreferrer" className={`${buttonClass} w-full`}>Pay by card</a>
       ) : null}
-      {cash ? <p className="text-sm text-muted">Pay the seller in cash when you pick it up.</p> : null}
-      <button className={`${buttonClass} w-full`} disabled={!method}>
-        {cash ? "I'll pay cash at pickup" : "I've paid the seller"}
-      </button>
-      <p className="text-sm text-muted">Twigigi does not take the payment. Marking it paid tells the seller to prepare the order.</p>
+      {cash ? <p className="text-sm text-muted">Pay the seller in cash when you pick it up. It stays unpaid until they confirm the cash.</p> : null}
+      {cash ? null : (
+        <button type="button" className={`${buttonClass} w-full`} disabled={!method} onClick={() => setConfirming(true)}>
+          I've Sent Payment
+        </button>
+      )}
+      {confirming ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" onClick={() => setConfirming(false)}>
+          <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-[28px] bg-card p-5" onClick={(event) => event.stopPropagation()}>
+            <h2 className="font-serif text-3xl">Payment sent to the seller</h2>
+            <div className="mt-3">
+              <PaymentRiskNote cash={false} />
+            </div>
+            <p className="mt-3 text-sm text-muted">This does not mark the order paid. The seller confirms it after they see the money.</p>
+            <div className="mt-5 flex gap-2">
+              <button type="button" onClick={() => setConfirming(false)} className="inline-flex h-12 flex-1 items-center justify-center rounded-full border border-line">Back</button>
+              <button className={`${buttonClass} flex-1`}>I've Sent Payment</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <PaymentRiskNote cash={cash} />
     </form>
   );
 }

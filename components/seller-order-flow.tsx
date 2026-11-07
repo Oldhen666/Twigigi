@@ -71,11 +71,13 @@ export function SellerOrderFlow({
             Payment:{" "}
             {paid
               ? `Confirmed${order.buyerPayment ? ` · ${methodLabel(order.buyerPayment) || order.buyerPayment}` : ""}`
-              : order.buyerPayment
-                ? prepaid
-                  ? "Waiting for you to confirm it"
-                  : "Cash, collected at pickup"
-                : "Waiting for the buyer to pay from their link"}
+              : order.paymentStatus === "verifying"
+                ? "Buyer says they sent it. Confirm only after you see the money."
+                : order.buyerPayment
+                  ? prepaid
+                    ? "Unpaid. The buyer has the payment details."
+                    : "Cash on pickup. Unpaid until you confirm the cash."
+                  : "Waiting for the buyer to choose a way to pay."}
           </p>
           <p>
             Fulfillment:{" "}

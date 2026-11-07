@@ -34,6 +34,7 @@ import {
   insertModerationEvent,
   insertMessage,
   insertOrder,
+  acceptPlacedOrder,
   insertProduct,
   insertQuote,
   insertReview,
@@ -957,14 +958,6 @@ function sellerNoteOf(formData: FormData) {
   return { ok: true as const, note };
 }
 
-async function sendPaymentLink(orderId: string, sellerId: string) {
-  if (!sellerReviewOrder(orderId, sellerId, "accept")) return;
-  const updated = getOrder(orderId);
-  const product = updated ? getProductById(updated.productId) : null;
-  if (!updated) return;
-  await notifyBuyer(updated, `Order confirmed: ${updated.productTitle}`, acceptNote(updated, product?.interacEmail ?? "", product?.paypalMe ?? "", product?.venmoUsername ?? ""));
-}
-
 export async function placeOrder(_prev: FormState, formData: FormData): Promise<FormState> {
   const productId = text(formData, "productId");
   const product = getProductById(productId);
@@ -1012,9 +1005,13 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   }
   const payFulfillment = parsed.data.fulfillment === "delivery" || parsed.data.fulfillment === "shipping" ? parsed.data.fulfillment : "pickup";
   const payMethods = digital ? ["card"] : methodsForFulfillment(product.paymentMethods, payFulfillment);
+  if (!digital && payMethods.length === 0) return { error: "This seller has not added a way to pay." };
   const schedules = parsed.data.fulfillment === "pickup" ? [product.pickupTime] : [];
-  const choice = chosenOrderDetails(formData, parsed.data.fulfillment, payMethods, schedules, digital);
+  const choice = chosenOrderDetails(formData, parsed.data.fulfillment, payMethods, schedules, true);
   if (!choice.ok) return { fieldErrors: choice.fieldErrors };
+  if (!digital && isCashMethod(choice.payment) && parsed.data.fulfillment !== "pickup") {
+    return { fieldErrors: { paymentMethod: "Cash is only for local pickup." } };
+  }
   const instructions = deliveryInstructions(formData, parsed.data.fulfillment);
   if (!instructions.ok) return { fieldErrors: instructions.fieldErrors };
   const subtotal = selection.priceCents * parsed.data.quantity;
@@ -1053,6 +1050,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       filePassword: digital ? product.filePassword : "",
     });
     setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note);
+    if (!digital) acceptPlacedOrder(orderId);
     if (choice.payment === "interac") setInteracPrompt(orderId, product.interacQuestion, product.interacPassword);
     openInteraction({
       kind: "order",
@@ -1085,20 +1083,31 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       choice.pickupWindow ? `Pickup time: ${formatPickupChoice(choice.pickupWindow)}` : null,
       !digital && parsed.data.fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
       instructions.note ? `Delivery instructions: ${instructions.note}` : null,
-      choice.payment ? `Payment: ${methodLabel(choice.payment)}` : digital ? null : "Payment: the buyer gets a link after you confirm.",
+      choice.payment ? `Payment: ${methodLabel(choice.payment)}` : null,
       `Total: ${formatMoney(total, product.currency)}`,
       order?.publicRef ? `Order: ${order.publicRef}` : null,
-      seller?.autoConfirmOrders && !digital
-        ? "This order was confirmed automatically. The buyer gets a payment link."
-        : "Accept the order, propose a change, or decline it from the order page.",
-      digital ? "After the money arrives, confirm the payment, then email the file link from the order page." : null,
+      digital
+        ? "After the money arrives, confirm the payment, then email the file link from the order page."
+        : isCashMethod(choice.payment)
+          ? "The buyer pays cash at pickup. It stays unpaid until you confirm the cash. Cancel the order if you cannot fulfill it."
+          : "The buyer pays you directly. Confirm the payment only after you see the money, then prepare pickup or shipping. Cancel the order if you cannot fulfill it.",
       "",
       `Open the order: ${appUrl()}/dashboard/orders/${orderId}`,
     ].filter((line): line is string => line !== null);
     await sendOrderEmail(notify, { subject: `New order: ${product.title}`, text: lines.join("\n"), replyTo: parsed.data.email });
   }
 
-  if (!digital && seller?.autoConfirmOrders) await sendPaymentLink(orderId, product.userId);
+  if (!digital) {
+    const placed = getOrder(orderId);
+    if (placed) {
+      await notifyBuyer(placed, `Order placed: ${placed.productTitle}`, [
+        `Order ${placed.publicRef || placed.productTitle} is placed.`,
+        isCashMethod(choice.payment)
+          ? "Pay the seller in cash when you pick it up. It stays unpaid until the seller confirms the cash."
+          : "Pay the seller directly from the order page. Twigigi does not hold or guarantee the payment. Sending money before you receive the item is risky if you do not know the seller.",
+      ]);
+    }
+  }
 
   redirect(`/order/${orderId}`);
 }
@@ -1155,12 +1164,16 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
   if (fulfillment !== "pickup" && sharedMethods.length === 0) {
     return { error: "Delivery and shipping have to be paid by transfer first. This seller has not set one up." };
   }
+  if (sharedMethods.length === 0) return { error: "This seller has not added a way to pay." };
   if (fulfillment !== "pickup" && parsed.data.address.length < 4) {
     return { fieldErrors: { address: "Enter an address for delivery or shipping." } };
   }
   const schedules = fulfillment === "pickup" ? prepared.map((line) => line.product.pickupTime) : [];
-  const choice = chosenOrderDetails(formData, fulfillment, sharedMethods, schedules, false);
+  const choice = chosenOrderDetails(formData, fulfillment, sharedMethods, schedules, true);
   if (!choice.ok) return { fieldErrors: choice.fieldErrors };
+  if (isCashMethod(choice.payment) && fulfillment !== "pickup") {
+    return { fieldErrors: { paymentMethod: "Cash is only for local pickup." } };
+  }
   const instructions = deliveryInstructions(formData, fulfillment);
   if (!instructions.ok) return { fieldErrors: instructions.fieldErrors };
   const sellerNote = sellerNoteOf(formData);
@@ -1219,6 +1232,7 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
       lines: lines.length > 1 ? lines : [],
     });
     setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note, sellerNote.note);
+    acceptPlacedOrder(orderId);
     if (choice.payment === "interac") {
       const prompt = prepared.find((line) => line.product.interacQuestion || line.product.interacPassword)?.product;
       if (prompt) setInteracPrompt(orderId, prompt.interacQuestion, prompt.interacPassword);
@@ -1256,21 +1270,29 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
       fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
       instructions.note ? `Delivery instructions: ${instructions.note}` : null,
       sellerNote.note ? `Note to seller: ${sellerNote.note}` : null,
-      choice.payment ? `Payment: ${methodLabel(choice.payment)}` : "Payment: the buyer gets a link after you confirm.",
+      choice.payment ? `Payment: ${methodLabel(choice.payment)}` : null,
       `Items: ${formatMoney(merchandise, first.product.currency)}`,
       `Shipping: ${shipping === 0 ? "Free" : formatMoney(shipping, first.product.currency)}`,
       `Total: ${formatMoney(total, first.product.currency)}`,
       order?.publicRef ? `Order: ${order.publicRef}` : null,
-      seller?.autoConfirmOrders
-        ? "This order was confirmed automatically. The buyer gets a payment link."
-        : "Accept the order, propose a change, or decline it from the order page.",
+      isCashMethod(choice.payment)
+        ? "The buyer pays cash at pickup. It stays unpaid until you confirm the cash. Cancel the order if you cannot fulfill it."
+        : "The buyer pays you directly. Confirm the payment only after you see the money, then prepare pickup or shipping. Cancel the order if you cannot fulfill it.",
       "",
       `Open the order: ${appUrl()}/dashboard/orders/${orderId}`,
     ].filter((line): line is string => line !== null);
     await sendOrderEmail(notify, { subject: `New order from ${parsed.data.name}`, text: text.join("\n"), replyTo: parsed.data.email });
   }
 
-  if (seller?.autoConfirmOrders) await sendPaymentLink(orderId, first.product.userId);
+  const placed = getOrder(orderId);
+  if (placed) {
+    await notifyBuyer(placed, `Order placed: ${placed.productTitle}`, [
+      `Order ${placed.publicRef || placed.productTitle} is placed.`,
+      isCashMethod(choice.payment)
+        ? "Pay the seller in cash when you pick it up. It stays unpaid until the seller confirms the cash."
+        : "Pay the seller directly from the order page. Twigigi does not hold or guarantee the payment. Sending money before you receive the item is risky if you do not know the seller.",
+    ]);
+  }
 
   redirect(`/order/${orderId}`);
 }
@@ -1675,17 +1697,12 @@ export async function buyerReportPayment(formData: FormData) {
   const seller = findUserById(order.sellerId);
   if (product && seller) {
     const notify = sellerNotifyEmails(product, seller.email);
-    const paid = !isCashMethod(method);
     if (notify.length > 0) {
       await sendOrderEmail(notify, {
-        subject: paid ? `Buyer paid: ${order.productTitle}` : `Buyer will pay cash: ${order.productTitle}`,
+        subject: `Payment sent: ${order.productTitle}`,
         text: [
-          paid
-            ? `${order.buyerName} marked order ${order.publicRef} paid by ${methodLabel(method)}.`
-            : `${order.buyerName} will pay cash for order ${order.publicRef}.`,
-          shipsToBuyer(order.fulfillment)
-            ? "Add the carrier and tracking number when you ship it."
-            : "Mark it ready for pickup when it is ready.",
+          `${order.buyerName} says they sent ${methodLabel(method)} for order ${order.publicRef}.`,
+          "This is not paid yet. Confirm it only after you see the money.",
           "",
           `${appUrl()}/dashboard/orders/${id}`,
         ].join("\n"),

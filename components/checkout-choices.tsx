@@ -2,7 +2,7 @@
 
 import { PickupCalendar } from "@/components/pickup-calendar";
 import { formatMoney } from "@/lib/format";
-import { methodLabel, paypalMeUrl, safeCardUrl, safeEmail, venmoProfileUrl } from "@/lib/payments";
+import { methodLabel, paypalMeUrl, safeCardUrl, venmoProfileUrl } from "@/lib/payments";
 import { buttonClass } from "@/components/ui";
 
 export function PickupFacts({
@@ -63,7 +63,6 @@ export function PayChoice({
   showPayLink?: boolean;
 }) {
   if (methods.length === 0) return empty ? <p className="text-sm text-danger">{empty}</p> : null;
-  const email = selected === "interac" ? safeEmail(interacEmail) : "";
   const venmo = selected === "venmo" ? venmoProfileUrl(venmoUsername) : "";
   const paypal = selected === "paypal" ? paypalMeUrl(paypalMe, { amountCents, currency }) : "";
   const card = selected === "card" ? safeCardUrl(cardPaymentUrl) : "";
@@ -79,8 +78,14 @@ export function PayChoice({
         ))}
       </div>
       {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
-      {email ? <p className="mt-3 text-sm text-muted">e-Transfer instructions arrive after the seller confirms the order.</p> : null}
-      {venmo ? <p className="mt-3 text-sm">Venmo: {venmo}</p> : null}
+      {selected === "interac" ? <p className="mt-3 text-sm text-muted">e-Transfer details are on the order as soon as it is placed.</p> : null}
+      {selected === "venmo" && !showPayLink ? <p className="mt-3 text-sm text-muted">The Venmo link, with the total and order number, is on the order after you place it.</p> : null}
+      {showPayLink && venmo ? (
+        <a href={venmo} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>
+          Pay {formatMoney(amountCents, currency)} with Venmo
+        </a>
+      ) : null}
+      {selected === "paypal" && !showPayLink ? <p className="mt-3 text-sm text-muted">The PayPal link, with the total and order number, is on the order after you place it.</p> : null}
       {showPayLink && selected === "paypal" ? (
         paypal ? (
           <a href={paypal} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>
@@ -90,7 +95,7 @@ export function PayChoice({
           <p className="mt-3 text-sm text-muted">The seller has not added a PayPal.Me link.</p>
         )
       ) : null}
-      {selected === "cash" ? <p className="mt-3 text-sm text-muted">Pay the seller in cash when you pick it up.</p> : null}
+      {selected === "cash" || selected === "cash_pickup" ? <p className="mt-3 text-sm text-muted">Cash is only for local pickup. You pay the seller in person, and it stays unpaid until they confirm the cash.</p> : null}
       {card ? (
         <a href={card} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>
           Pay by card

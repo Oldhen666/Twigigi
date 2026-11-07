@@ -5,9 +5,10 @@ import { useActionState } from "react";
 import { useKeepFormValues } from "@/components/keep-form-values";
 import type { FulfillmentOption } from "@/lib/format";
 import { formatMoney, shippingCharge } from "@/lib/format";
-import { methodsForFulfillment } from "@/lib/payments";
+import { methodsForFulfillment, isCashMethod } from "@/lib/payments";
 import type { Cta, FormState, QuoteForm } from "@/lib/types";
 import { PayChoice, PickupFacts } from "@/components/checkout-choices";
+import { PaymentRiskNote } from "@/components/payment-risk";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 
 type PayDetails = {
@@ -65,6 +66,7 @@ export function CheckoutForm({
   const quantityCap = maxQuantity ?? (paying ? 20 : 99);
   const [quantity, setQuantity] = useState(Math.min(Math.max(initialQuantity, 1), Math.max(quantityCap, 1)));
   const formRef = useRef<HTMLFormElement>(null);
+  const riskSeen = useRef(false);
   const [uploadKey, setUploadKey] = useState(0);
   const [hideErrors, setHideErrors] = useState(false);
   const rememberForm = useKeepFormValues(formRef, state, pending);
@@ -93,6 +95,8 @@ export function CheckoutForm({
   useEffect(() => {
     if (selected?.id !== "pickup") setPickupTime("");
   }, [selected?.id]);
+  const [riskOpen, setRiskOpen] = useState(false);
+  const cashPay = paymentMethod === "cash" || paymentMethod === "cash_pickup";
   const fieldErrors = hideErrors || pending ? undefined : state.fieldErrors;
   const formError = hideErrors || pending ? undefined : state.error;
   const needsTransfer = mode === "buy" && payFulfillment !== "pickup" && payMethods.length === 0;
@@ -106,6 +110,10 @@ export function CheckoutForm({
       onSubmit={(event) => {
         setHideErrors(false);
         rememberForm(event.currentTarget);
+        if (mode === "buy" && paymentMethod && !riskSeen.current) {
+          event.preventDefault();
+          setRiskOpen(true);
+        }
       }}
     >
       <input type="hidden" name="productId" value={productId} />
@@ -181,7 +189,7 @@ export function CheckoutForm({
         </fieldset>
       ) : null}
 
-      {(mode === "file") && payments ? (
+      {(mode === "file" || mode === "buy") && payments ? (
         <PayChoice
           methods={payMethods}
           selected={paymentMethod}
@@ -196,6 +204,7 @@ export function CheckoutForm({
           currency={currency}
           error={fieldErrors?.paymentMethod}
           empty={needsTransfer ? "Delivery and shipping have to be paid by transfer first. This seller has not set one up." : ""}
+          showPayLink={mode === "file"}
         />
       ) : null}
       {mode === "buy" && needsTransfer ? <p className="text-sm text-danger">Delivery and shipping have to be paid by transfer first. This seller has not set one up.</p> : null}
@@ -302,6 +311,30 @@ export function CheckoutForm({
       <button disabled={pending || needsTransfer} className={`${buttonClass} h-14 w-full rounded-2xl text-lg`}>
         {pending ? "Sending…" : label}
       </button>
+      {riskOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" onClick={() => setRiskOpen(false)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="pay-risk-title" className="w-full max-w-md rounded-[28px] bg-card p-5" onClick={(event) => event.stopPropagation()}>
+            <h2 id="pay-risk-title" className="font-serif text-3xl">Pay the seller directly</h2>
+            <div className="mt-3">
+              <PaymentRiskNote cash={cashPay} />
+            </div>
+            <div className="mt-5 flex gap-2">
+              <button type="button" onClick={() => setRiskOpen(false)} className={`${ghostClass} flex-1`}>Back</button>
+              <button
+                type="button"
+                className={`${buttonClass} flex-1`}
+                onClick={() => {
+                  riskSeen.current = true;
+                  setRiskOpen(false);
+                  formRef.current?.requestSubmit();
+                }}
+              >
+                Place order
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }

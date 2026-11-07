@@ -896,7 +896,7 @@ function mapOrder(row: Row): OrderRecord {
     row.fulfillment === "delivery" || row.fulfillment === "shipping" || row.fulfillment === "digital" ? row.fulfillment : "pickup";
   const status: OrderStatus =
     row.status === "paid" || row.status === "fulfilled" || row.status === "canceled" ? row.status : "unpaid";
-  const paymentStatus: PaymentStatus = row.payment_status === "paid" ? "paid" : "unpaid";
+  const paymentStatus: PaymentStatus = row.payment_status === "paid" ? "paid" : row.payment_status === "verifying" ? "verifying" : "unpaid";
   const protectionStatus: ProtectionStatus = row.protection_status === "active" ? "active" : "pending";
   const payoutStatus: PayoutStatus =
     row.payout_status === "held" || row.payout_status === "processing" || row.payout_status === "paid" ? row.payout_status : "none";
@@ -2796,6 +2796,10 @@ export function acceptOrderProposal(id: string) {
   return result.changes > 0;
 }
 
+export function acceptPlacedOrder(id: string) {
+  db.prepare(`UPDATE orders SET review_state = 'accepted' WHERE id = ? AND review_state = 'requested'`).run(id);
+}
+
 export function confirmOrderPaymentReceived(id: string, sellerId: string) {
   const order = getOrder(id);
   if (!order || order.sellerId !== sellerId) return false;
@@ -2808,13 +2812,13 @@ export function confirmOrderPaymentReceived(id: string, sellerId: string) {
 
 export function recordBuyerPayment(id: string, method: string) {
   const order = getOrder(id);
-  if (!order || order.reviewState !== "accepted" || order.status === "canceled" || order.status === "fulfilled") return false;
-  if (order.buyerPayment || order.paymentStatus === "paid" || order.status === "paid") return false;
-  db.prepare("UPDATE orders SET buyer_payment = ? WHERE id = ?").run(method, id);
-  if (isCashMethod(method)) return true;
-  db.prepare("UPDATE orders SET status = 'paid' WHERE id = ? AND status = 'unpaid'").run(id);
-  beginPaymentProtection(id);
-  return true;
+  if (!order || order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined") return false;
+  if (isCashMethod(method) || isCashMethod(order.buyerPayment)) return false;
+  if (order.paymentStatus === "paid" || order.paymentStatus === "verifying" || order.status === "paid") return false;
+  if (order.buyerPayment && order.buyerPayment !== method) return false;
+  if (!order.buyerPayment) db.prepare("UPDATE orders SET buyer_payment = ? WHERE id = ?").run(method, id);
+  const result = db.prepare(`UPDATE orders SET payment_status = 'verifying' WHERE id = ? AND payment_status = 'unpaid'`).run(id);
+  return result.changes > 0;
 }
 
 export function markOrderFulfillment(

@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { placeCartOrder } from "@/lib/actions";
 import { readCart, writeCart, type CartItem } from "@/components/add-to-cart";
-import { PickupFacts } from "@/components/checkout-choices";
+import { PayChoice, PickupFacts } from "@/components/checkout-choices";
+import { PaymentRiskNote } from "@/components/payment-risk";
 import { useKeepFormValues } from "@/components/keep-form-values";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { cartFulfillmentCharge, formatMoney, type FulfillmentOption } from "@/lib/format";
-import { methodsForFulfillment } from "@/lib/payments";
+import { isCashMethod, methodLabel, methodsForFulfillment } from "@/lib/payments";
 import { formatPickupChoice } from "@/lib/pickup";
 import type { FormState, ProductOption, ProductVariant } from "@/lib/types";
 import { resolveSelection } from "@/lib/variants";
@@ -358,6 +359,23 @@ export function CartCheckout({
           <p className="text-muted">Shipping is calculated once for everything from {sellerName}.</p>
         </div>
       ) : null}
+      {mode === "checkout" && available[0]?.product ? (
+        <PayChoice
+          methods={payMethods}
+          selected={paymentMethod}
+          onSelect={setPaymentMethod}
+          interacEmail={available[0].product.interacEmail}
+          interacQuestion={available[0].product.interacQuestion}
+          interacPassword={available[0].product.interacPassword}
+          venmoUsername={available[0].product.venmoUsername}
+          paypalMe={available[0].product.paypalMe}
+          amountCents={total ?? 0}
+          currency={currency}
+          error={state.fieldErrors?.paymentMethod}
+          showPayLink={false}
+          empty={needsTransfer ? "Delivery and shipping have to be paid by transfer first. This seller has not set one up." : "This seller has not added a way to pay."}
+        />
+      ) : null}
       {mode === "cart" && needsTransfer ? <p className="text-sm text-danger">Delivery and shipping have to be paid by transfer first. This seller has not set one up.</p> : null}
       {mode === "cart" && cartGaps.length > 0 ? (
         <ul className="space-y-1 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">
@@ -385,7 +403,6 @@ export function CartCheckout({
       )}
       {confirming && review && chosen && total != null ? (
         <OrderReviewDialog
-          sellerName={sellerName}
           lines={available.map((row) => ({
             title: row.product?.title ?? "Twig",
             label: row.selection?.label ?? "",
@@ -399,6 +416,8 @@ export function CartCheckout({
           address={review.address}
           deliveryNote={chosen.id === "shipping" ? review.deliveryNote : ""}
           sellerNote={review.sellerNote}
+          payment={paymentMethod ? methodLabel(paymentMethod) : ""}
+          cash={isCashMethod(paymentMethod)}
           shipping={chosen.id === "pickup" ? "" : fee === 0 ? "Free" : formatMoney(fee, currency)}
           total={formatMoney(total, currency)}
           gaps={reviewGaps(review, {
@@ -406,7 +425,7 @@ export function CartCheckout({
             requirePhone,
             pickup: chosen.id === "pickup",
             needsAddress: chosen.id !== "pickup",
-            needsPayment: false,
+            needsPayment: true,
             paymentMethod,
             pickupTime: activePickup,
           })}
@@ -548,7 +567,6 @@ function reviewGaps(review: OrderReview, rules: {
 }
 
 function OrderReviewDialog({
-  sellerName,
   lines,
   fulfillment,
   pickup,
@@ -557,13 +575,14 @@ function OrderReviewDialog({
   address,
   deliveryNote,
   sellerNote,
+  payment,
+  cash,
   shipping,
   total,
   gaps,
   pending,
   onClose,
 }: {
-  sellerName: string;
   lines: { title: string; label: string; quantity: number; amount: string }[];
   fulfillment: string;
   pickup: boolean;
@@ -572,6 +591,8 @@ function OrderReviewDialog({
   address: string;
   deliveryNote: string;
   sellerNote: string;
+  payment: string;
+  cash: boolean;
   shipping: string;
   total: string;
   gaps: string[];
@@ -596,7 +617,6 @@ function OrderReviewDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <h2 id="order-review-title" className="font-serif text-3xl">Confirm your order</h2>
-        <p className="mt-1 text-sm text-muted">Check the payment and details before this goes to {sellerName}.</p>
         <div className="mt-4 space-y-2 text-sm">
           {lines.map((line) => (
             <p key={`${line.title}-${line.label}`} className="flex justify-between gap-3">
@@ -617,6 +637,7 @@ function OrderReviewDialog({
           )}
           {deliveryNote ? <div><dt className="text-muted">Delivery instructions</dt><dd>{deliveryNote}</dd></div> : null}
           {sellerNote ? <div><dt className="text-muted">Note to seller</dt><dd>{sellerNote}</dd></div> : null}
+          {payment ? <div className="flex justify-between gap-3"><dt className="text-muted">Pay by</dt><dd>{payment}</dd></div> : null}
           {shipping ? <div className="flex justify-between gap-3"><dt className="text-muted">Shipping</dt><dd>{shipping}</dd></div> : null}
           <div className="flex justify-between gap-3 font-serif text-2xl text-forest"><dt>Total</dt><dd>{total}</dd></div>
         </dl>
@@ -624,9 +645,9 @@ function OrderReviewDialog({
           <ul className="mt-4 space-y-1 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">
             {gaps.map((gap) => <li key={gap}>{gap}</li>)}
           </ul>
-        ) : (
-          <p className="mt-4 text-sm text-muted">You pay {sellerName} directly after they confirm. The payment link lists the ways they accept. Twigigi does not take the payment.</p>
-        )}
+        ) : payment ? (
+          <div className="mt-4"><PaymentRiskNote cash={cash} /></div>
+        ) : null}
         <div className="mt-5 flex gap-2">
           <button type="button" disabled={pending} onClick={onClose} className={`${ghostClass} flex-1`}>Back</button>
           <button type="submit" disabled={pending || gaps.length > 0} className={`${buttonClass} flex-1`}>

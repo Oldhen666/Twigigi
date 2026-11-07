@@ -6,9 +6,11 @@ import { ghostClass } from "@/components/ui";
 export function SellerContactButton({
   mode,
   value,
+  variant = "button",
 }: {
   mode: "email" | "phone" | "";
   value: string;
+  variant?: "button" | "link";
 }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -22,8 +24,15 @@ export function SellerContactButton({
   const href = mode === "email" ? `mailto:${value}` : mode === "phone" ? `tel:${value.replace(/\D/g, "")}` : "";
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={`${ghostClass} mt-3 w-full`}>
-        Questions? Contact the seller directly.
+      <button type="button" onClick={() => setOpen(true)} className={variant === "link" ? "inline-flex items-center gap-1.5 text-sm text-muted" : `${ghostClass} mt-3 w-full`}>
+        {variant === "link" ? (
+          <>
+            <ChatIcon />
+            Contact seller
+          </>
+        ) : (
+          "Questions? Contact the seller directly."
+        )}
       </button>
       {open ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={() => setOpen(false)}>
@@ -50,5 +59,13 @@ export function SellerContactButton({
         </div>
       ) : null}
     </>
+  );
+}
+
+function ChatIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path d="M3.2 12.6 2.4 14.2c.2 0 2.2-.7 2.2-.7A6 6 0 1 0 3.2 12.6Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
   );
 }
