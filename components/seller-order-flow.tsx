@@ -1,6 +1,7 @@
 import { ReloadForm } from "@/components/reload-form";
 import { completeOrder, confirmOrderPayment, markOrderProgress, reviewSellerOrder } from "@/lib/actions";
 import { formatDate, formatMoney } from "@/lib/format";
+import { methodLabel } from "@/lib/payments";
 import { ORDER_COMPLETE_DAYS, fulfillmentDone, orderCanComplete, paymentNeedsConfirm, shipsToBuyer } from "@/lib/order-flow";
 import type { OrderRecord } from "@/lib/types";
 import { buttonClass } from "@/components/ui";
@@ -27,6 +28,7 @@ export function SellerOrderFlow({
   return (
     <section className="mt-6 rounded-2xl border border-line bg-card p-4">
       {mail === "0" ? <p className="text-sm text-danger">The status was saved, but the email could not be sent.</p> : null}
+      {mail === "ship" ? <p className="text-sm text-danger">Enter the carrier and a tracking number.</p> : null}
       {mail === "note" ? <p className="mt-3 text-sm text-danger">Describe the change in a few words.</p> : null}
       {mail === "amount" ? <p className="mt-3 text-sm text-danger">Enter a new total of at least $0.50, or leave it blank.</p> : null}
       {order.reviewState === "changes" ? (
@@ -65,7 +67,16 @@ export function SellerOrderFlow({
       ) : null}
       {confirmed ? (
         <div className="mt-4 space-y-3 text-sm">
-          <p>Payment: {paid ? "Confirmed" : prepaid ? "Waiting for you to confirm it" : "Cash, collected at pickup"}</p>
+          <p>
+            Payment:{" "}
+            {paid
+              ? `Confirmed${order.buyerPayment ? ` · ${methodLabel(order.buyerPayment) || order.buyerPayment}` : ""}`
+              : order.buyerPayment
+                ? prepaid
+                  ? "Waiting for you to confirm it"
+                  : "Cash, collected at pickup"
+                : "Waiting for the buyer to pay from their link"}
+          </p>
           <p>
             Fulfillment:{" "}
             {order.fulfillmentState === "ready"
@@ -75,7 +86,9 @@ export function SellerOrderFlow({
                   ? order.fileSentAt
                     ? "File emailed"
                     : "Marked sent"
-                  : "Sent out for delivery"
+                  : order.shipTracking
+                    ? `Sent with ${order.shipCarrier}. Tracking ${order.shipTracking}`
+                    : "Sent out for delivery"
                 : "Not yet"}
           </p>
           {prepaid && !paid ? (
@@ -99,11 +112,31 @@ export function SellerOrderFlow({
             </ReloadForm>
           ) : null}
           {canFulfill && shipsToBuyer(order.fulfillment) ? (
-            <ReloadForm action={markOrderProgress}>
+            <ReloadForm action={markOrderProgress} className="space-y-2">
               <input type="hidden" name="id" value={order.id} />
               <input type="hidden" name="state" value="sent" />
-              <button className={buttonClass}>Sent out for delivery</button>
-              <p className="mt-1 text-muted">This emails the buyer that the order was sent.</p>
+              <label className="block">
+                Carrier
+                <select name="carrier" defaultValue="Canada Post" className="mt-1 h-11 w-full rounded-2xl border border-line bg-white px-3">
+                  <option>Canada Post</option>
+                  <option>UPS</option>
+                  <option>FedEx</option>
+                  <option>Purolator</option>
+                  <option>USPS</option>
+                  <option>DHL</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label className="block">
+                Carrier name, if other
+                <input name="carrierName" maxLength={40} className="mt-1 h-11 w-full rounded-2xl border border-line bg-white px-3" />
+              </label>
+              <label className="block">
+                Tracking number
+                <input name="tracking" required minLength={4} maxLength={40} className="mt-1 h-11 w-full rounded-2xl border border-line bg-white px-3" />
+              </label>
+              <button className={buttonClass}>Ship out</button>
+              <p className="text-muted">This emails the buyer the carrier and tracking number.</p>
             </ReloadForm>
           ) : null}
           {prepaid && !paid && !digital ? <p className="text-muted">Confirm the payment before you mark it ready or sent.</p> : null}

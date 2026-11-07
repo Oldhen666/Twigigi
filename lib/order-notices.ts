@@ -17,6 +17,11 @@ export function acceptNote(order: OrderRecord, interacEmail = "", paypalMe = "")
     `Total: ${total}`,
     method ? `Payment: ${method}` : null,
   ];
+  if (!order.buyerPayment && order.fulfillment !== "digital") {
+    lines.push("Choose how to pay on the order page. It lists the ways this seller accepts, such as PayPal, e-Transfer, or cash.");
+    lines.push("After you pay, mark it paid there so the seller can prepare the order.");
+    return lines;
+  }
   const email = order.buyerPayment === "interac" ? safeEmail(interacEmail) : "";
   if (email || (order.buyerPayment === "interac" && (order.interacQuestion || order.interacPassword))) {
     lines.push("e-Transfer instructions:");
@@ -47,6 +52,8 @@ export function readyNote(order: OrderRecord, place: string) {
   }
   return [
     `Order ${order.publicRef || order.productTitle} has been sent out for delivery.`,
+    order.shipCarrier ? `Carrier: ${order.shipCarrier}` : null,
+    order.shipTracking ? `Tracking number: ${order.shipTracking}` : null,
     shipsToBuyer(order.fulfillment) && order.address ? `Address: ${order.address}` : null,
   ];
 }

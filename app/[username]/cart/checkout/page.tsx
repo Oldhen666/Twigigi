@@ -27,7 +27,7 @@ async function CheckoutScreen({ params }: { params: Promise<{ username: string }
           ← Cart
         </Link>
         <h1 className="mt-3 font-serif text-4xl">Checkout</h1>
-        <p className="mt-2 text-sm text-muted">Choose how you will pay {seller.displayName}.</p>
+        <p className="mt-2 text-sm text-muted">Confirm the time and how you want it. Payment comes after the seller confirms.</p>
         <CartCheckout
           mode="checkout"
           publicId={seller.publicId}

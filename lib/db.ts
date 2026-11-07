@@ -17,6 +17,7 @@ import {
   type OwnerKind,
 } from "@/lib/ledger";
 import { MARKETPLACE_GMV_SQL, PLATFORM_REVENUE_SQL, SELLER_SALES_SQL, paymentFlowOf } from "@/lib/order-money";
+import { isCashMethod } from "@/lib/payments";
 import { fulfillmentDone, orderCanComplete, paymentNeedsConfirm } from "@/lib/order-flow";
 import { readStoredFileLinks } from "@/lib/files";
 import { parseQuoteForm } from "@/lib/quote-form";
@@ -274,6 +275,9 @@ function ensureColumns(database: DatabaseSync) {
   add("orders", "buyer_received_at", "buyer_received_at TEXT");
   add("orders", "interac_question", "interac_question TEXT NOT NULL DEFAULT ''");
   add("orders", "interac_password", "interac_password TEXT NOT NULL DEFAULT ''");
+  add("orders", "ship_carrier", "ship_carrier TEXT NOT NULL DEFAULT ''");
+  add("orders", "ship_tracking", "ship_tracking TEXT NOT NULL DEFAULT ''");
+  add("users", "auto_confirm_orders", "auto_confirm_orders INTEGER NOT NULL DEFAULT 0");
   database.exec(`
     UPDATE orders SET review_state = 'accepted'
     WHERE review_state = 'requested' AND status IN ('paid', 'fulfilled');
@@ -869,6 +873,7 @@ function mapUser(row: Row): User {
     payoutInterac: str(row.payout_interac),
     payoutVenmo: str(row.payout_venmo),
     payoutZelle: str(row.payout_zelle),
+    autoConfirmOrders: num(row.auto_confirm_orders) === 1,
     suspended: num(row.suspended) === 1,
   };
 }
@@ -955,6 +960,8 @@ function mapOrder(row: Row): OrderRecord {
     buyerReceivedAt: row.buyer_received_at ? str(row.buyer_received_at) : null,
     interacQuestion: str(row.interac_question),
     interacPassword: str(row.interac_password),
+    shipCarrier: str(row.ship_carrier),
+    shipTracking: str(row.ship_tracking),
     createdAt: str(row.created_at),
   };
 }
@@ -1711,6 +1718,10 @@ export function setPayoutDetails(userId: string, input: { interac: string; venmo
     input.zelle,
     userId,
   );
+}
+
+export function setAutoConfirm(userId: string, enabled: boolean) {
+  db.prepare("UPDATE users SET auto_confirm_orders = ? WHERE id = ?").run(enabled ? 1 : 0, userId);
 }
 
 export function listSellerBills(userId: string) {
@@ -2795,7 +2806,23 @@ export function confirmOrderPaymentReceived(id: string, sellerId: string) {
   return true;
 }
 
-export function markOrderFulfillment(id: string, sellerId: string, state: "ready" | "sent") {
+export function recordBuyerPayment(id: string, method: string) {
+  const order = getOrder(id);
+  if (!order || order.reviewState !== "accepted" || order.status === "canceled" || order.status === "fulfilled") return false;
+  if (order.buyerPayment || order.paymentStatus === "paid" || order.status === "paid") return false;
+  db.prepare("UPDATE orders SET buyer_payment = ? WHERE id = ?").run(method, id);
+  if (isCashMethod(method)) return true;
+  db.prepare("UPDATE orders SET status = 'paid' WHERE id = ? AND status = 'unpaid'").run(id);
+  beginPaymentProtection(id);
+  return true;
+}
+
+export function markOrderFulfillment(
+  id: string,
+  sellerId: string,
+  state: "ready" | "sent",
+  shipment?: { carrier: string; tracking: string },
+) {
   const order = getOrder(id);
   if (!order || order.sellerId !== sellerId) return false;
   if (order.reviewState !== "accepted" || order.status === "canceled" || order.status === "fulfilled") return false;
@@ -2805,6 +2832,18 @@ export function markOrderFulfillment(id: string, sellerId: string, state: "ready
   const paid = order.paymentStatus === "paid" || order.status === "paid";
   if (paymentNeedsConfirm(order.buyerPayment) && !paid) return false;
   const now = new Date().toISOString();
+  if (state === "sent") {
+    const carrier = shipment?.carrier.trim() ?? "";
+    const tracking = shipment?.tracking.trim() ?? "";
+    if (carrier.length < 2 || tracking.length < 4) return false;
+    const result = db
+      .prepare(
+        `UPDATE orders SET fulfillment_state = ?, ready_at = COALESCE(NULLIF(ready_at, ''), ?), ship_carrier = ?, ship_tracking = ?
+         WHERE id = ? AND seller_id = ?`,
+      )
+      .run(state, now, carrier.slice(0, 40), tracking.slice(0, 40), id, sellerId);
+    return result.changes > 0;
+  }
   const result = db
     .prepare(
       `UPDATE orders SET fulfillment_state = ?, ready_at = COALESCE(NULLIF(ready_at, ''), ?)

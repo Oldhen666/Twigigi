@@ -183,7 +183,7 @@ export function CheckoutForm({
         </fieldset>
       ) : null}
 
-      {(mode === "buy" || mode === "file") && payments ? (
+      {(mode === "file") && payments ? (
         <PayChoice
           methods={payMethods}
           selected={paymentMethod}
@@ -202,6 +202,7 @@ export function CheckoutForm({
           empty={needsTransfer ? "Delivery and shipping have to be paid by transfer first. This seller has not set one up." : ""}
         />
       ) : null}
+      {mode === "buy" && needsTransfer ? <p className="text-sm text-danger">Delivery and shipping have to be paid by transfer first. This seller has not set one up.</p> : null}
       {mode === "file" ? <p className="text-sm text-muted">Next you pay the seller by card. The file is emailed after they confirm the payment.</p> : null}
 
       {mode === "buy" && fulfillment !== "pickup" ? (

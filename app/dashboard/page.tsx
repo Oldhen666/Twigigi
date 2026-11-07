@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { getImpersonation, requireSeller } from "@/lib/auth";
-import { payAndPublish, reactivateTwig, setListingFree } from "@/lib/actions";
+import { payAndPublish, reactivateTwig, saveAutoConfirm, setListingFree } from "@/lib/actions";
 import { activeWindow, formatListingFee, listingFeeCents, listingFeeCurrency, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
@@ -34,6 +34,12 @@ async function DashboardBody() {
           <Link href="/dashboard/payments" className="font-medium text-forest">Payment settings</Link>
           <Link href={`/${user.publicId}`} className="font-medium text-forest">Your page</Link>
         </p>
+        <form action={saveAutoConfirm} className="mt-4 rounded-3xl border border-line bg-card px-4 py-4 text-sm">
+          <input type="hidden" name="enabled" value={user.autoConfirmOrders ? "0" : "1"} />
+          <p className="font-medium">{user.autoConfirmOrders ? "New orders are confirmed automatically." : "You confirm each new order."}</p>
+          <p className="mt-1 text-muted">After an order is confirmed, the buyer gets a payment link with the methods on the Twig. You then mark pickup ready, or ship it with a carrier and tracking number.</p>
+          <button className="mt-3 text-forest">{user.autoConfirmOrders ? "Turn off automatic confirmation" : "Confirm new orders automatically"}</button>
+        </form>
         {user.billingMethod || acting ? null : (
           <p className="mt-3 text-sm">
             <Link href="/billing?next=/dashboard" className="font-medium text-forest">Add a payment method</Link>

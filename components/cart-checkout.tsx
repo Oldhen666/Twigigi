@@ -6,11 +6,11 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { placeCartOrder } from "@/lib/actions";
 import { readCart, writeCart, type CartItem } from "@/components/add-to-cart";
-import { PayChoice, PickupFacts } from "@/components/checkout-choices";
+import { PickupFacts } from "@/components/checkout-choices";
 import { useKeepFormValues } from "@/components/keep-form-values";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { cartFulfillmentCharge, formatMoney, type FulfillmentOption } from "@/lib/format";
-import { methodLabel, methodsForFulfillment, paypalMeUrl } from "@/lib/payments";
+import { methodsForFulfillment } from "@/lib/payments";
 import { formatPickupChoice } from "@/lib/pickup";
 import type { FormState, ProductOption, ProductVariant } from "@/lib/types";
 import { resolveSelection } from "@/lib/variants";
@@ -293,26 +293,7 @@ export function CartCheckout({
         </fieldset>
       )}
 
-      {mode === "checkout" && chosen ? (
-        <PayChoice
-          methods={payMethods}
-          selected={paymentMethod}
-          onSelect={setPaymentMethod}
-          cardPaymentUrl={firstText(contacts, (item) => item.cardPaymentUrl)}
-          interacEmail={firstText(contacts, (item) => item.interacEmail)}
-          interacQuestion={firstText(contacts, (item) => item.interacQuestion ?? "")}
-          interacPassword={firstText(contacts, (item) => item.interacPassword ?? "")}
-          venmoUsername={firstText(contacts, (item) => item.venmoUsername)}
-          paypalMe={firstText(contacts, (item) => item.paypalMe ?? "")}
-          amountCents={total ?? 0}
-          currency={currency}
-          zelleMode={contacts.find((item) => item.zelleContact)?.zelleMode ?? "phone"}
-          zelleContact={firstText(contacts, (item) => item.zelleContact)}
-          error={state.fieldErrors?.paymentMethod}
-          empty={needsTransfer ? "Delivery and shipping have to be paid by transfer first. This seller has not set one up." : ""}
-          showPayLink={false}
-        />
-      ) : null}
+      {mode === "checkout" && needsTransfer ? <p className="text-sm text-danger">Delivery and shipping have to be paid by transfer first. This seller has not set one up.</p> : null}
 
       {mode === "checkout" ? null : requireName ? (
         <label className="block">
@@ -420,8 +401,6 @@ export function CartCheckout({
           address={review.address}
           deliveryNote={chosen.id === "shipping" ? review.deliveryNote : ""}
           sellerNote={review.sellerNote}
-          payment={paymentMethod ? methodLabel(paymentMethod) : ""}
-          paypalUrl={paymentMethod === "paypal" ? paypalMeUrl(firstText(contacts, (item) => item.paypalMe ?? ""), { amountCents: total, currency }) : ""}
           shipping={chosen.id === "pickup" ? "" : fee === 0 ? "Free" : formatMoney(fee, currency)}
           total={formatMoney(total, currency)}
           gaps={reviewGaps(review, {
@@ -429,7 +408,7 @@ export function CartCheckout({
             requirePhone,
             pickup: chosen.id === "pickup",
             needsAddress: chosen.id !== "pickup",
-            needsPayment: payMethods.length > 0,
+            needsPayment: false,
             paymentMethod,
             pickupTime: activePickup,
           })}
@@ -580,8 +559,6 @@ function OrderReviewDialog({
   address,
   deliveryNote,
   sellerNote,
-  payment,
-  paypalUrl,
   shipping,
   total,
   gaps,
@@ -597,8 +574,6 @@ function OrderReviewDialog({
   address: string;
   deliveryNote: string;
   sellerNote: string;
-  payment: string;
-  paypalUrl: string;
   shipping: string;
   total: string;
   gaps: string[];
@@ -644,7 +619,6 @@ function OrderReviewDialog({
           )}
           {deliveryNote ? <div><dt className="text-muted">Delivery instructions</dt><dd>{deliveryNote}</dd></div> : null}
           {sellerNote ? <div><dt className="text-muted">Note to seller</dt><dd>{sellerNote}</dd></div> : null}
-          <div className="flex justify-between gap-3"><dt className="text-muted">Pay by</dt><dd>{payment || "Not chosen"}</dd></div>
           {shipping ? <div className="flex justify-between gap-3"><dt className="text-muted">Shipping</dt><dd>{shipping}</dd></div> : null}
           <div className="flex justify-between gap-3 font-serif text-2xl text-forest"><dt>Total</dt><dd>{total}</dd></div>
         </dl>
@@ -653,15 +627,8 @@ function OrderReviewDialog({
             {gaps.map((gap) => <li key={gap}>{gap}</li>)}
           </ul>
         ) : (
-          <p className="mt-4 text-sm text-muted">You pay {sellerName} directly. Twigigi does not take the payment.</p>
+          <p className="mt-4 text-sm text-muted">You pay {sellerName} directly after they confirm. The payment link lists the ways they accept. Twigigi does not take the payment.</p>
         )}
-        {paypalUrl ? (
-          <a href={paypalUrl} target="_blank" rel="noreferrer" className={`${buttonClass} mt-5 w-full`}>
-            Pay {total} with PayPal
-          </a>
-        ) : payment === "PayPal" ? (
-          <p className="mt-4 text-sm text-muted">The seller has not added a PayPal.Me link.</p>
-        ) : null}
         <div className="mt-5 flex gap-2">
           <button type="button" disabled={pending} onClick={onClose} className={`${ghostClass} flex-1`}>Back</button>
           <button type="submit" disabled={pending || gaps.length > 0} className={`${buttonClass} flex-1`}>

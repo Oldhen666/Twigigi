@@ -34,6 +34,7 @@ export type User = {
   payoutInterac: string;
   payoutVenmo: string;
   payoutZelle: string;
+  autoConfirmOrders: boolean;
   suspended: boolean;
 };
 
@@ -231,6 +232,8 @@ export type OrderRecord = {
   buyerReceivedAt: string | null;
   interacQuestion: string;
   interacPassword: string;
+  shipCarrier: string;
+  shipTracking: string;
   createdAt: string;
 };
 

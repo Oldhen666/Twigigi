@@ -9,7 +9,7 @@ import { updateTag } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
+import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
@@ -57,6 +57,7 @@ import {
   sellerReviewOrder,
   acceptOrderProposal,
   confirmOrderPaymentReceived,
+  recordBuyerPayment,
   markOrderFulfillment,
   confirmBuyerReceipt,
   completeSellerOrder,
@@ -67,6 +68,7 @@ import {
   setUserSuspended,
   setBillingMethod,
   setPayoutDetails,
+  setAutoConfirm,
   setBillingStarted,
   setListingFeeExempt,
   recordTwigBill,
@@ -931,10 +933,10 @@ const personSchema = {
   phone: z.string().trim().min(7, "Enter a phone number.").max(30),
 };
 
-function chosenOrderDetails(formData: FormData, fulfillment: string, methods: string[], schedules: string[]):
+function chosenOrderDetails(formData: FormData, fulfillment: string, methods: string[], schedules: string[], askPayment = true):
   { ok: false; fieldErrors: Record<string, string> } | { ok: true; payment: string; pickupWindow: string } {
   const payment = text(formData, "paymentMethod");
-  if (methods.length > 0 && !methods.includes(payment)) {
+  if (askPayment && methods.length > 0 && !methods.includes(payment)) {
     return { ok: false, fieldErrors: { paymentMethod: "Choose how you will pay." } };
   }
   if (fulfillment === "pickup") {
@@ -943,7 +945,7 @@ function chosenOrderDetails(formData: FormData, fulfillment: string, methods: st
   }
   return {
     ok: true,
-    payment: methods.includes(payment) ? payment : "",
+    payment: askPayment && methods.includes(payment) ? payment : "",
     pickupWindow: fulfillment === "pickup" ? text(formData, "pickupTime") : "",
   };
 }
@@ -959,6 +961,14 @@ function sellerNoteOf(formData: FormData) {
   const note = text(formData, "sellerNote").trim();
   if (note.length > 400) return { ok: false as const, fieldErrors: { sellerNote: "Keep the note under 400 characters." } };
   return { ok: true as const, note };
+}
+
+async function sendPaymentLink(orderId: string, sellerId: string) {
+  if (!sellerReviewOrder(orderId, sellerId, "accept")) return;
+  const updated = getOrder(orderId);
+  const product = updated ? getProductById(updated.productId) : null;
+  if (!updated) return;
+  await notifyBuyer(updated, `Order confirmed: ${updated.productTitle}`, acceptNote(updated, product?.interacEmail ?? "", product?.paypalMe ?? ""));
 }
 
 export async function placeOrder(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -1009,7 +1019,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   const payFulfillment = parsed.data.fulfillment === "delivery" || parsed.data.fulfillment === "shipping" ? parsed.data.fulfillment : "pickup";
   const payMethods = digital ? ["card"] : methodsForFulfillment(product.paymentMethods, payFulfillment);
   const schedules = parsed.data.fulfillment === "pickup" ? [product.pickupTime] : [];
-  const choice = chosenOrderDetails(formData, parsed.data.fulfillment, payMethods, schedules);
+  const choice = chosenOrderDetails(formData, parsed.data.fulfillment, payMethods, schedules, digital);
   if (!choice.ok) return { fieldErrors: choice.fieldErrors };
   const instructions = deliveryInstructions(formData, parsed.data.fulfillment);
   if (!instructions.ok) return { fieldErrors: instructions.fieldErrors };
@@ -1081,16 +1091,20 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       choice.pickupWindow ? `Pickup time: ${formatPickupChoice(choice.pickupWindow)}` : null,
       !digital && parsed.data.fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
       instructions.note ? `Delivery instructions: ${instructions.note}` : null,
-      choice.payment ? `Payment: ${methodLabel(choice.payment)}` : null,
+      choice.payment ? `Payment: ${methodLabel(choice.payment)}` : digital ? null : "Payment: the buyer gets a link after you confirm.",
       `Total: ${formatMoney(total, product.currency)}`,
       order?.publicRef ? `Order: ${order.publicRef}` : null,
-      "Accept the order, propose a change, or decline it from the order page.",
+      seller?.autoConfirmOrders && !digital
+        ? "This order was confirmed automatically. The buyer gets a payment link."
+        : "Accept the order, propose a change, or decline it from the order page.",
       digital ? "After the money arrives, confirm the payment, then email the file link from the order page." : null,
       "",
       `Open the order: ${appUrl()}/dashboard/orders/${orderId}`,
     ].filter((line): line is string => line !== null);
     await sendOrderEmail(notify, { subject: `New order: ${product.title}`, text: lines.join("\n"), replyTo: parsed.data.email });
   }
+
+  if (!digital && seller?.autoConfirmOrders) await sendPaymentLink(orderId, product.userId);
 
   redirect(`/order/${orderId}`);
 }
@@ -1151,7 +1165,7 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
     return { fieldErrors: { address: "Enter an address for delivery or shipping." } };
   }
   const schedules = fulfillment === "pickup" ? prepared.map((line) => line.product.pickupTime) : [];
-  const choice = chosenOrderDetails(formData, fulfillment, sharedMethods, schedules);
+  const choice = chosenOrderDetails(formData, fulfillment, sharedMethods, schedules, false);
   if (!choice.ok) return { fieldErrors: choice.fieldErrors };
   const instructions = deliveryInstructions(formData, fulfillment);
   if (!instructions.ok) return { fieldErrors: instructions.fieldErrors };
@@ -1248,17 +1262,21 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
       fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
       instructions.note ? `Delivery instructions: ${instructions.note}` : null,
       sellerNote.note ? `Note to seller: ${sellerNote.note}` : null,
-      choice.payment ? `Payment: ${methodLabel(choice.payment)}` : null,
+      choice.payment ? `Payment: ${methodLabel(choice.payment)}` : "Payment: the buyer gets a link after you confirm.",
       `Items: ${formatMoney(merchandise, first.product.currency)}`,
       `Shipping: ${shipping === 0 ? "Free" : formatMoney(shipping, first.product.currency)}`,
       `Total: ${formatMoney(total, first.product.currency)}`,
       order?.publicRef ? `Order: ${order.publicRef}` : null,
-      "Accept the order, propose a change, or decline it from the order page.",
+      seller?.autoConfirmOrders
+        ? "This order was confirmed automatically. The buyer gets a payment link."
+        : "Accept the order, propose a change, or decline it from the order page.",
       "",
       `Open the order: ${appUrl()}/dashboard/orders/${orderId}`,
     ].filter((line): line is string => line !== null);
     await sendOrderEmail(notify, { subject: `New order from ${parsed.data.name}`, text: text.join("\n"), replyTo: parsed.data.email });
   }
+
+  if (seller?.autoConfirmOrders) await sendPaymentLink(orderId, first.product.userId);
 
   redirect(`/order/${orderId}`);
 }
@@ -1626,7 +1644,16 @@ export async function markOrderProgress(_prev: FormState, formData: FormData): P
   const id = text(formData, "id");
   const back = `/dashboard/orders/${id}`;
   const state = text(formData, "state") === "sent" ? "sent" : "ready";
-  if (!markOrderFulfillment(id, user.id, state)) return { next: back };
+  let shipment: { carrier: string; tracking: string } | undefined;
+  if (state === "sent") {
+    const picked = text(formData, "carrier").trim();
+    const named = text(formData, "carrierName").trim();
+    const carrier = (picked === "other" ? named : picked).slice(0, 40);
+    const tracking = text(formData, "tracking").trim().slice(0, 40);
+    if (carrier.length < 2 || tracking.length < 4) return { next: `${back}?mail=ship` };
+    shipment = { carrier, tracking };
+  }
+  if (!markOrderFulfillment(id, user.id, state, shipment)) return { next: back };
   const order = getOrder(id);
   if (!order) return { next: back };
   const product = getProductById(order.productId);
@@ -1637,6 +1664,48 @@ export async function markOrderProgress(_prev: FormState, formData: FormData): P
     readyNote(order, place),
   );
   return { next: sent ? back : `${back}?mail=0` };
+}
+
+export async function buyerReportPayment(formData: FormData) {
+  const id = text(formData, "id");
+  const method = text(formData, "method");
+  const back = `/order/${id}`;
+  const order = getOrder(id);
+  if (!order) redirect("/orders");
+  const product = getProductById(order.productId);
+  const fulfillment = order.fulfillment === "delivery" || order.fulfillment === "shipping" ? order.fulfillment : "pickup";
+  const methods = product && order.fulfillment !== "digital" ? methodsForFulfillment(product.paymentMethods, fulfillment) : [];
+  if (!methods.includes(method)) redirect(`${back}?pay=method`);
+  if (method === "interac" && product) setInteracPrompt(id, product.interacQuestion, product.interacPassword);
+  if (!recordBuyerPayment(id, method)) redirect(back);
+  const seller = findUserById(order.sellerId);
+  if (product && seller) {
+    const notify = sellerNotifyEmails(product, seller.email);
+    const paid = !isCashMethod(method);
+    if (notify.length > 0) {
+      await sendOrderEmail(notify, {
+        subject: paid ? `Buyer paid: ${order.productTitle}` : `Buyer will pay cash: ${order.productTitle}`,
+        text: [
+          paid
+            ? `${order.buyerName} marked order ${order.publicRef} paid by ${methodLabel(method)}.`
+            : `${order.buyerName} will pay cash for order ${order.publicRef}.`,
+          shipsToBuyer(order.fulfillment)
+            ? "Add the carrier and tracking number when you ship it."
+            : "Mark it ready for pickup when it is ready.",
+          "",
+          `${appUrl()}/dashboard/orders/${id}`,
+        ].join("\n"),
+        replyTo: order.email,
+      });
+    }
+  }
+  redirect(back);
+}
+
+export async function saveAutoConfirm(formData: FormData) {
+  const user = await requireSeller();
+  setAutoConfirm(user.id, text(formData, "enabled") === "1");
+  redirect("/dashboard");
 }
 
 export async function confirmReceipt(formData: FormData) {

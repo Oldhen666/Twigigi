@@ -6,6 +6,7 @@ import { CopyOrderNumber } from "@/components/copy-order-number";
 import { SellerContactButton } from "@/components/seller-contact";
 import { InteractionLine } from "@/components/interaction-line";
 import { PayMethods } from "@/components/pay-methods";
+import { BuyerPay } from "@/components/buyer-pay";
 import { ReviewSeller } from "@/components/review-seller";
 import { Stage } from "@/components/stage";
 import { buttonClass } from "@/components/ui";
@@ -152,7 +153,27 @@ async function OrderView({
             {order.filePassword ? <p>Password: {order.filePassword}</p> : null}
           </div>
         ) : null}
-        {!paid && !canceled && order.reviewState === "accepted" && product ? (
+        {!paid && !canceled && order.reviewState === "accepted" && product && !order.buyerPayment && !digital ? (
+          <BuyerPay
+            orderId={order.id}
+            methods={methodsForFulfillment(product.paymentMethods, order.fulfillment === "delivery" || order.fulfillment === "shipping" ? order.fulfillment : "pickup")}
+            cardPaymentUrl={buyerPayUrl(product.cardPaymentUrl, {
+              amountCents: order.totalCents || order.amountCents,
+              currency: order.currency,
+              itemName: order.productTitle,
+            })}
+            interacEmail={product.interacEmail}
+            interacQuestion={product.interacQuestion}
+            interacPassword={product.interacPassword}
+            venmoUsername={product.venmoUsername}
+            paypalMe={product.paypalMe}
+            amountCents={order.totalCents || order.amountCents}
+            currency={order.currency}
+            zelleMode={product.zelleMode}
+            zelleContact={product.zelleContact}
+          />
+        ) : null}
+        {!paid && !canceled && order.reviewState === "accepted" && product && order.buyerPayment ? (
           <PayMethods
             methods={(() => {
               const fulfillment = order.fulfillment === "delivery" || order.fulfillment === "shipping" ? order.fulfillment : "pickup";
@@ -189,6 +210,9 @@ async function OrderView({
           </div>
         ) : null}
 
+        {order.shipTracking ? (
+          <p className="mt-4 text-sm">Shipped with {order.shipCarrier}. Tracking number: {order.shipTracking}</p>
+        ) : null}
         {orderNumber ? <div className="mt-6"><CopyOrderNumber value={orderNumber} /></div> : null}
         <Link href={trackHref} className={`${buttonClass} mt-3 w-full`}>Track your order</Link>
         {!account ? (

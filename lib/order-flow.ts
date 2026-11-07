@@ -92,7 +92,7 @@ export function orderStage(order: StageOrder) {
   return "Ready to complete";
 }
 
-export function buyerOrderCopy(order: StageOrder & { displayName: string }) {
+export function buyerOrderCopy(order: StageOrder & { displayName: string; shipCarrier?: string; shipTracking?: string }) {
   const digital = order.fulfillment === "digital";
   if (order.status === "canceled" || order.reviewState === "declined") {
     return {
@@ -129,8 +129,8 @@ export function buyerOrderCopy(order: StageOrder & { displayName: string }) {
           : `Your request has been sent to ${order.displayName}. The seller will confirm availability and delivery details.`,
       next: [
         "Seller reviews and confirms your order.",
-        "You'll receive the confirmed pickup and payment instructions, if applicable.",
-        "Pay the seller directly using your selected method.",
+        "You'll get a payment link with the ways this seller accepts.",
+        "After you pay, the seller prepares pickup or shipping.",
       ],
     };
   }
@@ -166,18 +166,21 @@ export function buyerOrderCopy(order: StageOrder & { displayName: string }) {
       title: "Sent out for delivery",
       badge: "Sent",
       intro: `${order.displayName} sent this order out for delivery.`,
-      next: ["Confirm receipt after it arrives, then you can review the seller."],
+      next: [
+        order.shipTracking ? `Track it with ${order.shipCarrier || "the carrier"}: ${order.shipTracking}.` : "The seller included the shipping details on this order.",
+        "Confirm receipt after it arrives, then you can review the seller.",
+      ],
     };
   }
   if (paymentNeedsConfirm(order.buyerPayment) && !paid) {
     return {
       title: "Order confirmed",
       badge: "Pay the seller",
-      intro: `${order.displayName} confirmed the order. Pay them directly, then they confirm the payment.`,
+      intro: `${order.displayName} confirmed the order. Choose a way to pay on this page, then mark it paid.`,
       next: [
-        "Pay with the method you selected.",
-        "The seller confirms the payment.",
-        digital ? "They email the file after that." : shipsToBuyer(order.fulfillment) ? "They mark it sent out for delivery." : "They mark it ready for pickup.",
+        "Pay the seller with one of the methods below.",
+        "Mark it paid so they can prepare the order.",
+        digital ? "They email the file after that." : shipsToBuyer(order.fulfillment) ? "They add a carrier and tracking number when it ships." : "They mark it ready for pickup.",
       ],
     };
   }
