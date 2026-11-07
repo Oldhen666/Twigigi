@@ -13,8 +13,9 @@ export function OrderPaymentFacts({ order, cardPaymentUrl = "" }: { order: Order
     ["Payment method", orderPaymentMethodLabel(order.buyerPayment)],
     ...(provider ? [["Payment provider", provider]] : []),
     ["Payment status", status],
-    ["Payment recipient", flow === "seller_direct" ? "Seller directly" : "Twigigi Checkout"],
-    ...(flow === "seller_direct" ? [["Payout", "Not applicable — payment received directly by seller"]] : []),
+    ...(flow === "seller_direct" ? [] : [
+      ["Payment recipient", "Twigigi Checkout"],
+    ]),
   ];
   return (
     <dl className="mt-4 space-y-2 text-sm">

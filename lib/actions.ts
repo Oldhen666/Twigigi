@@ -59,6 +59,8 @@ import {
   acceptOrderProposal,
   confirmOrderPaymentReceived,
   confirmOrderPickupTime,
+  confirmCashHandover,
+  setSellerPickupTime,
   rollbackOrderStatus,
   recordBuyerPayment,
   markOrderFulfillment,
@@ -97,7 +99,7 @@ import {
   updateProduct,
   updateQuoteStatus,
 } from "@/lib/db";
-import { formatPickupChoice, pickupChoiceProblem } from "@/lib/pickup";
+import { formatPickupChoice, parsePickupChoice, pickupChoiceProblem } from "@/lib/pickup";
 import {
   appUrl,
   formatMoney,
@@ -1662,6 +1664,43 @@ export async function confirmPickupTime(_prev: FormState, formData: FormData): P
   return { next: sent ? back : `${back}?mail=0` };
 }
 
+export async function arrangePickupTime(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireSeller();
+  const id = text(formData, "id");
+  const back = `/dashboard/orders/${id}`;
+  const reschedule = text(formData, "reschedule") === "1";
+  const pickupWindow = text(formData, "pickupTime").trim().slice(0, 16);
+  if (!parsePickupChoice(pickupWindow)) return { error: "Choose a pickup time in 15-minute steps." };
+  if (!setSellerPickupTime(id, user.id, pickupWindow, reschedule)) return { error: "That pickup time could not be saved." };
+  const order = getOrder(id);
+  if (!order) return { next: back };
+  const when = formatPickupChoice(order.pickupWindow);
+  const sent = await notifyBuyer(order, `${reschedule ? "Pickup time changed" : "Pickup time suggested"}: ${order.productTitle}`, [
+    reschedule
+      ? `${order.displayName} changed the pickup time for order ${order.publicRef}.`
+      : `${order.displayName} suggested a pickup time for order ${order.publicRef}.`,
+    when ? `Pickup time: ${when}` : "",
+  ].filter(Boolean));
+  return { next: sent ? back : `${back}?mail=0` };
+}
+
+export async function confirmPaymentAndHandover(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireSeller();
+  const id = text(formData, "id");
+  const back = `/dashboard/orders/${id}`;
+  const handoverOnly = text(formData, "handoverOnly") === "1";
+  if (!confirmCashHandover(id, user.id, handoverOnly)) return { next: back };
+  const order = getOrder(id);
+  if (!order) return { next: back };
+  const sent = await notifyBuyer(order, `Order completed: ${order.productTitle}`, [
+    handoverOnly
+      ? `${order.displayName} handed over order ${order.publicRef}.`
+      : `${order.displayName} confirmed the cash and handed over order ${order.publicRef}.`,
+    "The order is complete. You can leave a review when you are ready.",
+  ]);
+  return { next: sent ? back : `${back}?mail=0` };
+}
+
 export async function confirmOrderPayment(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireSeller();
   const id = text(formData, "id");
@@ -1671,7 +1710,12 @@ export async function confirmOrderPayment(_prev: FormState, formData: FormData):
   if (!order) return { next: back };
   const sent = order.fulfillment === "digital"
     ? await sendPaymentConfirmed(id)
-    : await notifyBuyer(order, `Payment confirmed: ${order.productTitle}`, [
+    : isCashMethod(order.buyerPayment)
+      ? await notifyBuyer(order, `Cash received: ${order.productTitle}`, [
+          `${order.displayName} confirmed the cash for order ${order.publicRef}.`,
+          "The order stays open until the item is handed over.",
+        ])
+      : await notifyBuyer(order, `Payment confirmed: ${order.productTitle}`, [
         `${order.displayName} confirmed your payment for order ${order.publicRef}.`,
         shipsToBuyer(order.fulfillment)
           ? "They will email you when it is sent out for delivery."

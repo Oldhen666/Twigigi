@@ -3,7 +3,8 @@ import { Suspense } from "react";
 import { sendOrderFile, rollbackOrder } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { getOrder, getProductById } from "@/lib/db";
-import { formatDate, formatMoney, orderHeading, srcLabel } from "@/lib/format";
+import { formatMoney, orderHeading } from "@/lib/format";
+import { timeZoneForLocation } from "@/lib/places";
 import { formatPickupChoice } from "@/lib/pickup";
 import { buttonClass } from "@/components/ui";
 import { OrderPaymentFacts } from "@/components/order-payment-facts";
@@ -11,6 +12,7 @@ import { OrderTrack } from "@/components/order-track";
 import { ReloadForm } from "@/components/reload-form";
 import { SellerOrderFlow } from "@/components/seller-order-flow";
 import { orderRollbackTarget, orderTrack } from "@/lib/order-flow";
+import { isCashMethod } from "@/lib/payments";
 
 async function OrderScreen({
   params,
@@ -28,12 +30,14 @@ async function OrderScreen({
   if (!order || order.sellerId !== user.id) notFound();
   const product = getProductById(order.productId);
   const backTo = orderRollbackTarget(order);
+  const cashPickup = isCashMethod(order.buyerPayment) && order.fulfillment === "pickup";
+  const fulfillWord = order.fulfillment === "pickup" ? "Local pickup" : order.fulfillment === "delivery" ? "Local delivery" : order.fulfillment === "shipping" ? "Shipping" : "Digital file";
   return (
     <main className="mx-auto w-full max-w-3xl px-5 pb-16">
       <p className="text-sm text-muted">{order.publicRef}</p>
       <h1 className="mt-1 font-serif text-4xl">{orderHeading(order)}</h1>
       <OrderTrack steps={orderTrack(order)} />
-      {backTo ? (
+      {backTo && !cashPickup ? (
         <ReloadForm action={rollbackOrder} className="mt-3">
           <input type="hidden" name="id" value={order.id} />
           <button className="text-sm text-forest">Roll back to {backTo}</button>
@@ -50,7 +54,7 @@ async function OrderScreen({
         </div>
       ) : order.variantLabel ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
       <OrderPaymentFacts order={order} cardPaymentUrl={product?.cardPaymentUrl ?? ""} />
-      <p className="mt-2 text-sm text-muted">{order.quantity} · {order.fulfillment === "digital" ? "digital file" : order.fulfillment}</p>
+      <p className="mt-2 text-sm text-muted">{order.quantity} {order.quantity === 1 ? "item" : "items"} · {fulfillWord}</p>
       <p className="mt-4 text-sm">{order.buyerName}</p>
       <p className="text-sm text-muted">{order.email}{order.phone ? ` · ${order.phone}` : ""}</p>
       {order.address ? <p className="text-sm text-muted">{order.address}</p> : null}
@@ -76,7 +80,7 @@ async function OrderScreen({
           ) : null}
         </div>
       ) : null}
-      <p className="mt-2 text-sm text-muted">{srcLabel(order.src)} · {formatDate(order.createdAt, order.productLocation)}</p>
+      <p className="mt-2 text-sm text-muted">{orderedWhen(order.createdAt, order.productLocation)}</p>
       <SellerOrderFlow
         order={{
           ...order,
@@ -104,3 +108,12 @@ export default function Page({
 }
 
 export const metadata = { title: "Order", robots: { index: false, follow: false } };
+
+function orderedWhen(iso: string, location: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return `Ordered ${iso}`;
+  const zone = timeZoneForLocation(location);
+  const day = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: zone }).format(date);
+  const time = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: zone }).format(date);
+  return `Ordered ${day} at ${time}`;
+}

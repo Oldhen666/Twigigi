@@ -1,10 +1,11 @@
 import { ReloadForm } from "@/components/reload-form";
-import { completeOrder, confirmOrderPayment, confirmPickupTime, markOrderProgress, reviewSellerOrder } from "@/lib/actions";
+import { arrangePickupTime, completeOrder, confirmOrderPayment, confirmPaymentAndHandover, confirmPickupTime, markOrderProgress, reviewSellerOrder, rollbackOrder } from "@/lib/actions";
 import { formatDate, formatMoney } from "@/lib/format";
+import { formatPickupChoice } from "@/lib/pickup";
 import { isCashMethod, methodLabel } from "@/lib/payments";
-import { ORDER_COMPLETE_DAYS, fulfillmentDone, orderCanComplete, paymentNeedsConfirm, shipsToBuyer } from "@/lib/order-flow";
+import { ORDER_COMPLETE_DAYS, fulfillmentDone, orderCanComplete, orderRollbackTarget, paymentNeedsConfirm, shipsToBuyer } from "@/lib/order-flow";
 import type { OrderRecord } from "@/lib/types";
-import { buttonClass } from "@/components/ui";
+import { buttonClass, ghostClass, inputClass } from "@/components/ui";
 
 export function SellerOrderFlow({
   order,
@@ -24,6 +25,9 @@ export function SellerOrderFlow({
   const readyDate = order.readyAt ? Date.parse(order.readyAt) : NaN;
   const opensAt = Number.isFinite(readyDate) ? new Date(readyDate + ORDER_COMPLETE_DAYS * 24 * 60 * 60 * 1000).toISOString() : "";
   const showInterac = order.buyerPayment === "interac" && Boolean(order.interacQuestion || order.interacPassword);
+  if (isCashMethod(order.buyerPayment) && order.fulfillment === "pickup" && order.status !== "canceled" && order.reviewState !== "declined") {
+    return <CashPickupSeller order={order} mail={mail} />;
+  }
   if (!mail && !reviewing && !confirmed && order.reviewState !== "changes" && !showInterac) return null;
   return (
     <section className="mt-6 rounded-2xl border border-line bg-card p-4">
@@ -177,6 +181,125 @@ export function SellerOrderFlow({
           {order.interacPassword ? <p>e-Transfer password: {order.interacPassword}</p> : null}
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function CashPickupSeller({ order, mail }: { order: OrderRecord; mail: string }) {
+  const completed = order.status === "fulfilled" || order.fulfillmentState === "handed";
+  const ready = !completed && order.fulfillmentState === "ready";
+  const paid = order.paymentStatus === "paid" || order.status === "paid" || completed;
+  const when = order.pickupWindow ? formatPickupChoice(order.pickupWindow) : "the requested time";
+  const backTo = orderRollbackTarget(order);
+  return (
+    <section className="mt-6 rounded-2xl border border-line bg-card p-4 text-sm">
+      {mail === "0" ? <p className="mb-3 text-danger">The status was saved, but the email could not be sent.</p> : null}
+      {order.reviewState === "changes" ? (
+        <div className="mb-4 rounded-2xl bg-paper-deep px-3 py-3">
+          <p>Waiting for the buyer to accept this change.</p>
+          <p className="mt-1">{order.proposalNote}</p>
+        </div>
+      ) : null}
+      {completed ? (
+        <div>
+          <p className="flex items-center gap-2 text-base font-medium"><span className="text-forest" aria-hidden>✓</span> Order completed</p>
+          <p className="mt-2 text-muted">Cash received · Item handed over</p>
+          <p className="mt-1 text-muted">The buyer may leave a review independently.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <p className="font-medium">Next action</p>
+            <p className="mt-1 leading-6 text-muted">
+              {ready && paid
+                ? "The cash is confirmed. Confirm the handover when the buyer collects the item."
+                : ready
+                  ? "When the buyer collects the item, confirm that you received the cash and handed over the item."
+                  : order.pickupConfirmedAt
+                    ? `Pickup is scheduled for ${when}. Notify the buyer when the item is ready.`
+                    : order.pickupWindow
+                      ? `The buyer requested pickup on ${when}. Confirm the time or arrange another one.`
+                      : "Suggest a pickup time for this order."}
+            </p>
+          </div>
+          {ready && paid ? (
+            <ReloadForm action={confirmPaymentAndHandover}>
+              <input type="hidden" name="id" value={order.id} />
+              <input type="hidden" name="handoverOnly" value="1" />
+              <button className={`${buttonClass} w-full`}>Confirm handover</button>
+            </ReloadForm>
+          ) : null}
+          {ready && !paid ? (
+            <ReloadForm action={confirmPaymentAndHandover}>
+              <input type="hidden" name="id" value={order.id} />
+              <button className={`${buttonClass} w-full`}>Confirm payment & handover</button>
+              <p className="mt-2 text-center text-muted">This will mark the order as paid and completed.</p>
+            </ReloadForm>
+          ) : null}
+          {!ready && order.pickupConfirmedAt ? (
+            <ReloadForm action={markOrderProgress}>
+              <input type="hidden" name="id" value={order.id} />
+              <input type="hidden" name="state" value="ready" />
+              <button className={`${buttonClass} w-full`}>Mark ready for pickup</button>
+            </ReloadForm>
+          ) : null}
+          {!ready && !order.pickupConfirmedAt && order.pickupWindow ? (
+            <ReloadForm action={confirmPickupTime}>
+              <input type="hidden" name="id" value={order.id} />
+              <button className={`${buttonClass} w-full`}>Confirm pickup time</button>
+            </ReloadForm>
+          ) : null}
+          {!ready && !order.pickupConfirmedAt ? (
+            <details className="rounded-2xl border border-line px-4 py-3">
+              <summary className="cursor-pointer font-medium">Suggest another time</summary>
+              <ReloadForm action={arrangePickupTime} className="mt-3 space-y-2">
+                <input type="hidden" name="id" value={order.id} />
+                <input type="datetime-local" name="pickupTime" step={900} required className={inputClass} />
+                <button className={`${ghostClass} w-full`}>Save this time</button>
+              </ReloadForm>
+            </details>
+          ) : null}
+          {ready ? (
+            <details className="rounded-2xl border border-line px-4 py-3">
+              <summary className="cursor-pointer font-medium">Reschedule pickup</summary>
+              <ReloadForm action={arrangePickupTime} className="mt-3 space-y-2">
+                <input type="hidden" name="id" value={order.id} />
+                <input type="hidden" name="reschedule" value="1" />
+                <input type="datetime-local" name="pickupTime" step={900} required className={inputClass} />
+                <button className={`${ghostClass} w-full`}>Save this time</button>
+              </ReloadForm>
+            </details>
+          ) : null}
+        </div>
+      )}
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3">
+        {!completed ? (
+          <ReloadForm action={reviewSellerOrder}>
+            <input type="hidden" name="id" value={order.id} />
+            <input type="hidden" name="decision" value="decline" />
+            <button className="text-danger">Cancel order</button>
+          </ReloadForm>
+        ) : <span />}
+        {backTo || (ready && !paid) ? (
+          <details className="relative">
+            <summary className="cursor-pointer list-none rounded-full border border-line px-4 py-2">More actions</summary>
+            <div className="absolute right-0 z-10 mt-2 w-64 rounded-2xl border border-line bg-card p-2 shadow">
+              {backTo ? (
+                <ReloadForm action={rollbackOrder}>
+                  <input type="hidden" name="id" value={order.id} />
+                  <button className="w-full rounded-xl px-3 py-2 text-left hover:bg-paper">Change status to {backTo}</button>
+                </ReloadForm>
+              ) : null}
+              {ready && !paid ? (
+                <ReloadForm action={confirmOrderPayment}>
+                  <input type="hidden" name="id" value={order.id} />
+                  <button className="w-full rounded-xl px-3 py-2 text-left hover:bg-paper">Confirm cash received</button>
+                </ReloadForm>
+              ) : null}
+            </div>
+          </details>
+        ) : null}
+      </div>
     </section>
   );
 }

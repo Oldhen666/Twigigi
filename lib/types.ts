@@ -228,7 +228,7 @@ export type OrderRecord = {
   reviewState: "requested" | "accepted" | "changes" | "declined";
   proposalNote: string;
   proposalCents: number;
-  fulfillmentState: "" | "ready" | "sent";
+  fulfillmentState: "" | "ready" | "sent" | "handed";
   readyAt: string | null;
   buyerReceivedAt: string | null;
   interacQuestion: string;

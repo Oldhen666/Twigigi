@@ -85,17 +85,25 @@ async function OrderView({
   const whenLabel = order.fulfillment === "pickup" ? shortPickup(order.pickupWindow, product?.pickupTime ?? "") : "";
   const pickupAt = order.fulfillment === "pickup" ? cashPickupAt(order.pickupWindow) : "";
   const cashPickup = isCashMethod(order.buyerPayment) && order.fulfillment === "pickup";
-  const pickupConfirmed = Boolean(order.pickupConfirmedAt) || fulfillmentDone(order.fulfillmentState);
+  const delivered = order.fulfillmentState === "handed" || order.status === "fulfilled";
+  const readyForPickup = delivered || order.fulfillmentState === "ready";
+  const pickupConfirmed = Boolean(order.pickupConfirmedAt) || readyForPickup;
   const currentStep = placement?.steps.find((step) => step.state === "current");
   const nextLine = !placement
     ? ""
     : cashPickup && !pickupConfirmed
       ? "Waiting for the seller to confirm your pickup time."
-      : cashPickup && pickupConfirmed && !fulfillmentDone(order.fulfillmentState) && pickupAt
-        ? `Next: Pick up your order on ${pickupAt}.`
-        : currentStep
-          ? `Next step: ${currentStep.detail}`
-          : "";
+      : cashPickup && !readyForPickup
+        ? pickupAt
+          ? `Pickup is scheduled for ${pickupAt}.`
+          : "The seller confirmed the pickup time."
+        : cashPickup && !delivered
+          ? paid
+            ? "The seller confirmed the cash. Pick up the item when it is handed over."
+            : "The seller is ready. Pay in cash when you pick it up."
+          : currentStep
+            ? `Next step: ${currentStep.detail}`
+            : "";
   return (
     <Stage>
       <div className={showPlaced ? "px-4 py-6" : "bg-card px-5 py-8 sm:rounded-[28px] sm:px-6"}>

@@ -18,6 +18,7 @@ import {
 } from "@/lib/ledger";
 import { MARKETPLACE_GMV_SQL, PLATFORM_REVENUE_SQL, SELLER_SALES_SQL, paymentFlowOf } from "@/lib/order-money";
 import { isCashMethod } from "@/lib/payments";
+import { parsePickupChoice } from "@/lib/pickup";
 import { fulfillmentDone, orderCanComplete, paymentNeedsConfirm } from "@/lib/order-flow";
 import { readStoredFileLinks } from "@/lib/files";
 import { parseQuoteForm } from "@/lib/quote-form";
@@ -957,7 +958,7 @@ function mapOrder(row: Row): OrderRecord {
     reviewState: row.review_state === "accepted" || row.review_state === "changes" || row.review_state === "declined" ? row.review_state : "requested",
     proposalNote: str(row.proposal_note),
     proposalCents: num(row.proposal_cents),
-    fulfillmentState: row.fulfillment_state === "ready" || row.fulfillment_state === "sent" ? row.fulfillment_state : "",
+    fulfillmentState: row.fulfillment_state === "ready" || row.fulfillment_state === "sent" || row.fulfillment_state === "handed" ? row.fulfillment_state : "",
     readyAt: row.ready_at ? str(row.ready_at) : null,
     buyerReceivedAt: row.buyer_received_at ? str(row.buyer_received_at) : null,
     interacQuestion: str(row.interac_question),
@@ -2802,10 +2803,83 @@ export function acceptPlacedOrder(id: string) {
   db.prepare(`UPDATE orders SET review_state = 'accepted' WHERE id = ? AND review_state = 'requested'`).run(id);
 }
 
+function rollbackCashPickup(id: string, sellerId: string, order: OrderRecord) {
+  if (order.status === "fulfilled" || order.fulfillmentState === "handed") {
+    const next = order.paymentStatus === "paid" ? "paid" : "unpaid";
+    const result = db
+      .prepare(
+        `UPDATE orders SET status = ?, fulfillment_state = 'ready'
+         WHERE id = ? AND seller_id = ? AND (status = 'fulfilled' OR fulfillment_state = 'handed')`,
+      )
+      .run(next, id, sellerId);
+    if (result.changes < 1) return false;
+    db.prepare(`UPDATE interactions SET seller_confirmed_at = NULL WHERE source_id = ?`).run(id);
+    return true;
+  }
+  if (order.fulfillmentState === "ready") {
+    const result = db
+      .prepare(
+        `UPDATE orders SET fulfillment_state = '', ready_at = NULL, ship_carrier = '', ship_tracking = ''
+         WHERE id = ? AND seller_id = ? AND fulfillment_state = 'ready'`,
+      )
+      .run(id, sellerId);
+    return result.changes > 0;
+  }
+  if (order.pickupConfirmedAt) {
+    const result = db.prepare(`UPDATE orders SET pickup_confirmed_at = NULL WHERE id = ? AND seller_id = ?`).run(id, sellerId);
+    return result.changes > 0;
+  }
+  return false;
+}
+
+export function setSellerPickupTime(id: string, sellerId: string, pickupWindow: string, reschedule: boolean) {
+  const order = getOrder(id);
+  if (!order || order.sellerId !== sellerId) return false;
+  if (!isCashMethod(order.buyerPayment) || order.fulfillment !== "pickup") return false;
+  if (order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined" || order.fulfillmentState === "handed") return false;
+  if (!parsePickupChoice(pickupWindow)) return false;
+  if (reschedule) {
+    if (order.fulfillmentState !== "ready") return false;
+  } else if (order.pickupConfirmedAt || order.fulfillmentState === "ready") {
+    return false;
+  }
+  const now = new Date().toISOString();
+  const result = db
+    .prepare(`UPDATE orders SET pickup_window = ?, pickup_confirmed_at = COALESCE(pickup_confirmed_at, ?) WHERE id = ? AND seller_id = ?`)
+    .run(pickupWindow, now, id, sellerId);
+  return result.changes > 0;
+}
+
+export function confirmCashHandover(id: string, sellerId: string, requirePaid = false) {
+  const order = getOrder(id);
+  if (!order || order.sellerId !== sellerId) return false;
+  if (!isCashMethod(order.buyerPayment) || order.fulfillment !== "pickup") return false;
+  if (order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined") return false;
+  if (order.fulfillmentState !== "ready") return false;
+  const paid = order.paymentStatus === "paid" || order.status === "paid";
+  if (requirePaid && !paid) return false;
+  const now = new Date().toISOString();
+  if (!paid) {
+    db.prepare(`UPDATE orders SET status = 'paid' WHERE id = ? AND seller_id = ? AND status = 'unpaid'`).run(id, sellerId);
+    beginPaymentProtection(id);
+  }
+  const result = db
+    .prepare(
+      `UPDATE orders SET fulfillment_state = 'handed', status = 'fulfilled', ready_at = COALESCE(NULLIF(ready_at, ''), ?)
+       WHERE id = ? AND seller_id = ?`,
+    )
+    .run(now, id, sellerId);
+  if (result.changes < 1) return false;
+  const interaction = one("SELECT id FROM interactions WHERE source_id = ?", id);
+  if (interaction) db.prepare(`UPDATE interactions SET seller_confirmed_at = COALESCE(seller_confirmed_at, ?) WHERE id = ?`).run(now, str(interaction.id));
+  return true;
+}
+
 export function rollbackOrderStatus(id: string, sellerId: string) {
   const order = getOrder(id);
   if (!order || order.sellerId !== sellerId) return false;
   if (order.status === "canceled" || order.reviewState === "declined") return false;
+  if (isCashMethod(order.buyerPayment) && order.fulfillment === "pickup") return rollbackCashPickup(id, sellerId, order);
   if (order.status === "fulfilled") {
     const next = order.paymentStatus === "paid" ? "paid" : "unpaid";
     const result = db.prepare(`UPDATE orders SET status = ? WHERE id = ? AND seller_id = ? AND status = 'fulfilled'`).run(next, id, sellerId);
@@ -2846,10 +2920,6 @@ export function rollbackOrderStatus(id: string, sellerId: string) {
          WHERE id = ? AND seller_id = ? AND payment_flow != 'twigigi_checkout'`,
       )
       .run(id, sellerId);
-    return result.changes > 0;
-  }
-  if (order.reviewState === "accepted") {
-    const result = db.prepare(`UPDATE orders SET review_state = 'requested' WHERE id = ? AND seller_id = ? AND review_state = 'accepted'`).run(id, sellerId);
     return result.changes > 0;
   }
   return false;
@@ -2898,6 +2968,7 @@ export function markOrderFulfillment(
   if (order.reviewState !== "accepted" || order.status === "canceled" || order.status === "fulfilled") return false;
   if (order.fulfillment === "digital") return false;
   if (state === "ready" && order.fulfillment !== "pickup") return false;
+  if (state === "ready" && isCashMethod(order.buyerPayment) && !order.pickupConfirmedAt) return false;
   if (state === "sent" && !ships(order.fulfillment)) return false;
   const paid = order.paymentStatus === "paid" || order.status === "paid";
   if (paymentNeedsConfirm(order.buyerPayment) && !paid) return false;
