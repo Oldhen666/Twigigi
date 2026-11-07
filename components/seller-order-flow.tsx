@@ -1,7 +1,7 @@
 import { ReloadForm } from "@/components/reload-form";
-import { completeOrder, confirmOrderPayment, markOrderProgress, reviewSellerOrder } from "@/lib/actions";
+import { completeOrder, confirmOrderPayment, confirmPickupTime, markOrderProgress, reviewSellerOrder } from "@/lib/actions";
 import { formatDate, formatMoney } from "@/lib/format";
-import { methodLabel } from "@/lib/payments";
+import { isCashMethod, methodLabel } from "@/lib/payments";
 import { ORDER_COMPLETE_DAYS, fulfillmentDone, orderCanComplete, paymentNeedsConfirm, shipsToBuyer } from "@/lib/order-flow";
 import type { OrderRecord } from "@/lib/types";
 import { buttonClass } from "@/components/ui";
@@ -93,6 +93,13 @@ export function SellerOrderFlow({
                     : "Sent out for delivery"
                 : "Not yet"}
           </p>
+          {confirmed && order.fulfillment === "pickup" && isCashMethod(order.buyerPayment) && !order.pickupConfirmedAt && !fulfillmentDone(order.fulfillmentState) ? (
+            <ReloadForm action={confirmPickupTime}>
+              <input type="hidden" name="id" value={order.id} />
+              <button className={buttonClass}>Confirm pickup time</button>
+              <p className="mt-1 text-muted">The buyer asked for this time. Confirm it when that time works.</p>
+            </ReloadForm>
+          ) : null}
           {prepaid && !paid ? (
             <ReloadForm action={confirmOrderPayment}>
               <input type="hidden" name="id" value={order.id} />

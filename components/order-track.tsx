@@ -2,7 +2,7 @@ import type { TrackStep } from "@/lib/order-flow";
 
 const dot = {
   done: "bg-forest",
-  current: "bg-forest ring-4 ring-moss",
+  current: "border-2 border-forest bg-transparent",
   upcoming: "bg-line",
   stopped: "bg-danger",
 };

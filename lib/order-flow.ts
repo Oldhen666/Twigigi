@@ -79,6 +79,22 @@ export function orderTrack(order: StageOrder): TrackStep[] {
   }));
 }
 
+export function orderRollbackTarget(order: StageOrder & { paymentFlow?: string }) {
+  if (order.status === "canceled" || order.reviewState === "declined") return null;
+  const prepaid = paymentNeedsConfirm(order.buyerPayment);
+  const digital = order.fulfillment === "digital";
+  const fulfilled = fulfillmentDone(order.fulfillmentState) || (digital && Boolean(order.fileSentAt));
+  const received = Boolean(order.buyerReceivedAt);
+  const paid = order.paymentStatus === "paid" || order.status === "paid";
+  const fulfillLabel = digital ? "File sent" : shipsToBuyer(order.fulfillment) ? "Sent" : "Ready for pickup";
+  if (order.status === "fulfilled") return received || fulfilled ? "Receipt confirmed" : "Confirmed";
+  if (received) return fulfilled ? fulfillLabel : prepaid && paid ? "Payment received" : "Confirmed";
+  if (fulfilled) return prepaid && paid ? "Payment received" : "Confirmed";
+  if (paid && prepaid) return order.paymentFlow === "twigigi_checkout" ? null : "Confirmed";
+  if (order.reviewState === "accepted") return "Requested";
+  return null;
+}
+
 export function orderStage(order: StageOrder) {
   if (order.status === "canceled" || order.reviewState === "declined") return "Canceled";
   if (order.status === "fulfilled") return "Completed";
@@ -105,12 +121,65 @@ export function orderStage(order: StageOrder) {
 
 export type PlacementStep = { title: string; detail: string; state: "done" | "current" | "upcoming" };
 
-export function buyerPlacement(order: StageOrder & { displayName: string }) {
+export function buyerPlacement(order: StageOrder & { displayName: string; pickupConfirmedAt?: string | null }) {
   const cash = isCashMethod(order.buyerPayment);
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   const verifying = order.paymentStatus === "verifying";
   const handed = fulfillmentDone(order.fulfillmentState) || order.status === "fulfilled";
   const step = (title: string, detail: string, state: PlacementStep["state"]): PlacementStep => ({ title, detail, state });
+  if (cash && order.fulfillment === "pickup") {
+    const confirmed = Boolean(order.pickupConfirmedAt) || handed;
+    const finished = paid && handed;
+    const doneNote = "The order is complete when you have the item and the seller confirms the cash.";
+    if (finished) {
+      return {
+        title: "Order completed",
+        badge: "Completed",
+        intro: "The item was handed over and the seller confirmed the cash.",
+        steps: [
+          step("Order placed", "Twigigi created this order right away.", "done"),
+          step("Pickup", "The pickup is done.", "done"),
+          step("Complete", "The item was handed over and the seller confirmed the cash.", "done"),
+        ],
+      };
+    }
+    if (!confirmed) {
+      return {
+        title: "Awaiting pickup",
+        badge: "Awaiting Pickup",
+        intro: "The seller still needs to confirm the pickup time.",
+        steps: [
+          step("Order placed", "Twigigi created this order right away.", "done"),
+          step("Pickup requested", "Waiting for the seller to confirm your pickup time.", "current"),
+          step("Complete", doneNote, "upcoming"),
+        ],
+      };
+    }
+    if (!handed) {
+      return {
+        title: paid ? "Payment confirmed" : "Awaiting pickup",
+        badge: paid ? "Payment Confirmed" : "Awaiting Pickup",
+        intro: paid
+          ? `${order.displayName} confirmed the cash. Pick it up at the arranged time.`
+          : "The seller confirmed the pickup time. Pay in cash when you pick it up.",
+        steps: [
+          step("Order placed", "Twigigi created this order right away.", "done"),
+          step("Pickup", "Pick up your order at the confirmed time.", "current"),
+          step("Complete", doneNote, "upcoming"),
+        ],
+      };
+    }
+    return {
+      title: "Awaiting pickup",
+      badge: "Awaiting Pickup",
+      intro: "Pay the seller in cash. It stays unpaid until they confirm the cash.",
+      steps: [
+        step("Order placed", "Twigigi created this order right away.", "done"),
+        step("Pickup", "The seller marked it ready for pickup.", "done"),
+        step("Complete", "The seller confirms the cash when they receive it.", "current"),
+      ],
+    };
+  }
   if (order.status === "fulfilled" || (paid && handed)) {
     return {
       title: "Order completed",
@@ -136,18 +205,6 @@ export function buyerPlacement(order: StageOrder & { displayName: string }) {
         step("Order placed", "Twigigi created this order right away.", "done"),
         step("Payment confirmed", "The seller confirmed the money.", "done"),
         step("Fulfillment", "The seller prepares pickup or shipping.", "current"),
-      ],
-    };
-  }
-  if (cash) {
-    return {
-      title: handed ? "Ready for pickup" : "Awaiting pickup",
-      badge: handed ? "Ready for pickup" : "Awaiting Pickup",
-      intro: "Pay the seller in cash when you pick it up. This stays unpaid until they confirm they received the cash.",
-      steps: [
-        step("Order placed", "Twigigi created this order right away.", "done"),
-        step("Pickup", handed ? "The seller marked it ready for pickup." : "The seller prepares it for the pickup time you chose.", handed ? "done" : "current"),
-        step("Cash at pickup", "You pay in person. The seller confirms the cash before it counts as paid.", "upcoming"),
       ],
     };
   }

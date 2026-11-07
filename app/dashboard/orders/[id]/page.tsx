@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { sendOrderFile } from "@/lib/actions";
+import { sendOrderFile, rollbackOrder } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { getOrder, getProductById } from "@/lib/db";
 import { formatDate, formatMoney, orderHeading, srcLabel } from "@/lib/format";
@@ -10,7 +10,7 @@ import { OrderPaymentFacts } from "@/components/order-payment-facts";
 import { OrderTrack } from "@/components/order-track";
 import { ReloadForm } from "@/components/reload-form";
 import { SellerOrderFlow } from "@/components/seller-order-flow";
-import { orderTrack } from "@/lib/order-flow";
+import { orderRollbackTarget, orderTrack } from "@/lib/order-flow";
 
 async function OrderScreen({
   params,
@@ -27,11 +27,18 @@ async function OrderScreen({
   const order = getOrder(id);
   if (!order || order.sellerId !== user.id) notFound();
   const product = getProductById(order.productId);
+  const backTo = orderRollbackTarget(order);
   return (
     <main className="mx-auto w-full max-w-3xl px-5 pb-16">
       <p className="text-sm text-muted">{order.publicRef}</p>
       <h1 className="mt-1 font-serif text-4xl">{orderHeading(order)}</h1>
       <OrderTrack steps={orderTrack(order)} />
+      {backTo ? (
+        <ReloadForm action={rollbackOrder} className="mt-3">
+          <input type="hidden" name="id" value={order.id} />
+          <button className="text-sm text-forest">Roll back to {backTo}</button>
+        </ReloadForm>
+      ) : null}
       {order.lines.length > 1 ? (
         <div className="mt-4 space-y-1 text-sm">
           {order.lines.map((line) => (

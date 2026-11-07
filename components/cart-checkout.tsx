@@ -694,7 +694,9 @@ function OrderReviewDialog({
         <button type="button" disabled={pending} onClick={onClose} className="mt-2 inline-flex h-12 w-full items-center justify-center rounded-full border border-line bg-card text-base font-medium">
           Back to checkout
         </button>
-        <p className="mt-3 text-center text-xs text-muted">By placing your order, you agree to the seller's terms.</p>
+        <p className="mt-3 text-center text-xs leading-5 text-muted">
+          By placing your order, you agree to Twigigi&apos;s <Link href="/terms" className="text-forest">Terms of Service</Link> and acknowledge that payment and fulfillment are handled directly by the seller.
+        </p>
       </div>
     </div>
   );

@@ -83,6 +83,19 @@ async function OrderView({
         }]
     : [];
   const whenLabel = order.fulfillment === "pickup" ? shortPickup(order.pickupWindow, product?.pickupTime ?? "") : "";
+  const pickupAt = order.fulfillment === "pickup" ? cashPickupAt(order.pickupWindow) : "";
+  const cashPickup = isCashMethod(order.buyerPayment) && order.fulfillment === "pickup";
+  const pickupConfirmed = Boolean(order.pickupConfirmedAt) || fulfillmentDone(order.fulfillmentState);
+  const currentStep = placement?.steps.find((step) => step.state === "current");
+  const nextLine = !placement
+    ? ""
+    : cashPickup && !pickupConfirmed
+      ? "Waiting for the seller to confirm your pickup time."
+      : cashPickup && pickupConfirmed && !fulfillmentDone(order.fulfillmentState) && pickupAt
+        ? `Next: Pick up your order on ${pickupAt}.`
+        : currentStep
+          ? `Next step: ${currentStep.detail}`
+          : "";
   return (
     <Stage>
       <div className={showPlaced ? "px-4 py-6" : "bg-card px-5 py-8 sm:rounded-[28px] sm:px-6"}>
@@ -130,9 +143,7 @@ async function OrderView({
                   </li>
                 ))}
               </ol>
-              {placement.steps.find((step) => step.state === "current") ? (
-                <p className="mt-4 text-center text-sm text-muted">Next step: {placement.steps.find((step) => step.state === "current")?.detail}</p>
-              ) : null}
+              {nextLine ? <p className="mt-4 text-center text-sm text-muted">{nextLine}</p> : null}
             </section>
 
             {!paid && product && isCashMethod(order.buyerPayment) ? (
@@ -141,7 +152,7 @@ async function OrderView({
                   <h2 className="font-semibold">Pay the seller</h2>
                   <p className="text-sm text-muted">Cash on pickup</p>
                 </div>
-                <p className="mt-3 text-sm leading-6 text-muted">You pay in cash when you pick it up. It stays unpaid until the seller confirms the cash.</p>
+                <p className="mt-3 text-sm leading-6">Pay {formatMoney(order.totalCents || order.amountCents, order.currency)} in cash at pickup.</p>
               </section>
             ) : null}
             {!paid && product && !isCashMethod(order.buyerPayment) ? (
@@ -172,7 +183,7 @@ async function OrderView({
                 <AlertIcon />
                 <span>
                   {isCashMethod(order.buyerPayment)
-                    ? "You pay the seller in person. Twigigi does not take the payment."
+                    ? "Cash payments are made directly to the seller, not through Twigigi."
                     : "You pay the seller directly. Twigigi does not hold or guarantee payments. Be cautious when paying before receiving an item."}
                 </span>
               </p>
@@ -378,6 +389,14 @@ function shortPickup(chosen: string, offered: string) {
   return `${label} · ${formatClockMinutes(parsed.minutes)}`;
 }
 
+function cashPickupAt(chosen: string) {
+  const parsed = parsePickupChoice(chosen);
+  if (!parsed) return "";
+  const date = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day));
+  const label = date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return `${label} at ${formatClockMinutes(parsed.minutes)}`;
+}
+
 function lineImage(productId: string, product: { id: string; images: string[] } | null) {
   if (product?.id === productId) return product.images[0] ?? "";
   return getProductById(productId)?.images[0] ?? "";
@@ -393,6 +412,8 @@ function shortStep(title: string) {
     "Cash received": "Payment",
     "Cash at pickup": "Cash",
     Pickup: "Pickup",
+    "Pickup requested": "Pickup requested",
+    Complete: "Complete",
     Fulfillment: "Delivery",
     Delivered: "Delivered",
   };

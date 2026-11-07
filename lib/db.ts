@@ -265,6 +265,7 @@ function ensureColumns(database: DatabaseSync) {
   add("orders", "lines_json", "lines_json TEXT NOT NULL DEFAULT '[]'");
   add("orders", "buyer_payment", "buyer_payment TEXT NOT NULL DEFAULT ''");
   add("orders", "pickup_window", "pickup_window TEXT NOT NULL DEFAULT ''");
+  add("orders", "pickup_confirmed_at", "pickup_confirmed_at TEXT");
   add("orders", "delivery_note", "delivery_note TEXT NOT NULL DEFAULT ''");
   add("orders", "buyer_note", "buyer_note TEXT NOT NULL DEFAULT ''");
   add("orders", "review_state", "review_state TEXT NOT NULL DEFAULT 'requested'");
@@ -920,6 +921,7 @@ function mapOrder(row: Row): OrderRecord {
     address: str(row.address),
     buyerPayment: str(row.buyer_payment),
     pickupWindow: str(row.pickup_window),
+    pickupConfirmedAt: row.pickup_confirmed_at ? str(row.pickup_confirmed_at) : null,
     deliveryNote: str(row.delivery_note),
     buyerNote: str(row.buyer_note),
     amountCents: num(row.amount_cents),
@@ -2800,6 +2802,70 @@ export function acceptPlacedOrder(id: string) {
   db.prepare(`UPDATE orders SET review_state = 'accepted' WHERE id = ? AND review_state = 'requested'`).run(id);
 }
 
+export function rollbackOrderStatus(id: string, sellerId: string) {
+  const order = getOrder(id);
+  if (!order || order.sellerId !== sellerId) return false;
+  if (order.status === "canceled" || order.reviewState === "declined") return false;
+  if (order.status === "fulfilled") {
+    const next = order.paymentStatus === "paid" ? "paid" : "unpaid";
+    const result = db.prepare(`UPDATE orders SET status = ? WHERE id = ? AND seller_id = ? AND status = 'fulfilled'`).run(next, id, sellerId);
+    if (result.changes < 1) return false;
+    db.prepare(`UPDATE interactions SET seller_confirmed_at = NULL WHERE source_id = ?`).run(id);
+    return true;
+  }
+  if (order.buyerReceivedAt) {
+    const result = db.prepare(`UPDATE orders SET buyer_received_at = NULL WHERE id = ? AND seller_id = ?`).run(id, sellerId);
+    if (result.changes < 1) return false;
+    db.prepare(`UPDATE interactions SET buyer_confirmed_at = NULL WHERE source_id = ?`).run(id);
+    return true;
+  }
+  if (order.fulfillmentState || order.fileSentAt) {
+    const result = db
+      .prepare(
+        `UPDATE orders SET
+           fulfillment_state = '',
+           ship_carrier = '',
+           ship_tracking = '',
+           file_sent_at = NULL,
+           pickup_confirmed_at = CASE WHEN pickup_confirmed_at IS NOT NULL AND pickup_confirmed_at = ready_at THEN NULL ELSE pickup_confirmed_at END,
+           ready_at = NULL
+         WHERE id = ? AND seller_id = ?`,
+      )
+      .run(id, sellerId);
+    return result.changes > 0;
+  }
+  const paid = order.paymentStatus === "paid" || order.status === "paid";
+  if (paid && paymentNeedsConfirm(order.buyerPayment)) {
+    if (order.paymentFlow === "twigigi_checkout") return false;
+    const result = db
+      .prepare(
+        `UPDATE orders SET
+           status = CASE WHEN status = 'paid' THEN 'unpaid' ELSE status END,
+           payment_status = 'unpaid',
+           paid_at = NULL
+         WHERE id = ? AND seller_id = ? AND payment_flow != 'twigigi_checkout'`,
+      )
+      .run(id, sellerId);
+    return result.changes > 0;
+  }
+  if (order.reviewState === "accepted") {
+    const result = db.prepare(`UPDATE orders SET review_state = 'requested' WHERE id = ? AND seller_id = ? AND review_state = 'accepted'`).run(id, sellerId);
+    return result.changes > 0;
+  }
+  return false;
+}
+
+export function confirmOrderPickupTime(id: string, sellerId: string) {
+  const order = getOrder(id);
+  if (!order || order.sellerId !== sellerId) return false;
+  if (order.fulfillment !== "pickup" || order.status === "canceled" || order.reviewState === "declined") return false;
+  if (order.pickupConfirmedAt) return true;
+  const result = db
+    .prepare(`UPDATE orders SET pickup_confirmed_at = ? WHERE id = ? AND seller_id = ? AND pickup_confirmed_at IS NULL`)
+    .run(new Date().toISOString(), id, sellerId);
+  return result.changes > 0;
+}
+
 export function confirmOrderPaymentReceived(id: string, sellerId: string) {
   const order = getOrder(id);
   if (!order || order.sellerId !== sellerId) return false;
@@ -2850,10 +2916,10 @@ export function markOrderFulfillment(
   }
   const result = db
     .prepare(
-      `UPDATE orders SET fulfillment_state = ?, ready_at = COALESCE(NULLIF(ready_at, ''), ?)
+      `UPDATE orders SET fulfillment_state = ?, ready_at = COALESCE(NULLIF(ready_at, ''), ?), pickup_confirmed_at = COALESCE(pickup_confirmed_at, ?)
        WHERE id = ? AND seller_id = ?`,
     )
-    .run(state, now, id, sellerId);
+    .run(state, now, now, id, sellerId);
   return result.changes > 0;
 }
 

@@ -58,6 +58,8 @@ import {
   sellerReviewOrder,
   acceptOrderProposal,
   confirmOrderPaymentReceived,
+  confirmOrderPickupTime,
+  rollbackOrderStatus,
   recordBuyerPayment,
   markOrderFulfillment,
   confirmBuyerReceipt,
@@ -1635,6 +1637,29 @@ export async function acceptSellerChange(formData: FormData) {
     await notifyBuyer(next, `Order confirmed: ${next.productTitle}`, acceptNote(next, product?.interacEmail ?? "", product?.paypalMe ?? "", product?.venmoUsername ?? ""));
   }
   redirect(back);
+}
+
+export async function rollbackOrder(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireSeller();
+  const id = text(formData, "id");
+  const back = `/dashboard/orders/${id}`;
+  rollbackOrderStatus(id, user.id);
+  return { next: back };
+}
+
+export async function confirmPickupTime(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireSeller();
+  const id = text(formData, "id");
+  const back = `/dashboard/orders/${id}`;
+  if (!confirmOrderPickupTime(id, user.id)) return { next: back };
+  const order = getOrder(id);
+  if (!order) return { next: back };
+  const when = order.pickupWindow ? formatPickupChoice(order.pickupWindow) : "";
+  const sent = await notifyBuyer(order, `Pickup time confirmed: ${order.productTitle}`, [
+    `${order.displayName} confirmed the pickup time for order ${order.publicRef}.`,
+    when ? `Pickup time: ${when}` : "They confirmed the pickup time.",
+  ]);
+  return { next: sent ? back : `${back}?mail=0` };
 }
 
 export async function confirmOrderPayment(_prev: FormState, formData: FormData): Promise<FormState> {

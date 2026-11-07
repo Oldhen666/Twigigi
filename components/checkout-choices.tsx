@@ -95,7 +95,6 @@ export function PayChoice({
           <p className="mt-3 text-sm text-muted">The seller has not added a PayPal.Me link.</p>
         )
       ) : null}
-      {selected === "cash" || selected === "cash_pickup" ? <p className="mt-3 text-sm text-muted">Cash is only for local pickup. You pay the seller in person, and it stays unpaid until they confirm the cash.</p> : null}
       {card ? (
         <a href={card} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>
           Pay by card
