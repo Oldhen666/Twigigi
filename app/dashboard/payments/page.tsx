@@ -6,6 +6,7 @@ import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui
 import { requireSeller } from "@/lib/auth";
 import { listSellerBills } from "@/lib/db";
 import { billingYear, formatDate, formatMoney } from "@/lib/format";
+import { SELLER_PAYMENT_RESPONSIBILITY } from "@/lib/legal";
 
 export default async function Page({
   searchParams,
@@ -42,6 +43,12 @@ export default async function Page({
               </label>
               <button className={`${buttonClass} w-fit`}>Save receiving details</button>
             </form>
+            <div className="mt-5 space-y-3 border-t border-line pt-5 text-sm leading-6 text-muted">
+              <h2 className="font-medium text-ink">Seller responsibility for payment information</h2>
+              {SELLER_PAYMENT_RESPONSIBILITY.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
+            </div>
           </section>
         }
         receipts={

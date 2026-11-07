@@ -196,6 +196,8 @@ export type OrderRecord = {
   pickupProposedBy: "" | "buyer" | "seller";
   deliveryNote: string;
   buyerNote: string;
+  paypalMe: string;
+  venmoUsername: string;
   amountCents: number;
   subtotalCents: number;
   shippingCents: number;

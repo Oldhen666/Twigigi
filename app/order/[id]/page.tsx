@@ -205,12 +205,13 @@ async function OrderView({
                 interacEmail={product.interacEmail}
                 interacQuestion={order.interacQuestion || product.interacQuestion}
                 interacPassword={order.interacPassword || product.interacPassword}
-                venmoUsername={product.venmoUsername}
-                paypalMe={product.paypalMe}
+                venmoUsername={order.venmoUsername}
+                paypalMe={order.paypalMe}
                 amountCents={order.totalCents || order.amountCents}
                 currency={order.currency}
                 orderNote={order.publicRef ? `Order ${order.publicRef}` : ""}
                 orderRef={order.publicRef}
+                sellerName={order.displayName}
                 variant="sheet"
                 reported={order.paymentStatus === "verifying"}
               />
@@ -335,11 +336,12 @@ async function OrderView({
             interacEmail={product.interacEmail}
             interacQuestion={product.interacQuestion}
             interacPassword={product.interacPassword}
-            venmoUsername={product.venmoUsername}
-            paypalMe={product.paypalMe}
+            venmoUsername={order.venmoUsername}
+            paypalMe={order.paypalMe}
             amountCents={order.totalCents || order.amountCents}
             currency={order.currency}
             orderNote={order.publicRef ? `Order ${order.publicRef}` : ""}
+            sellerName={order.displayName}
           />
         ) : null}
         {!paid && !canceled && order.reviewState === "accepted" && product && order.buyerPayment && !showPlaced ? (
@@ -357,8 +359,8 @@ async function OrderView({
             interacEmail={product.interacEmail}
             interacQuestion={question}
             interacPassword={password}
-            venmoUsername={product.venmoUsername}
-            paypalMe={product.paypalMe}
+            venmoUsername={order.venmoUsername}
+            paypalMe={order.paypalMe}
             amountCents={order.totalCents || order.amountCents}
             currency={order.currency}
             orderNote={order.publicRef ? `Order ${order.publicRef}` : ""}

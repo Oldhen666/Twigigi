@@ -268,6 +268,25 @@ function ensureColumns(database: DatabaseSync) {
   add("orders", "pickup_window", "pickup_window TEXT NOT NULL DEFAULT ''");
   add("orders", "pickup_confirmed_at", "pickup_confirmed_at TEXT");
   add("orders", "pickup_proposed_by", "pickup_proposed_by TEXT NOT NULL DEFAULT ''");
+  add("orders", "paypal_me", "paypal_me TEXT NOT NULL DEFAULT ''");
+  add("orders", "venmo_username", "venmo_username TEXT NOT NULL DEFAULT ''");
+  add("orders", "payment_frozen", "payment_frozen INTEGER NOT NULL DEFAULT 0");
+  database.exec(`
+    UPDATE orders
+    SET paypal_me = COALESCE((SELECT paypal_me FROM products WHERE products.id = orders.product_id), ''),
+        venmo_username = COALESCE((SELECT venmo_username FROM products WHERE products.id = orders.product_id), ''),
+        payment_frozen = 1
+    WHERE payment_frozen = 0;
+    CREATE TABLE IF NOT EXISTS payment_link_events (
+      id TEXT PRIMARY KEY,
+      product_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      previous_value TEXT NOT NULL DEFAULT '',
+      next_value TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+  `);
   add("orders", "delivery_note", "delivery_note TEXT NOT NULL DEFAULT ''");
   add("orders", "buyer_note", "buyer_note TEXT NOT NULL DEFAULT ''");
   add("orders", "review_state", "review_state TEXT NOT NULL DEFAULT 'requested'");
@@ -927,6 +946,8 @@ function mapOrder(row: Row): OrderRecord {
     pickupProposedBy: row.pickup_proposed_by === "seller" || row.pickup_proposed_by === "buyer" ? row.pickup_proposed_by : "",
     deliveryNote: str(row.delivery_note),
     buyerNote: str(row.buyer_note),
+    paypalMe: str(row.paypal_me),
+    venmoUsername: str(row.venmo_username),
     amountCents: num(row.amount_cents),
     subtotalCents: num(row.subtotal),
     shippingCents: num(row.shipping),
@@ -2023,6 +2044,21 @@ export function insertOrder(input: {
 
 export function setInteracPrompt(id: string, question: string, password: string) {
   db.prepare("UPDATE orders SET interac_question = ?, interac_password = ? WHERE id = ?").run(question, password, id);
+}
+
+export function setOrderPaymentSnapshot(id: string, input: { paypalMe: string; venmoUsername: string }) {
+  db.prepare("UPDATE orders SET paypal_me = ?, venmo_username = ?, payment_frozen = 1 WHERE id = ?").run(
+    input.paypalMe,
+    input.venmoUsername,
+    id,
+  );
+}
+
+export function recordPaymentLinkChange(id: string, input: { productId: string; userId: string; kind: "paypal" | "venmo"; previous: string; next: string }) {
+  db.prepare(
+    `INSERT INTO payment_link_events (id, product_id, user_id, kind, previous_value, next_value, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, input.productId, input.userId, input.kind, input.previous, input.next, new Date().toISOString());
 }
 
 export function setOrderChoices(id: string, payment: string, pickupWindow: string, deliveryNote = "", buyerNote = "") {

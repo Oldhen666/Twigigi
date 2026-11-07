@@ -7,7 +7,7 @@ import type { Product, ProductOption, ProductVariant } from "@/lib/types";
 import { MAX_VALUES, OPTION_NAMES, normalizeVariants, variantLabel } from "@/lib/variants";
 import { inputClass, labelClass } from "@/components/ui";
 import { CA_PROVINCES, US_STATES, joinLocation, lookupCurrentPlace, lookupIpPlace, splitLocation } from "@/lib/places";
-import { digitalPayModeOf, digitalPayProblem, parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile, venmoProfileUrl, type DigitalPayMode } from "@/lib/payments";
+import { digitalPayModeOf, digitalPayProblem, parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile, paypalMeName, venmoProfileUrl, venmoUsernameFrom, type DigitalPayMode } from "@/lib/payments";
 
 const DIGITAL_PAY_CHOICES: Record<DigitalPayMode, { label: string; placeholder: string; instruction: string }> = {
   paypal_email: {
@@ -577,7 +577,8 @@ function PaymentChoices({
   const interacOn = methods.includes("interac");
   const venmoOn = methods.includes("venmo");
   const paypalOn = methods.includes("paypal");
-  const venmoBase = venmoProfileUrl(venmoUsername);
+  const venmoBase = venmoProfileUrl(venmoUsernameFrom(venmoUsername));
+  const paypalTest = paypalMeName(paypalMe) ? `https://paypal.me/${paypalMeName(paypalMe)}` : "";
   return (
     <div className="mt-4 space-y-3">
       {choices.length === 0 ? <p className="text-sm text-muted">Choose a country above to see payment methods.</p> : null}
@@ -642,6 +643,11 @@ function PaymentChoices({
                   </a>
                   , then enter your username here.{venmoBase ? <> Your Venmo link: {venmoBase}.</> : <> Example: johnsmith.</>}
                 </span>
+                {venmoBase ? (
+                  <a href={venmoBase} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-forest">
+                    Test payment link
+                  </a>
+                ) : null}
               </Field>
             </div>
           ) : null}
@@ -664,6 +670,11 @@ function PaymentChoices({
                   </a>
                   , then paste it here. Example: https://paypal.me/yourname. Do not add an amount or a currency.
                 </span>
+                {paypalTest ? (
+                  <a href={paypalTest} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-forest">
+                    Test payment link
+                  </a>
+                ) : null}
               </Field>
             </div>
           ) : null}

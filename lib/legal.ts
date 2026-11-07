@@ -1,4 +1,11 @@
 export const TERMS_VERSION = "2026-11-07";
+
+export const SELLER_PAYMENT_RESPONSIBILITY = [
+  "Sellers are responsible for ensuring that all payment information they provide through Twigigi, including PayPal links, Venmo usernames, Interac e-Transfer email addresses, and other payment instructions, is accurate, current, and belongs to an account they are authorized to use.",
+  "If a buyer suffers a financial loss because a seller provides incorrect, outdated, misleading, or unauthorized payment information, the seller is responsible for resolving the issue and compensating the buyer for losses directly resulting from that information, to the extent required by applicable law and the seller's contractual obligations.",
+  "Twigigi does not independently verify the ownership or accuracy of seller-provided payment information and does not receive or hold buyer-to-seller payments.",
+  "Nothing in this section limits any rights or remedies available to buyers under applicable law or excludes any liability that Twigigi cannot lawfully exclude.",
+];
 export const PRIVACY_VERSION = "2026-10-31";
 export const IP_POLICY_VERSION = "2026-10-31";
 

@@ -113,9 +113,30 @@ export function safeVenmo(value: string) {
   return trimmed;
 }
 
+export function venmoUsernameFrom(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (!trimmed.includes("://") && !trimmed.includes("/")) return safeVenmo(trimmed);
+  let url: URL;
+  try {
+    url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+  } catch {
+    return "";
+  }
+  if (url.username || url.password || (url.protocol !== "https:" && url.protocol !== "http:")) return "";
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (host === "venmo.com" && parts.length === 1) return safeVenmo(parts[0]);
+  if (host === "account.venmo.com" && parts[0] === "u" && parts[1] && parts.length === 2) return safeVenmo(parts[1]);
+  return "";
+}
+
 export function venmoUsernameProblem(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "Enter a Venmo username.";
+  if (trimmed.includes("://") || trimmed.includes("/")) {
+    return venmoUsernameFrom(trimmed) ? null : "Use a venmo.com profile link, like https://venmo.com/yourname.";
+  }
   return safeVenmo(trimmed) ? null : "Enter a Venmo username like johnsmith.";
 }
 
@@ -144,7 +165,7 @@ function readPaypalMe(value: string) {
   } catch {
     return null;
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (url.username || url.password || (url.protocol !== "http:" && url.protocol !== "https:")) return null;
   const host = url.hostname.toLowerCase().replace(/^www\./, "");
   const parts = url.pathname.split("/").filter(Boolean);
   if (host === "paypal.me") return { name: parts[0] ?? "", extra: parts.slice(1), search: url.search };
@@ -166,7 +187,7 @@ export function paypalMeProblem(value: string) {
   if (!trimmed) return "Enter your PayPal.Me link.";
   if (trimmed.length > 200) return "Keep the PayPal.Me link under 200 characters.";
   const parsed = readPaypalMe(trimmed);
-  if (!parsed || !PAYPAL_NAME.test(parsed.name)) return "Use a PayPal.Me link, like https://paypal.me/yourname";
+  if (!parsed || !PAYPAL_NAME.test(parsed.name)) return "Use a paypal.me link. Other websites are not accepted.";
   if (parsed.extra.length > 0 || parsed.search) return "Leave the amount off. Example: https://paypal.me/yourname";
   return null;
 }

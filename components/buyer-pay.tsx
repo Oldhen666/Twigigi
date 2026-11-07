@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { buyerReportPayment } from "@/lib/actions";
-import { buttonClass } from "@/components/ui";
+import { buttonClass, ghostClass } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
 import { isCashMethod, methodLabel, paypalMeUrl, safeCardUrl, safeEmail, venmoPayUrl } from "@/lib/payments";
 import { PaymentRiskNote } from "@/components/payment-risk";
@@ -20,6 +20,7 @@ export function BuyerPay({
   currency,
   orderNote = "",
   orderRef = "",
+  sellerName = "",
   variant = "form",
   reported = false,
 }: {
@@ -35,6 +36,7 @@ export function BuyerPay({
   currency: string;
   orderNote?: string;
   orderRef?: string;
+  sellerName?: string;
   variant?: "form" | "sheet";
   reported?: boolean;
 }) {
@@ -66,38 +68,35 @@ export function BuyerPay({
           <h2 className="font-semibold">Pay the seller</h2>
           <p className="text-sm text-muted">{methodLabel(method)}</p>
         </div>
-        {method === "paypal" ? (
-          paypal ? (
-            <a href={paypal} target="_blank" rel="noreferrer" className={`${buttonClass} mt-4 w-full`}>
-              Pay {formatMoney(amountCents, currency)} with PayPal
-            </a>
-          ) : (
-            <p className="mt-3 text-sm text-muted">The seller has not added a PayPal.Me link.</p>
-          )
-        ) : (
-          <div className="mt-4 divide-y divide-line rounded-2xl bg-paper px-4">
-            {rows.map((row) => (
-              <div key={row.label} className="flex items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm text-muted">{row.label}</p>
-                  <p className={`mt-0.5 break-all ${row.strong ? "text-lg font-semibold text-forest" : "font-medium"}`}>{row.value}</p>
-                </div>
-                <CopyChip value={row.value} />
+        <div className="mt-4 divide-y divide-line rounded-2xl bg-paper px-4">
+          {rows.map((row) => (
+            <div key={row.label} className="flex items-center justify-between gap-3 py-3">
+              <div className="min-w-0">
+                <p className="text-sm text-muted">{row.label}</p>
+                <p className={`mt-0.5 break-all ${row.strong ? "text-lg font-semibold text-forest" : "font-medium"}`}>{row.value}</p>
               </div>
-            ))}
-          </div>
-        )}
-        {method === "paypal" ? null : venmo ? (
-          <a href={venmo} target="_blank" rel="noreferrer" className="mt-3 inline-block text-sm text-forest">Open Venmo</a>
+              <CopyChip value={row.value} />
+            </div>
+          ))}
+        </div>
+        {method === "paypal" && !paypal ? <p className="mt-3 text-sm text-muted">The seller has not added a PayPal.Me link.</p> : null}
+        {method === "venmo" && !venmo ? <p className="mt-3 text-sm text-muted">The seller has not added a Venmo username.</p> : null}
+        {paypal || venmo ? (
+          <p className="mt-3 text-sm leading-6 text-muted">{recipientCheck(method, sellerName)}</p>
         ) : null}
-        {method === "paypal" ? null : card ? (
+        {paypal ? <PayServiceLink href={paypal} service="paypal" /> : null}
+        {venmo ? <PayServiceLink href={venmo} service="venmo" /> : null}
+        {card ? (
           <a href={card} target="_blank" rel="noreferrer" className="mt-3 inline-block text-sm text-forest">Open card payment</a>
         ) : null}
         <p className="mt-3 text-sm leading-6 text-muted">
-          {method === "paypal"
-            ? `PayPal opens with ${amountLabel} filled in${orderRef ? ` for order ${orderRef}` : ""}.`
+          {method === "paypal" || method === "venmo"
+            ? "If available, include your order ID in the payment note."
             : "Include your order number in the transfer message to help the seller identify your payment."}
         </p>
+        {cash ? null : (
+          <p className="mt-2 text-sm leading-6 text-muted">The seller is responsible for these payment details. Twigigi does not verify them or hold the payment.</p>
+        )}
         {reported ? (
           <p className="mt-4 text-center text-sm text-muted">The seller is checking this payment. It is not paid until they confirm the money arrived.</p>
         ) : (
@@ -132,18 +131,16 @@ export function BuyerPay({
           {interacPassword ? <p className="mt-1">Password: {interacPassword}</p> : null}
         </div>
       ) : null}
-      {venmo ? (
-        <a href={venmo} target="_blank" rel="noreferrer" className={`${buttonClass} w-full`}>
-          Pay {formatMoney(amountCents, currency)} with Venmo
-        </a>
-      ) : method === "venmo" ? (
+      {venmo ? <PayServiceLink href={venmo} service="venmo" /> : method === "venmo" ? (
         <p className="text-sm text-muted">The seller has not added a Venmo username.</p>
       ) : null}
-      {paypal ? (
-        <a href={paypal} target="_blank" rel="noreferrer" className={`${buttonClass} w-full`}>
-          Pay {formatMoney(amountCents, currency)} with PayPal
-        </a>
+      {paypal ? <PayServiceLink href={paypal} service="paypal" /> : null}
+      {paypal || venmo ? (
+        <p className="text-sm leading-6 text-muted">
+          {recipientCheck(method, sellerName)} If available, include your order ID in the payment note.
+        </p>
       ) : null}
+      {cash ? null : <p className="text-sm leading-6 text-muted">The seller is responsible for these payment details. Twigigi does not verify them or hold the payment.</p>}
       {card ? (
         <a href={card} target="_blank" rel="noreferrer" className={`${buttonClass} w-full`}>Pay by card</a>
       ) : null}
@@ -170,6 +167,39 @@ export function BuyerPay({
       ) : null}
       <PaymentRiskNote cash={cash} />
     </form>
+  );
+}
+
+function recipientCheck(method: string, sellerName: string) {
+  const service = method === "venmo" ? "Venmo" : "PayPal";
+  const who = sellerName.trim() || "the seller";
+  return `Before you pay, confirm the name on ${service} matches ${who}.`;
+}
+
+function PayServiceLink({ href, service }: { href: string; service: "paypal" | "venmo" }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className={`${ghostClass} mt-3 w-full gap-2`}>
+      {service === "paypal" ? <PayPalMark /> : <VenmoMark />}
+      {service === "paypal" ? "Pay with PayPal" : "Pay with Venmo"}
+    </a>
+  );
+}
+
+function PayPalMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+      <path fill="#003087" d="M8.2 19.5 9.7 9.2h3.7c2.4 0 4 1 3.6 3.3-.5 2.4-2.3 3.7-4.7 3.7h-1.6l-.7 3.3H8.2Z" />
+      <path fill="#009cde" d="M6.6 18.2 8.2 7.4h3.8c2.4 0 4 1 3.5 3.4-.5 2.5-2.3 3.7-4.7 3.7H9.1l-.6 3.7H6.6Z" />
+    </svg>
+  );
+}
+
+function VenmoMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+      <circle cx="12" cy="12" r="10" fill="#008CFF" />
+      <path fill="#fff" d="M16.2 6.4c.4.7.6 1.5.6 2.5 0 3.1-2.6 7.1-4.6 9.4H8.6L6.7 7.2l3.2-.3 1 6.6c1-1.6 2.1-4 2.1-5.6 0-.8-.2-1.4-.4-1.9l3.6.4Z" />
+    </svg>
   );
 }
 

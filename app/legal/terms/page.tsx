@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { LegalPage, LegalSection } from "@/components/legal-page";
-import { TERMS_VERSION } from "@/lib/legal";
+import { SELLER_PAYMENT_RESPONSIBILITY, TERMS_VERSION } from "@/lib/legal";
 
 export const metadata = { title: "Terms of Service" };
 
@@ -93,6 +93,10 @@ export default function Page() {
         <p>Third-party payment providers may apply their own fees, eligibility requirements, purchase protections, and terms.</p>
         <p>Twigigi does not guarantee that a third-party payment can be reversed or recovered.</p>
         <p><strong>Important:</strong> Sending money to an unfamiliar seller before receiving an item may involve financial risk. Buyers should exercise appropriate caution and use available payment protections where applicable.</p>
+        <h3 id="seller-payment-responsibility" className="pt-2 font-medium">Seller responsibility for payment information</h3>
+        {SELLER_PAYMENT_RESPONSIBILITY.map((paragraph) => (
+          <p key={paragraph}>{paragraph}</p>
+        ))}
       </LegalSection>
 
       <LegalSection title="7. Pickup, Delivery, and Fulfillment">

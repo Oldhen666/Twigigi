@@ -9,7 +9,7 @@ import { updateTag } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, sellerContactProblem, venmoUsernameProblem } from "@/lib/payments";
+import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
@@ -55,6 +55,8 @@ import {
   releaseStock,
   reserveStock,
   setOrderChoices,
+  setOrderPaymentSnapshot,
+  recordPaymentLinkChange,
   setInteracPrompt,
   sellerReviewOrder,
   acceptOrderProposal,
@@ -565,7 +567,9 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const interacEmail = text(formData, "interacEmail").trim().slice(0, 80);
   const interacQuestion = text(formData, "interacQuestion").trim().slice(0, 120);
   const interacPassword = text(formData, "interacPassword").trim().slice(0, 80);
-  const venmoUsername = text(formData, "venmoUsername").trim().replace(/^@/, "").slice(0, 30);
+  const venmoRaw = text(formData, "venmoUsername").trim().slice(0, 200);
+  const venmoName = venmoUsernameFrom(venmoRaw);
+  const venmoUsername = venmoName || venmoRaw.replace(/^@/, "").slice(0, 30);
   const paypalRaw = text(formData, "paypalMe").trim().slice(0, 200);
   const paypalName = paypalMeName(paypalRaw);
   const paypalMe = paypalName ? `https://paypal.me/${paypalName}` : paypalRaw;
@@ -587,7 +591,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       if (problem) errors.interacEmail = problem;
     }
     if (paymentMethods.includes("venmo")) {
-      const problem = venmoUsernameProblem(venmoUsername);
+      const problem = venmoUsernameProblem(venmoRaw);
       if (problem) errors.venmoUsername = problem;
     }
     if (paymentMethods.includes("paypal")) {
@@ -745,6 +749,25 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     if (input.status === "published") confirmListingRights(savedProductId, owner.id, TERMS_VERSION, IP_POLICY_VERSION);
   } catch {
     return { error: "Could not save this Twig. Try a different link name.", ...sessionStamp };
+  }
+
+  if (existing && existing.paypalMe !== input.paypalMe) {
+    recordPaymentLinkChange(newId("ple"), {
+      productId: existing.id,
+      userId: owner.id,
+      kind: "paypal",
+      previous: existing.paypalMe,
+      next: input.paypalMe,
+    });
+  }
+  if (existing && existing.venmoUsername !== input.venmoUsername) {
+    recordPaymentLinkChange(newId("ple"), {
+      productId: existing.id,
+      userId: owner.id,
+      kind: "venmo",
+      previous: existing.venmoUsername,
+      next: input.venmoUsername,
+    });
   }
 
   if (existing && existing.slug !== slug) updateTag(productTag(owner.publicId, existing.slug));
@@ -964,6 +987,23 @@ function sellerNoteOf(formData: FormData) {
   return { ok: true as const, note };
 }
 
+function paymentSnapshot(
+  products: { paymentMethods: string[]; paypalMe: string; venmoUsername: string }[],
+  payment: string,
+) {
+  const source =
+    products.find((item) => {
+      if (!item.paymentMethods.includes(payment)) return false;
+      if (payment === "paypal") return Boolean(item.paypalMe);
+      if (payment === "venmo") return Boolean(item.venmoUsername);
+      return true;
+    }) ?? products[0];
+  return {
+    paypalMe: payment === "paypal" ? source?.paypalMe ?? "" : "",
+    venmoUsername: payment === "venmo" ? source?.venmoUsername ?? "" : "",
+  };
+}
+
 export async function placeOrder(_prev: FormState, formData: FormData): Promise<FormState> {
   const productId = text(formData, "productId");
   const product = getProductById(productId);
@@ -1056,6 +1096,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       filePassword: digital ? product.filePassword : "",
     });
     setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note);
+    setOrderPaymentSnapshot(orderId, paymentSnapshot([product], choice.payment));
     if (!digital) acceptPlacedOrder(orderId);
     if (choice.payment === "interac") setInteracPrompt(orderId, product.interacQuestion, product.interacPassword);
     openInteraction({
@@ -1238,6 +1279,7 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
       lines: lines.length > 1 ? lines : [],
     });
     setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note, sellerNote.note);
+    setOrderPaymentSnapshot(orderId, paymentSnapshot(prepared.map((line) => line.product), choice.payment));
     acceptPlacedOrder(orderId);
     if (choice.payment === "interac") {
       const prompt = prepared.find((line) => line.product.interacQuestion || line.product.interacPassword)?.product;
@@ -1623,7 +1665,7 @@ export async function reviewSellerOrder(_prev: FormState, formData: FormData): P
   const updated = getOrder(id);
   if (!updated) return { next: back };
   const product = getProductById(updated.productId);
-  const sent = await notifyBuyer(updated, `Order confirmed: ${updated.productTitle}`, acceptNote(updated, product?.interacEmail ?? "", product?.paypalMe ?? "", product?.venmoUsername ?? ""));
+  const sent = await notifyBuyer(updated, `Order confirmed: ${updated.productTitle}`, acceptNote(updated, product?.interacEmail ?? "", updated.paypalMe, updated.venmoUsername));
   return { next: sent ? back : `${back}?mail=0` };
 }
 
@@ -1638,7 +1680,7 @@ export async function acceptSellerChange(formData: FormData) {
   const next = getOrder(id);
   if (next) {
     const product = getProductById(next.productId);
-    await notifyBuyer(next, `Order confirmed: ${next.productTitle}`, acceptNote(next, product?.interacEmail ?? "", product?.paypalMe ?? "", product?.venmoUsername ?? ""));
+    await notifyBuyer(next, `Order confirmed: ${next.productTitle}`, acceptNote(next, product?.interacEmail ?? "", next.paypalMe, next.venmoUsername));
   }
   redirect(back);
 }
