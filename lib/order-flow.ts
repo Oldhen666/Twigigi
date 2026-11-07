@@ -165,13 +165,13 @@ export function buyerPlacement(order: StageOrder & { displayName: string }) {
   }
   return {
     title: "Awaiting payment",
-    badge: "Awaiting Payment",
-    intro: "Pay the seller directly with the details below. Twigigi does not hold, escrow, or guarantee this payment.",
-    steps: [
-      step("Order placed", "Twigigi created this order right away.", "done"),
-      step("Pay the seller", "Send the payment to the seller, then mark it sent.", "current"),
-      step("Seller verification", "It counts as paid only after the seller confirms the money.", "upcoming"),
-    ],
+      badge: "Awaiting payment",
+      intro: "Pay the seller directly with the details below. Twigigi does not hold or guarantee this payment.",
+      steps: [
+        step("Order placed", "Twigigi created this order right away.", "done"),
+        step("Pay the seller", "Send payment directly to the seller.", "current"),
+        step("Seller verification", "The seller confirms the money before it counts as paid.", "upcoming"),
+      ],
   };
 }
 

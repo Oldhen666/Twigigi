@@ -18,7 +18,7 @@ export function CopyOrderNumber({ value, variant = "button" }: { value: string; 
 
   if (variant === "link") {
     return (
-      <button type="button" onClick={copy} aria-live="polite" className="inline-flex items-center gap-1.5 text-sm text-muted">
+      <button type="button" onClick={copy} aria-live="polite" className="inline-flex items-center gap-1.5 text-sm text-forest">
         <CopyIcon />
         {copied ? "Copied" : "Copy order ID"}
       </button>

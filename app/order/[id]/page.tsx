@@ -85,20 +85,11 @@ async function OrderView({
   const whenLabel = order.fulfillment === "pickup" ? shortPickup(order.pickupWindow, product?.pickupTime ?? "") : "";
   return (
     <Stage>
-      <div className="bg-card px-5 py-8 sm:rounded-[28px] sm:px-6">
+      <div className={showPlaced ? "px-4 py-6" : "bg-card px-5 py-8 sm:rounded-[28px] sm:px-6"}>
         {showPlaced && placement ? (
           <>
-            <div className="text-center">
-              <span className="mx-auto grid size-14 place-items-center rounded-full bg-moss text-forest" aria-hidden>
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-                  <path d="M6 12.5 10 16.5 18 8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-              <h1 className="mt-4 text-2xl font-semibold">{title}</h1>
-              <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-muted">{intro}</p>
-            </div>
-
-            <section className="mt-6 rounded-3xl border border-line bg-white px-4 py-4">
+            <h1 className="sr-only">{title}</h1>
+            <section className="rounded-3xl border border-line bg-white px-4 py-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted">{orderNumber ? `Order #${orderNumber}` : "Order"}</p>
                 <span className="shrink-0 rounded-full bg-[#f4e7d4] px-2.5 py-1 text-xs font-medium text-[#8a5a2b]">{badge}</span>
@@ -114,7 +105,7 @@ async function OrderView({
                     <div className="min-w-0">
                       <p className="font-medium leading-5">{line.title}</p>
                       <p className="mt-1 text-sm text-muted">Qty {line.quantity} · {fulfillmentLabel}</p>
-                      <p className="mt-1 text-lg font-semibold">{line.amount}</p>
+                      <p className="mt-1 text-lg font-semibold">{line.amount} {order.currency}</p>
                     </div>
                   </div>
                 ))}
@@ -129,22 +120,31 @@ async function OrderView({
               ) : null}
             </section>
 
-            <section className="mt-4 rounded-3xl border border-line bg-white px-4 py-4">
+            <section className="mt-4 rounded-3xl border border-line bg-white px-4 py-5">
               <h2 className="font-semibold">Order progress</h2>
-              <ol className="mt-4 space-y-4">
+              <ol className="mt-5 grid grid-cols-3 text-center">
                 {placement.steps.map((step) => (
-                  <li key={step.title} className="flex gap-3">
+                  <li key={step.title} className="flex flex-col items-center gap-2">
                     <ProgressMark state={step.state} />
-                    <div>
-                      <p className="font-medium">{step.title}</p>
-                      <p className="text-sm text-muted">{step.detail}</p>
-                    </div>
+                    <span className={`text-sm ${step.state === "upcoming" ? "text-muted" : "font-medium"}`}>{shortStep(step.title)}</span>
                   </li>
                 ))}
               </ol>
+              {placement.steps.find((step) => step.state === "current") ? (
+                <p className="mt-4 text-center text-sm text-muted">Next step: {placement.steps.find((step) => step.state === "current")?.detail}</p>
+              ) : null}
             </section>
 
-            {!paid && product && !isCashMethod(order.buyerPayment) && order.paymentStatus !== "verifying" ? (
+            {!paid && product && isCashMethod(order.buyerPayment) ? (
+              <section className="mt-4 rounded-3xl border border-line bg-white px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="font-semibold">Pay the seller</h2>
+                  <p className="text-sm text-muted">Cash on pickup</p>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-muted">You pay in cash when you pick it up. It stays unpaid until the seller confirms the cash.</p>
+              </section>
+            ) : null}
+            {!paid && product && !isCashMethod(order.buyerPayment) ? (
               <BuyerPay
                 orderId={order.id}
                 methods={[order.buyerPayment]}
@@ -154,45 +154,33 @@ async function OrderView({
                   itemName: order.productTitle,
                 })}
                 interacEmail={product.interacEmail}
-                interacQuestion={product.interacQuestion}
-                interacPassword={product.interacPassword}
+                interacQuestion={order.interacQuestion || product.interacQuestion}
+                interacPassword={order.interacPassword || product.interacPassword}
                 venmoUsername={product.venmoUsername}
                 paypalMe={product.paypalMe}
                 amountCents={order.totalCents || order.amountCents}
                 currency={order.currency}
                 orderNote={order.publicRef ? `Order ${order.publicRef}` : ""}
+                orderRef={order.publicRef}
+                variant="sheet"
+                reported={order.paymentStatus === "verifying"}
               />
             ) : null}
-            {!paid && product && order.paymentStatus === "verifying" ? (
-              <div className="mt-4">
-                <p className="text-sm text-muted">Payment verification pending. It is not paid until the seller confirms the money arrived.</p>
-                <PayMethods
-                  methods={[order.buyerPayment]}
-                  cardPaymentUrl={buyerPayUrl(product.cardPaymentUrl, {
-                    amountCents: order.totalCents || order.amountCents,
-                    currency: order.currency,
-                    itemName: order.productTitle,
-                  })}
-                  interacEmail={product.interacEmail}
-                  interacQuestion={order.interacQuestion || product.interacQuestion}
-                  interacPassword={order.interacPassword || product.interacPassword}
-                  venmoUsername={product.venmoUsername}
-                  paypalMe={product.paypalMe}
-                  amountCents={order.totalCents || order.amountCents}
-                  currency={order.currency}
-                  orderNote={order.publicRef ? `Order ${order.publicRef}` : ""}
-                  showContacts
-                />
-              </div>
-            ) : null}
 
-            <Link href={trackHref} className="mt-4 inline-flex h-12 w-full items-center justify-center rounded-full bg-ink text-base font-medium text-card">
-              Track your order →
-            </Link>
+            {!paid ? (
+              <p className="mt-4 flex gap-2 text-sm leading-6 text-muted">
+                <AlertIcon />
+                <span>
+                  {isCashMethod(order.buyerPayment)
+                    ? "You pay the seller in person. Twigigi does not take the payment."
+                    : "You pay the seller directly. Twigigi does not hold or guarantee payments. Be cautious when paying before receiving an item."}
+                </span>
+              </p>
+            ) : null}
             <div className="mt-4 flex items-center justify-center gap-3">
-              {orderNumber ? <CopyOrderNumber value={orderNumber} variant="link" /> : null}
-              {orderNumber ? <span className="text-muted" aria-hidden>·</span> : null}
               <SellerContactButton mode={contact.mode} value={contact.value} variant="link" />
+              {orderNumber ? <span className="text-muted" aria-hidden>·</span> : null}
+              {orderNumber ? <CopyOrderNumber value={orderNumber} variant="link" /> : null}
             </div>
           </>
         ) : (
@@ -395,26 +383,47 @@ function lineImage(productId: string, product: { id: string; images: string[] } 
   return getProductById(productId)?.images[0] ?? "";
 }
 
+function shortStep(title: string) {
+  const labels: Record<string, string> = {
+    "Order placed": "Placed",
+    "Pay the seller": "Payment",
+    "Payment sent": "Payment",
+    "Payment confirmed": "Payment",
+    "Seller verification": "Verified",
+    "Cash received": "Payment",
+    "Cash at pickup": "Cash",
+    Pickup: "Pickup",
+    Fulfillment: "Delivery",
+    Delivered: "Delivered",
+  };
+  return labels[title] ?? title;
+}
+
 function ProgressMark({ state }: { state: "done" | "current" | "upcoming" }) {
   const tone = state === "done" ? "bg-forest text-card" : state === "current" ? "bg-[#f4e7d4] text-[#8a5a2b]" : "bg-paper-deep text-muted";
   return (
-    <span className={`grid size-8 shrink-0 place-items-center rounded-full ${tone}`} aria-hidden>
-      {state === "done" ? (
+    <span className={`grid size-9 place-items-center rounded-full ${tone}`} aria-hidden>
+      {state === "current" ? (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M3.5 8.2 6.4 11 12.5 4.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      ) : state === "current" ? (
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="5.2" stroke="currentColor" strokeWidth="1.4" />
-          <path d="M8 5.2V8l1.8 1.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          <rect x="2.2" y="3.4" width="11.6" height="9.2" rx="1.6" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M2.2 6.2h11.6" stroke="currentColor" strokeWidth="1.4" />
         </svg>
       ) : (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="3.2" y="2.6" width="9.6" height="10.8" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
-          <path d="M5.4 6h5.2M5.4 8.4h5.2M5.4 10.8h3.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          <path d="M3.5 8.2 6.4 11 12.5 4.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
     </span>
+  );
+}
+
+function AlertIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden className="mt-0.5 shrink-0">
+      <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8 4.8v3.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="8" cy="10.8" r="0.7" fill="currentColor" />
+    </svg>
   );
 }
 

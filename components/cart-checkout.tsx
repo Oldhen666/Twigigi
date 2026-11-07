@@ -7,12 +7,11 @@ import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { placeCartOrder } from "@/lib/actions";
 import { readCart, writeCart, type CartItem } from "@/components/add-to-cart";
 import { PayChoice, PickupFacts } from "@/components/checkout-choices";
-import { PaymentRiskNote } from "@/components/payment-risk";
 import { useKeepFormValues } from "@/components/keep-form-values";
-import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
+import { buttonClass, inputClass, labelClass } from "@/components/ui";
 import { cartFulfillmentCharge, formatMoney, type FulfillmentOption } from "@/lib/format";
 import { isCashMethod, methodLabel, methodsForFulfillment } from "@/lib/payments";
-import { formatPickupChoice } from "@/lib/pickup";
+import { formatClockMinutes, parsePickupChoice } from "@/lib/pickup";
 import type { FormState, ProductOption, ProductVariant } from "@/lib/types";
 import { resolveSelection } from "@/lib/variants";
 
@@ -412,13 +411,14 @@ export function CartCheckout({
           fulfillment={chosen.label}
           pickup={chosen.id === "pickup"}
           pickupLocation={chosen.location ?? ""}
-          pickupTime={activePickup ? formatPickupChoice(activePickup) : ""}
+          pickupTime={activePickup}
           address={review.address}
-          deliveryNote={chosen.id === "shipping" ? review.deliveryNote : ""}
+          deliveryNote={chosen.id === "pickup" ? "" : review.deliveryNote}
           sellerNote={review.sellerNote}
           payment={paymentMethod ? methodLabel(paymentMethod) : ""}
           cash={isCashMethod(paymentMethod)}
           shipping={chosen.id === "pickup" ? "" : fee === 0 ? "Free" : formatMoney(fee, currency)}
+          currency={currency}
           total={formatMoney(total, currency)}
           gaps={reviewGaps(review, {
             requireName,
@@ -578,6 +578,7 @@ function OrderReviewDialog({
   payment,
   cash,
   shipping,
+  currency,
   total,
   gaps,
   pending,
@@ -594,6 +595,7 @@ function OrderReviewDialog({
   payment: string;
   cash: boolean;
   shipping: string;
+  currency: string;
   total: string;
   gaps: string[];
   pending: boolean;
@@ -616,45 +618,129 @@ function OrderReviewDialog({
         className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[28px] bg-card p-5 shadow-[0_24px_80px_rgba(70,48,16,0.18)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 id="order-review-title" className="font-serif text-3xl">Confirm your order</h2>
-        <div className="mt-4 space-y-2 text-sm">
+        <h2 id="order-review-title" className="font-serif text-3xl">Review your order</h2>
+        <div className="mt-5 space-y-4">
           {lines.map((line) => (
-            <p key={`${line.title}-${line.label}`} className="flex justify-between gap-3">
-              <span>{line.title}{line.label ? ` · ${line.label}` : ""} × {line.quantity}</span>
-              <span>{line.amount}</span>
-            </p>
+            <div key={`${line.title}-${line.label}`} className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-medium">{line.title}{line.label ? ` · ${line.label}` : ""}</p>
+                <p className="text-sm text-muted">Quantity: {line.quantity}</p>
+              </div>
+              <p className="font-medium">{line.amount}</p>
+            </div>
           ))}
         </div>
-        <dl className="mt-4 space-y-2 border-t border-line pt-4 text-sm">
-          <div className="flex justify-between gap-3"><dt className="text-muted">Receive it</dt><dd>{fulfillment}</dd></div>
+
+        <section className="mt-5 border-t border-line pt-5">
+          <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-muted">{pickup ? "Pickup details" : fulfillment.toLowerCase().includes("ship") ? "Shipping details" : "Delivery details"}</h3>
+          <div className="mt-3 flex items-center gap-2 font-medium">
+            <PinIcon />
+            <span>{fulfillment}</span>
+          </div>
+          <p className="mt-1 pl-6 text-sm text-muted">{pickup ? pickupLocation || "The seller has not added a pickup location." : address || "Not entered"}</p>
           {pickup ? (
             <>
-              <div><dt className="text-muted">Pickup location</dt><dd>{pickupLocation || "The seller has not added a pickup location."}</dd></div>
-              <div><dt className="text-muted">Pickup time</dt><dd>{pickupTime || "Not chosen"}</dd></div>
+              <div className="mt-3 flex items-center gap-2 font-medium">
+                <CalendarIcon />
+                <span>{reviewPickupWhen(pickupTime) || "Not chosen"}</span>
+              </div>
+              {pickupTime ? <p className="mt-1 pl-6 text-sm text-muted">Pickup time selected</p> : null}
             </>
-          ) : (
-            <div><dt className="text-muted">Address</dt><dd>{address || "Not entered"}</dd></div>
-          )}
-          {deliveryNote ? <div><dt className="text-muted">Delivery instructions</dt><dd>{deliveryNote}</dd></div> : null}
-          {sellerNote ? <div><dt className="text-muted">Note to seller</dt><dd>{sellerNote}</dd></div> : null}
-          {payment ? <div className="flex justify-between gap-3"><dt className="text-muted">Pay by</dt><dd>{payment}</dd></div> : null}
-          {shipping ? <div className="flex justify-between gap-3"><dt className="text-muted">Shipping</dt><dd>{shipping}</dd></div> : null}
-          <div className="flex justify-between gap-3 font-serif text-2xl text-forest"><dt>Total</dt><dd>{total}</dd></div>
-        </dl>
+          ) : null}
+          {deliveryNote ? <p className="mt-3 text-sm text-muted">Delivery instructions: {deliveryNote}</p> : null}
+          {sellerNote ? <p className="mt-3 text-sm text-muted">Note to seller: {sellerNote}</p> : null}
+        </section>
+
+        <section className="mt-5 border-t border-line pt-5">
+          <h3 className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Payment</h3>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 font-medium">
+              <BankIcon />
+              <span>{payment || "Not chosen"}</span>
+            </div>
+            {payment ? <span className="rounded-full bg-forest/10 px-2.5 py-1 text-xs text-forest">{cash ? "Pay at pickup" : "Pay seller directly"}</span> : null}
+          </div>
+          <p className="mt-2 text-sm text-muted">
+            {cash
+              ? "You pay in cash when you pick it up. It stays unpaid until the seller confirms the cash."
+              : "Payment instructions will be provided after you place your order."}
+          </p>
+          <div className="mt-4 rounded-2xl bg-paper px-4 py-3">
+            {shipping ? <div className="mb-2 flex justify-between text-sm text-muted"><span>Shipping</span><span>{shipping}</span></div> : null}
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="font-medium">Order total</p>
+              <p className="text-2xl font-semibold text-forest">{total} {currency}</p>
+            </div>
+            <p className="mt-1 text-sm text-muted">No payment is collected by Twigigi.</p>
+          </div>
+          <p className="mt-4 flex gap-2 text-sm leading-6 text-muted">
+            <AlertIcon />
+            <span>
+              {cash
+                ? "You pay the seller in person. Twigigi does not take the payment."
+                : "Payments are made directly to the seller and are not protected by Twigigi. Only send money when you're comfortable with the seller."}
+            </span>
+          </p>
+        </section>
+
         {gaps.length > 0 ? (
           <ul className="mt-4 space-y-1 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">
             {gaps.map((gap) => <li key={gap}>{gap}</li>)}
           </ul>
-        ) : payment ? (
-          <div className="mt-4"><PaymentRiskNote cash={cash} /></div>
         ) : null}
-        <div className="mt-5 flex gap-2">
-          <button type="button" disabled={pending} onClick={onClose} className={`${ghostClass} flex-1`}>Back</button>
-          <button type="submit" disabled={pending || gaps.length > 0} className={`${buttonClass} flex-1`}>
-            {pending ? "Sending…" : "Confirm order"}
-          </button>
-        </div>
+        <button type="submit" disabled={pending || gaps.length > 0} className="mt-5 inline-flex h-12 w-full items-center justify-center rounded-full bg-ink text-base font-medium text-card disabled:opacity-60">
+          {pending ? "Placing…" : "Place order →"}
+        </button>
+        <button type="button" disabled={pending} onClick={onClose} className="mt-2 inline-flex h-12 w-full items-center justify-center rounded-full border border-line bg-card text-base font-medium">
+          Back to checkout
+        </button>
+        <p className="mt-3 text-center text-xs text-muted">By placing your order, you agree to the seller's terms.</p>
       </div>
     </div>
+  );
+}
+
+function reviewPickupWhen(value: string) {
+  const parsed = parsePickupChoice(value);
+  if (!parsed) return value;
+  const date = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day));
+  const label = date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
+  return `${label} at ${formatClockMinutes(parsed.minutes)}`;
+}
+
+function PinIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden className="shrink-0">
+      <path d="M8 14s4.5-4.1 4.5-7.2A4.5 4.5 0 0 0 3.5 6.8C3.5 9.9 8 14 8 14Z" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="8" cy="6.7" r="1.4" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden className="shrink-0">
+      <rect x="2.2" y="3.2" width="11.6" height="10.2" rx="1.6" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M2.2 6.4h11.6M5.2 2.2v2.2M10.8 2.2v2.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function BankIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden className="shrink-0">
+      <path d="M2.4 6.4 8 3.1l5.6 3.3" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M3.5 6.6v5M6.5 6.6v5M9.5 6.6v5M12.5 6.6v5M2.4 11.8h11.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function AlertIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden className="mt-0.5 shrink-0">
+      <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8 4.8v3.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="8" cy="10.8" r="0.7" fill="currentColor" />
+    </svg>
   );
 }

@@ -24,7 +24,7 @@ export function SellerContactButton({
   const href = mode === "email" ? `mailto:${value}` : mode === "phone" ? `tel:${value.replace(/\D/g, "")}` : "";
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={variant === "link" ? "inline-flex items-center gap-1.5 text-sm text-muted" : `${ghostClass} mt-3 w-full`}>
+      <button type="button" onClick={() => setOpen(true)} className={variant === "link" ? "inline-flex items-center gap-1.5 text-sm text-forest" : `${ghostClass} mt-3 w-full`}>
         {variant === "link" ? (
           <>
             <ChatIcon />
