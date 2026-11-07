@@ -99,7 +99,7 @@ import {
   updateProduct,
   updateQuoteStatus,
 } from "@/lib/db";
-import { formatPickupChoice, parsePickupChoice, pickupChoiceProblem } from "@/lib/pickup";
+import { formatPickupChoice, pickupChoiceProblem } from "@/lib/pickup";
 import {
   appUrl,
   formatMoney,
@@ -1670,7 +1670,19 @@ export async function arrangePickupTime(_prev: FormState, formData: FormData): P
   const back = `/dashboard/orders/${id}`;
   const reschedule = text(formData, "reschedule") === "1";
   const pickupWindow = text(formData, "pickupTime").trim().slice(0, 16);
-  if (!parsePickupChoice(pickupWindow)) return { error: "Choose a pickup time in 15-minute steps." };
+  const existing = getOrder(id);
+  if (!existing || existing.sellerId !== user.id) return { next: back };
+  const productIds = [...new Set((existing.lines.length > 0 ? existing.lines.map((line) => line.productId) : [existing.productId]).filter(Boolean))];
+  const schedules = productIds.map((productId) => getProductById(productId)?.pickupTime ?? "");
+  const problem = pickupChoiceProblem(schedules, pickupWindow);
+  if (problem) {
+    const error = problem === "The seller has not set pickup days."
+      ? "Add pickup days on the product first."
+      : problem === "Choose a time the seller offered."
+        ? "Choose one of your available pickup times."
+        : "Choose a pickup time.";
+    return { error };
+  }
   if (!setSellerPickupTime(id, user.id, pickupWindow, reschedule)) return { error: "That pickup time could not be saved." };
   const order = getOrder(id);
   if (!order) return { next: back };

@@ -1,18 +1,23 @@
 import { ReloadForm } from "@/components/reload-form";
+import { SellerPickupTime } from "@/components/seller-pickup-time";
 import { arrangePickupTime, completeOrder, confirmOrderPayment, confirmPaymentAndHandover, confirmPickupTime, markOrderProgress, reviewSellerOrder, rollbackOrder } from "@/lib/actions";
 import { formatDate, formatMoney } from "@/lib/format";
 import { formatPickupChoice } from "@/lib/pickup";
 import { isCashMethod, methodLabel } from "@/lib/payments";
 import { ORDER_COMPLETE_DAYS, fulfillmentDone, orderCanComplete, orderRollbackTarget, paymentNeedsConfirm, shipsToBuyer } from "@/lib/order-flow";
 import type { OrderRecord } from "@/lib/types";
-import { buttonClass, ghostClass, inputClass } from "@/components/ui";
+import { buttonClass, ghostClass } from "@/components/ui";
 
 export function SellerOrderFlow({
   order,
   mail,
+  pickupSchedules = [],
+  pickupSummary = [],
 }: {
   order: OrderRecord;
   mail: string;
+  pickupSchedules?: string[];
+  pickupSummary?: string[];
 }) {
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   const prepaid = paymentNeedsConfirm(order.buyerPayment);
@@ -26,7 +31,7 @@ export function SellerOrderFlow({
   const opensAt = Number.isFinite(readyDate) ? new Date(readyDate + ORDER_COMPLETE_DAYS * 24 * 60 * 60 * 1000).toISOString() : "";
   const showInterac = order.buyerPayment === "interac" && Boolean(order.interacQuestion || order.interacPassword);
   if (isCashMethod(order.buyerPayment) && order.fulfillment === "pickup" && order.status !== "canceled" && order.reviewState !== "declined") {
-    return <CashPickupSeller order={order} mail={mail} />;
+    return <CashPickupSeller order={order} mail={mail} pickupSchedules={pickupSchedules} pickupSummary={pickupSummary} />;
   }
   if (!mail && !reviewing && !confirmed && order.reviewState !== "changes" && !showInterac) return null;
   return (
@@ -185,7 +190,17 @@ export function SellerOrderFlow({
   );
 }
 
-function CashPickupSeller({ order, mail }: { order: OrderRecord; mail: string }) {
+function CashPickupSeller({
+  order,
+  mail,
+  pickupSchedules,
+  pickupSummary,
+}: {
+  order: OrderRecord;
+  mail: string;
+  pickupSchedules: string[];
+  pickupSummary: string[];
+}) {
   const completed = order.status === "fulfilled" || order.fulfillmentState === "handed";
   const ready = !completed && order.fulfillmentState === "ready";
   const paid = order.paymentStatus === "paid" || order.status === "paid" || completed;
@@ -254,7 +269,7 @@ function CashPickupSeller({ order, mail }: { order: OrderRecord; mail: string })
               <summary className="cursor-pointer font-medium">Suggest another time</summary>
               <ReloadForm action={arrangePickupTime} className="mt-3 space-y-2">
                 <input type="hidden" name="id" value={order.id} />
-                <input type="datetime-local" name="pickupTime" step={900} required className={inputClass} />
+                <SellerPickupTime schedules={pickupSchedules} summary={pickupSummary} value={order.pickupWindow} />
                 <button className={`${ghostClass} w-full`}>Save this time</button>
               </ReloadForm>
             </details>
@@ -265,7 +280,7 @@ function CashPickupSeller({ order, mail }: { order: OrderRecord; mail: string })
               <ReloadForm action={arrangePickupTime} className="mt-3 space-y-2">
                 <input type="hidden" name="id" value={order.id} />
                 <input type="hidden" name="reschedule" value="1" />
-                <input type="datetime-local" name="pickupTime" step={900} required className={inputClass} />
+                <SellerPickupTime schedules={pickupSchedules} summary={pickupSummary} value={order.pickupWindow} />
                 <button className={`${ghostClass} w-full`}>Save this time</button>
               </ReloadForm>
             </details>

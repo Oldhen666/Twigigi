@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveReview } from "@/lib/actions";
 import { buttonClass, inputClass, labelClass } from "@/components/ui";
@@ -52,15 +52,37 @@ export function ReviewForm({
         <span className={labelClass}>Review</span>
         <textarea name="body" rows={3} className={`${inputClass} h-auto py-3`} placeholder="How did it go?" />
       </label>
-      <label className="mt-3 block">
+      <div className="mt-3">
         <span className={labelClass}>Photos</span>
-        <input name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple className="text-sm" />
+        <PhotoPicker />
         <span className="mt-1 block text-xs text-muted">Up to 2 photos.</span>
         {state.fieldErrors?.images ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.images}</span> : null}
-      </label>
+      </div>
       <button disabled={pending} className={`${buttonClass} mt-4`}>
         {pending ? "Saving…" : "Save review"}
       </button>
     </form>
+  );
+}
+
+function PhotoPicker() {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [names, setNames] = useState<string[]>([]);
+  return (
+    <div>
+      <input
+        ref={inputRef}
+        name="images"
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        multiple
+        className="sr-only"
+        onChange={() => setNames(Array.from(inputRef.current?.files ?? [], (file) => file.name))}
+      />
+      <button type="button" onClick={() => inputRef.current?.click()} className="rounded-full border border-line bg-white px-4 py-2 text-sm">
+        Choose photos
+      </button>
+      <p className="mt-2 text-sm text-muted">{names.length > 0 ? names.join(", ") : "No file chosen"}</p>
+    </div>
   );
 }

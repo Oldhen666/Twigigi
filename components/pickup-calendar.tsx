@@ -24,12 +24,14 @@ export function PickupCalendar({
   selectedTime,
   onTime,
   error = "",
+  emptyMessage = "The seller has not set pickup days.",
 }: {
   schedules: string[];
   summary: string[];
   selectedTime: string;
   onTime: (value: string) => void;
   error?: string;
+  emptyMessage?: string;
 }) {
   const [today] = useState(() => edmontonNow());
   const selected = parsePickupChoice(selectedTime);
@@ -135,7 +137,7 @@ export function PickupCalendar({
           <input type="hidden" name="pickupTime" value={selectedTime} />
         </>
       ) : (
-        <p className="mt-1">The seller has not set pickup days.</p>
+        <p className="mt-1">{emptyMessage}</p>
       )}
       {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
     </div>

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { CopyOrderNumber } from "@/components/copy-order-number";
+import { PrintReceipt } from "@/components/print-receipt";
 import { SellerContactButton } from "@/components/seller-contact";
 import { InteractionLine } from "@/components/interaction-line";
 import { PayMethods } from "@/components/pay-methods";
@@ -13,10 +14,10 @@ import { buttonClass } from "@/components/ui";
 import { acceptSellerChange, confirmReceipt } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { findUserById, getInteractionBySource, getOrder, getProductById, hasReview } from "@/lib/db";
-import { formatMoney, orderHeading } from "@/lib/format";
+import { formatDate, formatMoney, orderHeading } from "@/lib/format";
 import { formatPickupChoice, formatClockMinutes, parsePickupChoice } from "@/lib/pickup";
 import { buyerOrderCopy, buyerPlacement, fulfillmentDone } from "@/lib/order-flow";
-import { buyerPayUrl, isCashMethod, methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
+import { buyerPayUrl, isCashMethod, methodLabel, methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
 import { confirmStripeSession } from "@/lib/stripe";
 
 async function OrderView({
@@ -104,6 +105,22 @@ async function OrderView({
           : currentStep
             ? `Next step: ${currentStep.detail}`
             : "";
+  const receiptRows = [
+    { label: "Status", value: badge },
+    ...summaryLines.map((line) => ({
+      label: "Item",
+      value: `${line.title} · Qty ${line.quantity} · ${line.amount} ${order.currency}`,
+    })),
+    { label: "Fulfillment", value: fulfillmentLabel },
+    { label: "Payment", value: methodLabel(order.buyerPayment) },
+    { label: "Location", value: place },
+    { label: "Time", value: whenLabel },
+    { label: "Delivery instructions", value: order.deliveryNote },
+    { label: "Note to seller", value: order.buyerNote },
+    { label: "Seller", value: order.displayName },
+    { label: "Buyer", value: order.buyerName },
+    { label: "Ordered", value: formatDate(order.createdAt, order.productLocation) },
+  ].filter((row) => row.value);
   return (
     <Stage>
       <div className={showPlaced ? "px-4 py-6" : "bg-card px-5 py-8 sm:rounded-[28px] sm:px-6"}>
@@ -131,14 +148,15 @@ async function OrderView({
                   </div>
                 ))}
               </div>
-              {place || whenLabel || order.deliveryNote || order.buyerNote ? (
-                <div className="mt-4 space-y-3 border-t border-line pt-4 text-sm text-muted">
+              <div className="mt-4 flex items-center justify-between gap-4 border-t border-line pt-4 text-sm text-muted">
+                <div className="space-y-3">
                   {place ? <p className="flex items-center gap-2"><PinIcon /><span className="text-ink">{place}</span></p> : null}
                   {whenLabel ? <p className="flex items-center gap-2"><CalendarIcon /><span className="text-ink">{whenLabel}</span></p> : null}
                   {order.deliveryNote ? <p>Delivery instructions: {order.deliveryNote}</p> : null}
                   {order.buyerNote ? <p>Note to seller: {order.buyerNote}</p> : null}
                 </div>
-              ) : null}
+                <PrintReceipt orderNumber={orderNumber} rows={receiptRows} />
+              </div>
             </section>
 
             <section className="mt-4 rounded-3xl border border-line bg-white px-4 py-5">

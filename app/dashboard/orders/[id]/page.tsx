@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { sendOrderFile, rollbackOrder } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { getOrder, getProductById } from "@/lib/db";
-import { formatMoney, orderHeading } from "@/lib/format";
+import { formatMoney, orderHeading, pickupTimes } from "@/lib/format";
 import { timeZoneForLocation } from "@/lib/places";
 import { formatPickupChoice } from "@/lib/pickup";
 import { buttonClass } from "@/components/ui";
@@ -29,6 +29,10 @@ async function OrderScreen({
   const order = getOrder(id);
   if (!order || order.sellerId !== user.id) notFound();
   const product = getProductById(order.productId);
+  const scheduleIds = [...new Set((order.lines.length > 0 ? order.lines.map((line) => line.productId) : [order.productId]).filter(Boolean))];
+  const pickupSchedules = scheduleIds.map((productId) => (productId === product?.id ? product?.pickupTime : getProductById(productId)?.pickupTime) ?? "");
+  const pickupLists = pickupSchedules.map((schedule) => pickupTimes(schedule));
+  const pickupSummary = pickupLists.every((list) => list.join("|") === (pickupLists[0]?.join("|") ?? "")) ? pickupLists[0] ?? [] : [];
   const backTo = orderRollbackTarget(order);
   const cashPickup = isCashMethod(order.buyerPayment) && order.fulfillment === "pickup";
   const fulfillWord = order.fulfillment === "pickup" ? "Local pickup" : order.fulfillment === "delivery" ? "Local delivery" : order.fulfillment === "shipping" ? "Shipping" : "Digital file";
@@ -88,6 +92,8 @@ async function OrderScreen({
           interacPassword: order.interacPassword || (order.buyerPayment === "interac" ? product?.interacPassword ?? "" : ""),
         }}
         mail={mail}
+        pickupSchedules={pickupSchedules}
+        pickupSummary={pickupSummary}
       />
     </main>
   );
