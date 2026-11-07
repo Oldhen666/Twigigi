@@ -1,5 +1,6 @@
 import { buttonClass } from "@/components/ui";
-import { methodLabel, safeCardUrl, safeEmail, safePhone, safeVenmo } from "@/lib/payments";
+import { formatMoney } from "@/lib/format";
+import { methodLabel, paypalMeUrl, safeCardUrl, safeEmail, safePhone, safeVenmo } from "@/lib/payments";
 
 export function PayMethods({
   methods,
@@ -8,6 +9,9 @@ export function PayMethods({
   interacQuestion = "",
   interacPassword = "",
   venmoUsername = "",
+  paypalMe = "",
+  amountCents = 0,
+  currency = "CAD",
   zelleMode = "phone",
   zelleContact = "",
   showContacts = false,
@@ -20,6 +24,9 @@ export function PayMethods({
   interacQuestion?: string;
   interacPassword?: string;
   venmoUsername?: string;
+  paypalMe?: string;
+  amountCents?: number;
+  currency?: string;
   zelleMode?: "phone" | "email";
   zelleContact?: string;
   showContacts?: boolean;
@@ -30,8 +37,9 @@ export function PayMethods({
   const href = showContacts && methods.includes("card") && methodLabel("card") ? safeCardUrl(cardPaymentUrl) : "";
   const email = showContacts && methods.includes("interac") ? safeEmail(interacEmail) : "";
   const venmo = showContacts && methods.includes("venmo") ? safeVenmo(venmoUsername) : "";
+  const paypal = showContacts && methods.includes("paypal") ? paypalMeUrl(paypalMe, { amountCents, currency }) : "";
   const zelle = showContacts && methods.includes("zelle") ? (zelleMode === "email" ? safeEmail(zelleContact) : safePhone(zelleContact)) : "";
-  if (labels.length === 0 && !href && !email && !venmo && !zelle) {
+  if (labels.length === 0 && !href && !email && !venmo && !zelle && !paypal) {
     return empty ? <p className="mt-4 text-sm text-danger">{empty}</p> : null;
   }
   return (
@@ -50,21 +58,27 @@ export function PayMethods({
         </>
       ) : null}
       {note ? <p className="mt-3 text-sm text-muted">{note}</p> : null}
-      {email ? (
-        <p className="mt-3 text-sm">
-          Interac e-Transfer:{" "}
-          <a className="text-forest" href={`mailto:${email}`}>
-            {email}
-          </a>
-        </p>
-      ) : null}
-      {email && (interacQuestion || interacPassword) ? (
-        <div className="mt-2 text-sm">
-          {interacQuestion ? <p>Security question: {interacQuestion}</p> : null}
-          {interacPassword ? <p>Password: {interacPassword}</p> : null}
+      {email || interacQuestion || interacPassword ? (
+        <div className="mt-3 rounded-2xl bg-paper-deep px-4 py-3 text-sm">
+          <p className="font-medium">e-Transfer instructions</p>
+          {email ? (
+            <p className="mt-2">
+              Send it to:{" "}
+              <a className="text-forest" href={`mailto:${email}`}>
+                {email}
+              </a>
+            </p>
+          ) : null}
+          {interacQuestion ? <p className="mt-1">Security question: {interacQuestion}</p> : null}
+          {interacPassword ? <p className="mt-1">Password: {interacPassword}</p> : null}
         </div>
       ) : null}
       {venmo ? <p className="mt-3 text-sm">Venmo: @{venmo}</p> : null}
+      {paypal ? (
+        <a href={paypal} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>
+          Pay {formatMoney(amountCents, currency)} with PayPal
+        </a>
+      ) : null}
       {zelle ? (
         <p className="mt-3 text-sm">
           Zelle:{" "}

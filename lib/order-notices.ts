@@ -1,6 +1,6 @@
 import { appUrl, formatMoney } from "@/lib/format";
 import { sendOrderEmail } from "@/lib/mail";
-import { methodLabel } from "@/lib/payments";
+import { methodLabel, paypalMeUrl, safeEmail } from "@/lib/payments";
 import { paymentNeedsConfirm, shipsToBuyer } from "@/lib/order-flow";
 import type { OrderRecord } from "@/lib/types";
 
@@ -9,7 +9,7 @@ export async function notifyBuyer(order: OrderRecord, subject: string, lines: Ar
   return sendOrderEmail(order.email, { subject, text });
 }
 
-export function acceptNote(order: OrderRecord) {
+export function acceptNote(order: OrderRecord, interacEmail = "", paypalMe = "") {
   const total = formatMoney(order.totalCents || order.amountCents, order.currency);
   const method = order.buyerPayment ? methodLabel(order.buyerPayment) : "";
   const lines = [
@@ -17,10 +17,15 @@ export function acceptNote(order: OrderRecord) {
     `Total: ${total}`,
     method ? `Payment: ${method}` : null,
   ];
-  if (order.buyerPayment === "interac" && (order.interacQuestion || order.interacPassword)) {
-    if (order.interacQuestion) lines.push(`e-Transfer question: ${order.interacQuestion}`);
-    if (order.interacPassword) lines.push(`e-Transfer password: ${order.interacPassword}`);
+  const email = order.buyerPayment === "interac" ? safeEmail(interacEmail) : "";
+  if (email || (order.buyerPayment === "interac" && (order.interacQuestion || order.interacPassword))) {
+    lines.push("e-Transfer instructions:");
+    if (email) lines.push(`Send it to: ${email}`);
+    if (order.interacQuestion) lines.push(`Security question: ${order.interacQuestion}`);
+    if (order.interacPassword) lines.push(`Password: ${order.interacPassword}`);
   }
+  const paypal = order.buyerPayment === "paypal" ? paypalMeUrl(paypalMe, { amountCents: order.totalCents || order.amountCents, currency: order.currency }) : "";
+  if (paypal) lines.push(`PayPal: ${paypal}`);
   if (!paymentNeedsConfirm(order.buyerPayment)) {
     lines.push("Pay in cash when you pick it up. The seller will email you when it is ready.");
   } else if (order.paymentStatus !== "paid") {

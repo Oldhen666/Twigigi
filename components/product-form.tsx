@@ -15,7 +15,7 @@ import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui
 import { categoryProblem } from "@/lib/categories";
 import { parseFileLinks } from "@/lib/files";
 import { PROVINCES, joinLocation, lookupCurrentPlace, placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
+import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, paypalMeProblem, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
 
 type Action = (state: FormState, formData: FormData) => Promise<FormState>;
 
@@ -328,7 +328,7 @@ export function ProductForm({
         return field instanceof HTMLInputElement && field.checked;
       });
       if (ships && !methods.some((id) => isTransferMethod(id))) {
-        return "Add a transfer method for delivery and shipping, such as Interac, Venmo, or Zelle.";
+        return "Add a transfer method for delivery and shipping, such as Interac, PayPal, Venmo, or Zelle.";
       }
       return null;
     }
@@ -350,6 +350,12 @@ export function ProductForm({
       const methods = parsePaymentMethods(fieldValue(form, "paymentMethods") || "[]", splitLocation(fieldValue(form, "location")).country);
       if (!methods.includes("venmo")) return null;
       return venmoUsernameProblem(value);
+    }
+    if (name === "paypalMe") {
+      if (cta !== "buy") return null;
+      const methods = parsePaymentMethods(fieldValue(form, "paymentMethods") || "[]", splitLocation(fieldValue(form, "location")).country);
+      if (!methods.includes("paypal")) return null;
+      return paypalMeProblem(value);
     }
     if (name === "zelleContact") {
       if (cta !== "buy" && cta !== "file") return null;
@@ -549,7 +555,7 @@ export function ProductForm({
     const form = formRef.current;
     if (!form || (cta !== "buy" && cta !== "file")) return false;
     const problems: Record<string, string> = {};
-    for (const key of ["paymentMethods", "cardPaymentUrl", "interacEmail", "venmoUsername", "zelleContact", "sellerContact", "shippingNote"]) {
+    for (const key of ["paymentMethods", "cardPaymentUrl", "interacEmail", "venmoUsername", "paypalMe", "zelleContact", "sellerContact", "shippingNote"]) {
       const problem = activeProblem(form, key);
       if (problem) problems[key] = problem;
     }

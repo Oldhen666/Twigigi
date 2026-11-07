@@ -53,6 +53,7 @@ async function CartScreen({ params }: { params: Promise<{ username: string }> })
             interacQuestion: product.interacQuestion,
             interacPassword: product.interacPassword,
             venmoUsername: product.venmoUsername,
+            paypalMe: product.paypalMe,
             zelleMode: product.zelleMode,
             zelleContact: product.zelleContact,
             fulfillments: fulfillmentOptions(product).filter((option) => option.id === "pickup" || option.id === "delivery" || option.id === "shipping"),

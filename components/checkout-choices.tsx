@@ -1,7 +1,8 @@
 "use client";
 
 import { PickupCalendar } from "@/components/pickup-calendar";
-import { methodLabel, safeCardUrl, safeEmail, safePhone, safeVenmo } from "@/lib/payments";
+import { formatMoney } from "@/lib/format";
+import { methodLabel, paypalMeUrl, safeCardUrl, safeEmail, safePhone, safeVenmo } from "@/lib/payments";
 import { buttonClass } from "@/components/ui";
 
 export function PickupFacts({
@@ -39,6 +40,9 @@ export function PayChoice({
   interacQuestion = "",
   interacPassword = "",
   venmoUsername = "",
+  paypalMe = "",
+  amountCents = 0,
+  currency = "CAD",
   zelleMode = "phone",
   zelleContact = "",
   error = "",
@@ -52,6 +56,9 @@ export function PayChoice({
   interacQuestion?: string;
   interacPassword?: string;
   venmoUsername?: string;
+  paypalMe?: string;
+  amountCents?: number;
+  currency?: string;
   zelleMode?: "phone" | "email";
   zelleContact?: string;
   error?: string;
@@ -60,6 +67,7 @@ export function PayChoice({
   if (methods.length === 0) return empty ? <p className="text-sm text-danger">{empty}</p> : null;
   const email = selected === "interac" ? safeEmail(interacEmail) : "";
   const venmo = selected === "venmo" ? safeVenmo(venmoUsername) : "";
+  const paypal = selected === "paypal" ? paypalMeUrl(paypalMe, { amountCents, currency }) : "";
   const zelle = selected === "zelle" ? (zelleMode === "email" ? safeEmail(zelleContact) : safePhone(zelleContact)) : "";
   const card = selected === "card" ? safeCardUrl(cardPaymentUrl) : "";
   return (
@@ -74,14 +82,17 @@ export function PayChoice({
         ))}
       </div>
       {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
-      {email ? <p className="mt-3 text-sm">Interac e-Transfer: <a className="break-all text-forest" href={`mailto:${email}`}>{email}</a></p> : null}
-      {selected === "interac" && (interacQuestion || interacPassword) ? (
-        <div className="mt-2 text-sm">
-          {interacQuestion ? <p>Security question: {interacQuestion}</p> : null}
-          {interacPassword ? <p>Password: {interacPassword}</p> : null}
-        </div>
-      ) : null}
+      {email ? <p className="mt-3 text-sm text-muted">e-Transfer instructions arrive after the seller confirms the order.</p> : null}
       {venmo ? <p className="mt-3 text-sm">Venmo: @{venmo}</p> : null}
+      {selected === "paypal" ? (
+        paypal ? (
+          <a href={paypal} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>
+            Pay {formatMoney(amountCents, currency)} with PayPal
+          </a>
+        ) : (
+          <p className="mt-3 text-sm text-muted">The seller has not added a PayPal.Me link.</p>
+        )
+      ) : null}
       {zelle ? (
         <p className="mt-3 text-sm">
           Zelle:{" "}

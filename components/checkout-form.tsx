@@ -17,6 +17,7 @@ type PayDetails = {
   interacQuestion?: string;
   interacPassword?: string;
   venmoUsername: string;
+  paypalMe?: string;
   zelleMode: "phone" | "email";
   zelleContact: string;
 };
@@ -192,6 +193,9 @@ export function CheckoutForm({
           interacQuestion={payments.interacQuestion}
           interacPassword={payments.interacPassword}
           venmoUsername={payments.venmoUsername}
+          paypalMe={payments.paypalMe ?? ""}
+          amountCents={total ?? 0}
+          currency={currency}
           zelleMode={payments.zelleMode}
           zelleContact={payments.zelleContact}
           error={fieldErrors?.paymentMethod}

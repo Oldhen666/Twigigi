@@ -6,12 +6,14 @@ export type PayMethod = {
 export const CA_PAYMENTS: PayMethod[] = [
   { id: "interac", label: "Interac e-Transfer" },
   { id: "cash_pickup", label: "Cash on pickup" },
+  { id: "paypal", label: "PayPal" },
 ];
 
 export const US_PAYMENTS: PayMethod[] = [
   { id: "cash", label: "Cash" },
   { id: "venmo", label: "Venmo" },
   { id: "zelle", label: "Zelle" },
+  { id: "paypal", label: "PayPal" },
 ];
 
 export const CARD_PAYMENT: PayMethod = { id: "card", label: "Credit card" };
@@ -129,6 +131,53 @@ export function venmoUsernameProblem(value: string) {
   return safeVenmo(trimmed) ? null : "Enter a Venmo username like @name.";
 }
 
+const PAYPAL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
+
+function readPaypalMe(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (host === "paypal.me") return { name: parts[0] ?? "", extra: parts.slice(1), search: url.search };
+  if ((host === "paypal.com" || host.endsWith(".paypal.com")) && parts[0]?.toLowerCase() === "paypalme") {
+    return { name: parts[1] ?? "", extra: parts.slice(2), search: url.search };
+  }
+  return null;
+}
+
+export function paypalMeName(value: string, allowAmount = false) {
+  const parsed = readPaypalMe(value);
+  if (!parsed || !PAYPAL_NAME.test(parsed.name)) return "";
+  if (!allowAmount && (parsed.extra.length > 0 || parsed.search)) return "";
+  return parsed.name;
+}
+
+export function paypalMeProblem(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "Enter your PayPal.Me link.";
+  if (trimmed.length > 200) return "Keep the PayPal.Me link under 200 characters.";
+  const parsed = readPaypalMe(trimmed);
+  if (!parsed || !PAYPAL_NAME.test(parsed.name)) return "Use a PayPal.Me link, like https://paypal.me/yourname";
+  if (parsed.extra.length > 0 || parsed.search) return "Leave the amount off. Example: https://paypal.me/yourname";
+  return null;
+}
+
+export function paypalMeUrl(stored: string, payment: { amountCents: number; currency: string }) {
+  const name = paypalMeName(stored, true);
+  if (!name || payment.amountCents < 1) return "";
+  const amount = (payment.amountCents / 100).toFixed(2);
+  const code = payment.currency.trim().toUpperCase();
+  const currency = /^[A-Z]{3}$/.test(code) ? code : "CAD";
+  return `https://paypal.me/${name}/${amount}${currency}`;
+}
+
 export function cardLinkProblem(url: string) {
   const trimmed = url.trim();
   if (!trimmed) return "Paste a credit card payment link.";
@@ -217,20 +266,8 @@ export function buyerPayUrl(stored: string, payment: { amountCents: number; curr
     });
     return `https://www.paypal.com/cgi-bin/webscr?${params.toString()}`;
   }
+  const me = paypalMeUrl(trimmed, payment);
+  if (me) return me;
   const direct = safeCardUrl(trimmed);
-  if (!direct) return "";
-  try {
-    const url = new URL(direct);
-    const host = url.hostname.toLowerCase().replace(/^www\./, "");
-    const parts = url.pathname.split("/").filter(Boolean);
-    const me = host === "paypal.me" ? parts[0] : host === "paypal.com" && parts[0]?.toLowerCase() === "paypalme" ? parts[1] : "";
-    if (me && /^[A-Za-z0-9._-]{1,40}$/.test(me) && payment.amountCents > 0) {
-      const amount = (payment.amountCents / 100).toFixed(2);
-      const currency = payment.currency === "USD" ? "USD" : "CAD";
-      return `https://www.paypal.com/paypalme/${me}/${amount}${currency}`;
-    }
-  } catch {
-    return direct;
-  }
   return direct;
 }

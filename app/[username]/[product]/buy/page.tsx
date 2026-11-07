@@ -95,6 +95,7 @@ async function BuyDetails({
                 interacQuestion: product.interacQuestion,
                 interacPassword: product.interacPassword,
                 venmoUsername: product.venmoUsername,
+                paypalMe: product.paypalMe,
                 zelleMode: product.zelleMode,
                 zelleContact: product.zelleContact,
               }}

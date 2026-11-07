@@ -35,6 +35,7 @@ export type CartCatalogItem = {
   interacQuestion?: string;
   interacPassword?: string;
   venmoUsername: string;
+  paypalMe?: string;
   zelleMode: "phone" | "email";
   zelleContact: string;
   fulfillments: FulfillmentOption[];
@@ -302,6 +303,9 @@ export function CartCheckout({
           interacQuestion={firstText(contacts, (item) => item.interacQuestion ?? "")}
           interacPassword={firstText(contacts, (item) => item.interacPassword ?? "")}
           venmoUsername={firstText(contacts, (item) => item.venmoUsername)}
+          paypalMe={firstText(contacts, (item) => item.paypalMe ?? "")}
+          amountCents={total ?? 0}
+          currency={currency}
           zelleMode={contacts.find((item) => item.zelleContact)?.zelleMode ?? "phone"}
           zelleContact={firstText(contacts, (item) => item.zelleContact)}
           error={state.fieldErrors?.paymentMethod}

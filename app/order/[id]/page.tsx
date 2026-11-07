@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { CopyOrderNumber } from "@/components/copy-order-number";
+import { SellerContactButton } from "@/components/seller-contact";
 import { InteractionLine } from "@/components/interaction-line";
 import { PayMethods } from "@/components/pay-methods";
 import { ReviewSeller } from "@/components/review-seller";
@@ -124,13 +125,6 @@ async function OrderView({
           </section>
         ) : null}
 
-        {order.buyerPayment === "interac" && (question || password) ? (
-          <div className="mt-4 rounded-2xl bg-paper-deep px-4 py-3 text-sm">
-            {question ? <p>e-Transfer question: {question}</p> : null}
-            {password ? <p>e-Transfer password: {password}</p> : null}
-          </div>
-        ) : null}
-
         {fulfillmentDone(order.fulfillmentState) && !order.buyerReceivedAt && !canceled ? (
           <form action={confirmReceipt} className="mt-4">
             <input type="hidden" name="id" value={order.id} />
@@ -171,7 +165,12 @@ async function OrderView({
               itemName: order.productTitle,
             })}
             interacEmail={product.interacEmail}
+            interacQuestion={question}
+            interacPassword={password}
             venmoUsername={product.venmoUsername}
+            paypalMe={product.paypalMe}
+            amountCents={order.totalCents || order.amountCents}
+            currency={order.currency}
             zelleMode={product.zelleMode}
             zelleContact={product.zelleContact}
             showContacts
@@ -198,13 +197,7 @@ async function OrderView({
             <Link href={`/login?next=${encodeURIComponent("/orders")}`} className="text-forest">Log in</Link>
           </p>
         ) : null}
-        <p className="mt-4 text-center text-sm">
-          {contact.href ? (
-            <a href={contact.href} className="text-ink">Questions? Contact the seller directly.</a>
-          ) : (
-            "Questions? Contact the seller directly."
-          )}
-        </p>
+        <SellerContactButton mode={contact.mode} value={contact.value} />
       </div>
     </Stage>
   );
@@ -239,9 +232,9 @@ function sellerContact(
   const contact = digital ? product?.sellerContact.trim() || sellerEmail : product?.sellerContact ?? "";
   const email = mode === "email" ? safeEmail(contact) : "";
   const phone = mode === "phone" ? safePhone(contact) : "";
-  if (email) return { href: `mailto:${email}` };
-  if (phone) return { href: `tel:${phone.replace(/\D/g, "")}` };
-  return { href: "" };
+  if (email) return { mode: "email" as const, value: email };
+  if (phone) return { mode: "phone" as const, value: phone };
+  return { mode: "" as const, value: "" };
 }
 
 function PinIcon() {

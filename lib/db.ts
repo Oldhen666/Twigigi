@@ -250,6 +250,7 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "interac_question", "interac_question TEXT NOT NULL DEFAULT ''");
   add("products", "interac_password", "interac_password TEXT NOT NULL DEFAULT ''");
   add("products", "venmo_username", "venmo_username TEXT NOT NULL DEFAULT ''");
+  add("products", "paypal_me", "paypal_me TEXT NOT NULL DEFAULT ''");
   add("products", "zelle_mode", "zelle_mode TEXT NOT NULL DEFAULT 'phone'");
   add("products", "zelle_contact", "zelle_contact TEXT NOT NULL DEFAULT ''");
   add("products", "seller_contact_mode", "seller_contact_mode TEXT NOT NULL DEFAULT 'email'");
@@ -773,6 +774,7 @@ function mapProduct(row: Row): Product {
     interacQuestion: str(row.interac_question),
     interacPassword: str(row.interac_password),
     venmoUsername: str(row.venmo_username),
+    paypalMe: str(row.paypal_me),
     zelleMode: row.zelle_mode === "email" ? "email" : "phone",
     zelleContact: str(row.zelle_contact),
     sellerContactMode: row.seller_contact_mode === "phone" ? "phone" : "email",
@@ -1490,9 +1492,9 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
       quantity_available, button_label, has_options, same_price, options_json, variants_json,
       require_name, require_email, require_phone, payment_methods, card_payment_url, interac_email,
       interac_question, interac_password,
-      venmo_username, zelle_mode, zelle_contact, seller_contact_mode, seller_contact,
+      venmo_username, paypal_me, zelle_mode, zelle_contact, seller_contact_mode, seller_contact,
       category_kind, category_group, category, file_links, file_password
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     userId,
@@ -1539,6 +1541,7 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     input.interacQuestion,
     input.interacPassword,
     input.venmoUsername,
+    input.paypalMe,
     input.zelleMode,
     input.zelleContact,
     input.sellerContactMode,
@@ -1565,7 +1568,7 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
         options_json = ?, variants_json = ?, require_name = ?, require_email = ?, require_phone = ?,
         payment_methods = ?, card_payment_url = ?, interac_email = ?,
         interac_question = ?, interac_password = ?,
-        venmo_username = ?, zelle_mode = ?, zelle_contact = ?, seller_contact_mode = ?, seller_contact = ?,
+        venmo_username = ?, paypal_me = ?, zelle_mode = ?, zelle_contact = ?, seller_contact_mode = ?, seller_contact = ?,
         category_kind = ?, category_group = ?, category = ?,
         file_links = ?, file_password = ?
        WHERE id = ? AND user_id = ?`,
@@ -1613,6 +1616,7 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
       input.interacQuestion,
       input.interacPassword,
       input.venmoUsername,
+      input.paypalMe,
       input.zelleMode,
       input.zelleContact,
       input.sellerContactMode,

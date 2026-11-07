@@ -118,6 +118,7 @@ export type ProductInput = {
   interacQuestion: string;
   interacPassword: string;
   venmoUsername: string;
+  paypalMe: string;
   zelleMode: "phone" | "email";
   zelleContact: string;
   sellerContactMode: "phone" | "email";
