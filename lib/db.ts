@@ -267,6 +267,7 @@ function ensureColumns(database: DatabaseSync) {
   add("orders", "buyer_payment", "buyer_payment TEXT NOT NULL DEFAULT ''");
   add("orders", "pickup_window", "pickup_window TEXT NOT NULL DEFAULT ''");
   add("orders", "pickup_confirmed_at", "pickup_confirmed_at TEXT");
+  add("orders", "pickup_proposed_by", "pickup_proposed_by TEXT NOT NULL DEFAULT ''");
   add("orders", "delivery_note", "delivery_note TEXT NOT NULL DEFAULT ''");
   add("orders", "buyer_note", "buyer_note TEXT NOT NULL DEFAULT ''");
   add("orders", "review_state", "review_state TEXT NOT NULL DEFAULT 'requested'");
@@ -923,6 +924,7 @@ function mapOrder(row: Row): OrderRecord {
     buyerPayment: str(row.buyer_payment),
     pickupWindow: str(row.pickup_window),
     pickupConfirmedAt: row.pickup_confirmed_at ? str(row.pickup_confirmed_at) : null,
+    pickupProposedBy: row.pickup_proposed_by === "seller" || row.pickup_proposed_by === "buyer" ? row.pickup_proposed_by : "",
     deliveryNote: str(row.delivery_note),
     buyerNote: str(row.buyer_note),
     amountCents: num(row.amount_cents),
@@ -2024,13 +2026,11 @@ export function setInteracPrompt(id: string, question: string, password: string)
 }
 
 export function setOrderChoices(id: string, payment: string, pickupWindow: string, deliveryNote = "", buyerNote = "") {
-  db.prepare("UPDATE orders SET buyer_payment = ?, pickup_window = ?, delivery_note = ?, buyer_note = ? WHERE id = ?").run(
-    payment,
-    pickupWindow,
-    deliveryNote,
-    buyerNote,
-    id,
-  );
+  db.prepare(
+    `UPDATE orders SET buyer_payment = ?, pickup_window = ?, delivery_note = ?, buyer_note = ?,
+       pickup_proposed_by = CASE WHEN ? != '' THEN 'buyer' ELSE '' END
+     WHERE id = ?`,
+  ).run(payment, pickupWindow, deliveryNote, buyerNote, pickupWindow, id);
 }
 
 export function reserveStock(productId: string, quantity: number) {
@@ -2861,10 +2861,31 @@ export function setSellerPickupTime(id: string, sellerId: string, pickupWindow: 
   } else if (order.pickupConfirmedAt || order.fulfillmentState === "ready") {
     return false;
   }
-  const now = new Date().toISOString();
   const result = db
-    .prepare(`UPDATE orders SET pickup_window = ?, pickup_confirmed_at = COALESCE(pickup_confirmed_at, ?) WHERE id = ? AND seller_id = ?`)
-    .run(pickupWindow, now, id, sellerId);
+    .prepare(
+      `UPDATE orders SET
+         pickup_window = ?,
+         pickup_proposed_by = 'seller',
+         pickup_confirmed_at = NULL,
+         fulfillment_state = CASE WHEN ? = 1 THEN '' ELSE fulfillment_state END,
+         ready_at = CASE WHEN ? = 1 THEN NULL ELSE ready_at END
+       WHERE id = ? AND seller_id = ?`,
+    )
+    .run(pickupWindow, reschedule ? 1 : 0, reschedule ? 1 : 0, id, sellerId);
+  return result.changes > 0;
+}
+
+export function confirmBuyerPickupTime(id: string) {
+  const order = getOrder(id);
+  if (!order || order.pickupProposedBy !== "seller" || order.pickupConfirmedAt) return false;
+  if (order.fulfillment !== "pickup" || order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined") return false;
+  if (order.fulfillmentState === "ready" || order.fulfillmentState === "handed") return false;
+  const result = db
+    .prepare(
+      `UPDATE orders SET pickup_confirmed_at = ?
+       WHERE id = ? AND pickup_proposed_by = 'seller' AND pickup_confirmed_at IS NULL`,
+    )
+    .run(new Date().toISOString(), id);
   return result.changes > 0;
 }
 
@@ -2947,6 +2968,7 @@ export function confirmOrderPickupTime(id: string, sellerId: string) {
   const order = getOrder(id);
   if (!order || order.sellerId !== sellerId) return false;
   if (order.fulfillment !== "pickup" || order.status === "canceled" || order.reviewState === "declined") return false;
+  if (order.pickupProposedBy === "seller") return false;
   if (order.pickupConfirmedAt) return true;
   const result = db
     .prepare(`UPDATE orders SET pickup_confirmed_at = ? WHERE id = ? AND seller_id = ? AND pickup_confirmed_at IS NULL`)

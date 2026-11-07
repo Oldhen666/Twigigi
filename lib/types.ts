@@ -193,6 +193,7 @@ export type OrderRecord = {
   buyerPayment: string;
   pickupWindow: string;
   pickupConfirmedAt: string | null;
+  pickupProposedBy: "" | "buyer" | "seller";
   deliveryNote: string;
   buyerNote: string;
   amountCents: number;

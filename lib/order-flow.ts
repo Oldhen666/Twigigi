@@ -25,6 +25,7 @@ export function sellerAttention(order: {
   fulfillmentState: string;
   buyerPayment: string;
   pickupConfirmedAt?: string | null;
+  pickupProposedBy?: "" | "buyer" | "seller";
   fileSentAt?: string | null;
 }) {
   if (order.status === "canceled" || order.reviewState === "declined" || order.reviewState === "changes") return "";
@@ -33,6 +34,7 @@ export function sellerAttention(order: {
     if (order.fulfillmentState === "ready") {
       return order.paymentStatus === "paid" || order.status === "paid" ? "Confirm handover" : "Confirm payment and handover";
     }
+    if (order.pickupProposedBy === "seller" && !order.pickupConfirmedAt) return "";
     if (!order.pickupConfirmedAt) return "Confirm pickup time";
     return "Mark ready for pickup";
   }
@@ -71,7 +73,7 @@ export function orderCanComplete(order: StageOrder, now = Date.now()) {
 export type TrackState = "done" | "current" | "upcoming" | "stopped";
 export type TrackStep = { label: string; state: TrackState };
 
-export function orderTrack(order: StageOrder & { pickupConfirmedAt?: string | null }): TrackStep[] {
+export function orderTrack(order: StageOrder & { pickupConfirmedAt?: string | null; pickupProposedBy?: "" | "buyer" | "seller" }): TrackStep[] {
   const declined = order.status === "canceled" || order.reviewState === "declined";
   const cashPickup = isCashMethod(order.buyerPayment) && order.fulfillment === "pickup";
   if (cashPickup && !declined) return cashPickupTrack(order);
@@ -129,13 +131,14 @@ export function orderRollbackTarget(order: StageOrder & { paymentFlow?: string; 
   return null;
 }
 
-function cashPickupTrack(order: StageOrder & { pickupConfirmedAt?: string | null }): TrackStep[] {
+function cashPickupTrack(order: StageOrder & { pickupConfirmedAt?: string | null; pickupProposedBy?: "" | "buyer" | "seller" }): TrackStep[] {
   const completed = order.status === "fulfilled" || order.fulfillmentState === "handed";
   const ready = completed || order.fulfillmentState === "ready";
   const scheduled = ready || Boolean(order.pickupConfirmedAt);
+  const awaitingBuyer = !scheduled && order.pickupProposedBy === "seller";
   const steps = [
     { label: "Order placed", done: true },
-    { label: scheduled ? "Pickup scheduled" : "Pickup confirmation", done: ready },
+    { label: scheduled ? "Pickup scheduled" : awaitingBuyer ? "Buyer confirmation" : "Pickup confirmation", done: ready },
     { label: "Ready for pickup", done: completed },
     { label: "Completed", done: completed },
   ];
@@ -146,7 +149,7 @@ function cashPickupTrack(order: StageOrder & { pickupConfirmedAt?: string | null
   }));
 }
 
-export function orderStage(order: StageOrder & { pickupConfirmedAt?: string | null }) {
+export function orderStage(order: StageOrder & { pickupConfirmedAt?: string | null; pickupProposedBy?: "" | "buyer" | "seller" }) {
   if (order.status === "canceled" || order.reviewState === "declined") return "Canceled";
   if (order.status === "fulfilled") return "Completed";
   const paid = order.paymentStatus === "paid" || order.status === "paid";
@@ -158,6 +161,7 @@ export function orderStage(order: StageOrder & { pickupConfirmedAt?: string | nu
     if (isCashMethod(order.buyerPayment)) {
       if (order.fulfillmentState === "ready") return "Ready for pickup";
       if (order.pickupConfirmedAt) return "Pickup scheduled";
+      if (order.pickupProposedBy === "seller") return "Awaiting buyer";
       return "Awaiting Pickup";
     }
     if (paid) return "Payment Confirmed";
@@ -177,7 +181,7 @@ export function orderStage(order: StageOrder & { pickupConfirmedAt?: string | nu
 
 export type PlacementStep = { title: string; detail: string; state: "done" | "current" | "upcoming" };
 
-export function buyerPlacement(order: StageOrder & { displayName: string; pickupConfirmedAt?: string | null }) {
+export function buyerPlacement(order: StageOrder & { displayName: string; pickupConfirmedAt?: string | null; pickupProposedBy?: "" | "buyer" | "seller" }) {
   const cash = isCashMethod(order.buyerPayment);
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   const verifying = order.paymentStatus === "verifying";
@@ -197,6 +201,18 @@ export function buyerPlacement(order: StageOrder & { displayName: string; pickup
           step("Order placed", "Twigigi created this order right away.", "done"),
           step("Pickup", "The item was handed over.", "done"),
           step("Complete", "The seller confirmed the cash and the handover.", "done"),
+        ],
+      };
+    }
+    if (order.pickupProposedBy === "seller" && !order.pickupConfirmedAt && !ready) {
+      return {
+        title: "Confirm pickup time",
+        badge: "Confirm pickup",
+        intro: `${order.displayName} suggested a new pickup time.`,
+        steps: [
+          step("Order placed", "Twigigi created this order right away.", "done"),
+          step("Confirm pickup", "Confirm the new time so the seller can prepare it.", "current"),
+          step("Complete", doneNote, "upcoming"),
         ],
       };
     }

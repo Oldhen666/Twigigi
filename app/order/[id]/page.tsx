@@ -11,7 +11,8 @@ import { BuyerPay } from "@/components/buyer-pay";
 import { ReviewSeller } from "@/components/review-seller";
 import { Stage } from "@/components/stage";
 import { buttonClass } from "@/components/ui";
-import { acceptSellerChange, confirmReceipt } from "@/lib/actions";
+import { ReloadForm } from "@/components/reload-form";
+import { acceptSellerChange, confirmBuyerPickup, confirmReceipt } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { findUserById, getInteractionBySource, getOrder, getProductById, hasReview } from "@/lib/db";
 import { formatDate, formatMoney, orderHeading } from "@/lib/format";
@@ -89,11 +90,16 @@ async function OrderView({
   const delivered = order.fulfillmentState === "handed" || order.status === "fulfilled";
   const readyForPickup = delivered || order.fulfillmentState === "ready";
   const pickupConfirmed = Boolean(order.pickupConfirmedAt) || readyForPickup;
+  const awaitingBuyerPickup = cashPickup && !canceled && !readyForPickup && !order.pickupConfirmedAt && order.pickupProposedBy === "seller";
   const currentStep = placement?.steps.find((step) => step.state === "current");
   const nextLine = !placement
     ? ""
-    : cashPickup && !pickupConfirmed
-      ? "Waiting for the seller to confirm your pickup time."
+    : awaitingBuyerPickup
+      ? pickupAt
+        ? `Confirm pickup for ${pickupAt}.`
+        : "Confirm the pickup time the seller suggested."
+      : cashPickup && !pickupConfirmed
+        ? "Waiting for the seller to confirm your pickup time."
       : cashPickup && !readyForPickup
         ? pickupAt
           ? `Pickup is scheduled for ${pickupAt}.`
@@ -170,6 +176,12 @@ async function OrderView({
                 ))}
               </ol>
               {nextLine ? <p className="mt-4 text-center text-sm text-muted">{nextLine}</p> : null}
+              {awaitingBuyerPickup ? (
+                <ReloadForm action={confirmBuyerPickup} className="mt-4">
+                  <input type="hidden" name="id" value={order.id} />
+                  <button className={`${buttonClass} w-full`}>Confirm this time</button>
+                </ReloadForm>
+              ) : null}
             </section>
 
             {!paid && product && isCashMethod(order.buyerPayment) ? (
@@ -287,7 +299,7 @@ async function OrderView({
         {fulfillmentDone(order.fulfillmentState) && !order.buyerReceivedAt && !canceled ? (
           <form action={confirmReceipt} className="mt-4">
             <input type="hidden" name="id" value={order.id} />
-            <button className={`${buttonClass} w-full`}>Confirm receipt</button>
+            <button className={`${buttonClass} w-full`}>Confirm item received</button>
             {account ? null : <p className="mt-2 text-center text-sm text-muted">Sign in with this email afterwards to review the seller.</p>}
           </form>
         ) : null}
@@ -439,6 +451,7 @@ function shortStep(title: string) {
     "Cash at pickup": "Cash",
     Pickup: "Pickup",
     "Pickup requested": "Pickup requested",
+    "Confirm pickup": "Confirm time",
     Complete: "Complete",
     Fulfillment: "Delivery",
     Delivered: "Delivered",

@@ -230,11 +230,13 @@ function CashPickupSeller({
                 ? "The cash is confirmed. Confirm the handover when the buyer collects the item."
                 : ready
                   ? "When the buyer collects the item, confirm that you received the cash and handed over the item."
-                  : order.pickupConfirmedAt
-                    ? `Pickup is scheduled for ${when}. Notify the buyer when the item is ready.`
-                    : order.pickupWindow
-                      ? `The buyer requested pickup on ${when}. Confirm the time or arrange another one.`
-                      : "Suggest a pickup time for this order."}
+                  : order.pickupProposedBy === "seller" && order.pickupWindow
+                    ? `Waiting for the buyer to confirm pickup on ${when}.`
+                    : order.pickupConfirmedAt
+                      ? `Pickup is scheduled for ${when}. Notify the buyer when the item is ready.`
+                      : order.pickupWindow
+                        ? `The buyer requested pickup on ${when}. Confirm the time or arrange another one.`
+                        : "Suggest a pickup time for this order."}
             </p>
           </div>
           {ready && paid ? (
@@ -258,7 +260,7 @@ function CashPickupSeller({
               <button className={`${buttonClass} w-full`}>Mark ready for pickup</button>
             </ReloadForm>
           ) : null}
-          {!ready && !order.pickupConfirmedAt && order.pickupWindow ? (
+          {!ready && !order.pickupConfirmedAt && order.pickupWindow && order.pickupProposedBy !== "seller" ? (
             <ReloadForm action={confirmPickupTime}>
               <input type="hidden" name="id" value={order.id} />
               <button className={`${buttonClass} w-full`}>Confirm pickup time</button>

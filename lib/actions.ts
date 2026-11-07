@@ -60,6 +60,7 @@ import {
   acceptOrderProposal,
   confirmOrderPaymentReceived,
   confirmOrderPickupTime,
+  confirmBuyerPickupTime,
   confirmCashHandover,
   setSellerPickupTime,
   rollbackOrderStatus,
@@ -1650,6 +1651,37 @@ export async function rollbackOrder(_prev: FormState, formData: FormData): Promi
   return { next: back };
 }
 
+export async function confirmBuyerPickup(_prev: FormState, formData: FormData): Promise<FormState> {
+  const id = text(formData, "id");
+  const back = `/order/${id}`;
+  const order = getOrder(id);
+  if (!order) return { next: "/orders" };
+  const user = await getCurrentUser();
+  if (user && user.id === order.sellerId && user.email.toLowerCase() !== order.email.toLowerCase()) return { next: back };
+  if (!confirmBuyerPickupTime(id)) return { error: "That pickup time is no longer waiting for you." };
+  const next = getOrder(id);
+  const product = getProductById(order.productId);
+  const seller = findUserById(order.sellerId);
+  if (next && product && seller) {
+    const notify = sellerNotifyEmails(product, seller.email);
+    const when = next.pickupWindow ? formatPickupChoice(next.pickupWindow) : "";
+    if (notify.length > 0) {
+      await sendOrderEmail(notify, {
+        subject: `Pickup time confirmed: ${next.productTitle}`,
+        text: [
+          `${next.buyerName} confirmed the pickup time for order ${next.publicRef}.`,
+          when ? `Pickup time: ${when}` : "",
+          "You can mark it ready for pickup.",
+          "",
+          `${appUrl()}/dashboard/orders/${next.id}`,
+        ].filter(Boolean).join("\n"),
+        replyTo: next.email,
+      });
+    }
+  }
+  return { next: back };
+}
+
 export async function confirmPickupTime(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireSeller();
   const id = text(formData, "id");
@@ -1688,11 +1720,12 @@ export async function arrangePickupTime(_prev: FormState, formData: FormData): P
   const order = getOrder(id);
   if (!order) return { next: back };
   const when = formatPickupChoice(order.pickupWindow);
-  const sent = await notifyBuyer(order, `${reschedule ? "Pickup time changed" : "Pickup time suggested"}: ${order.productTitle}`, [
+  const sent = await notifyBuyer(order, `${reschedule ? "New pickup time" : "Pickup time suggested"}: ${order.productTitle}`, [
     reschedule
-      ? `${order.displayName} changed the pickup time for order ${order.publicRef}.`
+      ? `${order.displayName} suggested a new pickup time for order ${order.publicRef}.`
       : `${order.displayName} suggested a pickup time for order ${order.publicRef}.`,
     when ? `Pickup time: ${when}` : "",
+    "Open the order and confirm this time.",
   ].filter(Boolean));
   return { next: sent ? back : `${back}?mail=0` };
 }

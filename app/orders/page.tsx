@@ -65,7 +65,7 @@ async function OrdersScreen() {
                     side="buyer"
                     showReview={false}
                     allowConfirm={fulfillmentDone(order.fulfillmentState) && !order.buyerReceivedAt}
-                    confirmLabel="Confirm receipt"
+                    confirmLabel="Confirm item received"
                   />
                 ) : null}
                 {interaction ? (
