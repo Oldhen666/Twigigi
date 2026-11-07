@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { buyerReportPayment } from "@/lib/actions";
 import { buttonClass, ghostClass } from "@/components/ui";
@@ -20,9 +21,9 @@ export function BuyerPay({
   currency,
   orderNote = "",
   orderRef = "",
-  sellerName = "",
   variant = "form",
   reported = false,
+  otherPaymentHref = "",
 }: {
   orderId: string;
   methods: string[];
@@ -36,9 +37,9 @@ export function BuyerPay({
   currency: string;
   orderNote?: string;
   orderRef?: string;
-  sellerName?: string;
   variant?: "form" | "sheet";
   reported?: boolean;
+  otherPaymentHref?: string;
 }) {
   const [method, setMethod] = useState(methods[0] ?? "");
   const [confirming, setConfirming] = useState(false);
@@ -81,25 +82,15 @@ export function BuyerPay({
         </div>
         {method === "paypal" && !paypal ? <p className="mt-3 text-sm text-muted">The seller has not added a PayPal.Me link.</p> : null}
         {method === "venmo" && !venmo ? <p className="mt-3 text-sm text-muted">The seller has not added a Venmo username.</p> : null}
-        {paypal || venmo ? (
-          <p className="mt-3 text-sm leading-6 text-muted">{recipientCheck(method, sellerName)}</p>
-        ) : null}
         {paypal ? <PayServiceLink href={paypal} service="paypal" /> : null}
         {venmo ? <PayServiceLink href={venmo} service="venmo" /> : null}
         {card ? (
           <a href={card} target="_blank" rel="noreferrer" className="mt-3 inline-block text-sm text-forest">Open card payment</a>
         ) : null}
-        <p className="mt-3 text-sm leading-6 text-muted">
-          {method === "paypal" || method === "venmo"
-            ? "If available, include your order ID in the payment note."
-            : "Include your order number in the transfer message to help the seller identify your payment."}
-        </p>
-        {cash ? null : (
-          <p className="mt-2 text-sm leading-6 text-muted">The seller is responsible for these payment details. Twigigi does not verify them or hold the payment.</p>
+        {method === "paypal" || method === "venmo" ? null : (
+          <p className="mt-3 text-sm leading-6 text-muted">Include your order number in the transfer message to help the seller identify your payment.</p>
         )}
-        {reported ? (
-          <p className="mt-4 text-center text-sm text-muted">The seller is checking this payment. It is not paid until they confirm the money arrived.</p>
-        ) : (
+        {reported ? null : (
           <>
             <button className="mt-4 inline-flex h-12 w-full items-center justify-center rounded-full bg-ink text-base font-medium text-card">
               I've sent payment →
@@ -107,6 +98,11 @@ export function BuyerPay({
             <p className="mt-3 text-center text-sm text-muted">The seller will verify your payment before marking it as paid.</p>
           </>
         )}
+        {otherPaymentHref ? (
+          <Link href={otherPaymentHref} className="mt-3 block text-center text-sm font-medium text-forest">
+            Use other payment
+          </Link>
+        ) : null}
       </form>
     );
   }
@@ -135,12 +131,6 @@ export function BuyerPay({
         <p className="text-sm text-muted">The seller has not added a Venmo username.</p>
       ) : null}
       {paypal ? <PayServiceLink href={paypal} service="paypal" /> : null}
-      {paypal || venmo ? (
-        <p className="text-sm leading-6 text-muted">
-          {recipientCheck(method, sellerName)} If available, include your order ID in the payment note.
-        </p>
-      ) : null}
-      {cash ? null : <p className="text-sm leading-6 text-muted">The seller is responsible for these payment details. Twigigi does not verify them or hold the payment.</p>}
       {card ? (
         <a href={card} target="_blank" rel="noreferrer" className={`${buttonClass} w-full`}>Pay by card</a>
       ) : null}
@@ -168,12 +158,6 @@ export function BuyerPay({
       <PaymentRiskNote cash={cash} />
     </form>
   );
-}
-
-function recipientCheck(method: string, sellerName: string) {
-  const service = method === "venmo" ? "Venmo" : "PayPal";
-  const who = sellerName.trim() || "the seller";
-  return `Before you pay, confirm the name on ${service} matches ${who}.`;
 }
 
 function PayServiceLink({ href, service }: { href: string; service: "paypal" | "venmo" }) {

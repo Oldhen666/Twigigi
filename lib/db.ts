@@ -319,12 +319,14 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "deactivated_at", "deactivated_at TEXT");
   add("products", "billing_started_at", "billing_started_at TEXT");
   add("products", "fee_exempt", "fee_exempt INTEGER NOT NULL DEFAULT 0");
+  add("products", "quote_fee_exempt", "quote_fee_exempt INTEGER NOT NULL DEFAULT 0");
   add("users", "role", "role TEXT NOT NULL DEFAULT 'seller'");
   add("users", "billing_method", "billing_method TEXT NOT NULL DEFAULT ''");
   add("users", "payout_interac", "payout_interac TEXT NOT NULL DEFAULT ''");
   add("users", "payout_venmo", "payout_venmo TEXT NOT NULL DEFAULT ''");
   add("users", "payout_zelle", "payout_zelle TEXT NOT NULL DEFAULT ''");
   add("users", "public_id", "public_id TEXT NOT NULL DEFAULT ''");
+  add("users", "bio", "bio TEXT NOT NULL DEFAULT ''");
   database.exec(`CREATE TABLE IF NOT EXISTS twig_bills (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -340,6 +342,20 @@ function ensureColumns(database: DatabaseSync) {
     )`);
   add("twig_bills", "kind", "kind TEXT NOT NULL DEFAULT 'listing'");
   add("quotes", "documents_json", "documents_json TEXT NOT NULL DEFAULT '[]'");
+  add("quotes", "billable", "billable INTEGER NOT NULL DEFAULT 1");
+  add("quotes", "request_key", "request_key TEXT NOT NULL DEFAULT ''");
+  add("quotes", "fee_reason", "fee_reason TEXT NOT NULL DEFAULT ''");
+  database.exec(`UPDATE twig_bills SET status = 'accrued' WHERE kind = 'quote' AND status = 'recorded'`);
+  const missingQuoteKeys = database.prepare("SELECT id, email, project_details FROM quotes WHERE request_key = ''").all() as Array<{
+    id: string;
+    email: string;
+    project_details: string;
+  }>;
+  const setQuoteKey = database.prepare("UPDATE quotes SET request_key = ? WHERE id = ?");
+  for (const row of missingQuoteKeys) {
+    const key = `${String(row.email ?? "").trim().toLowerCase()}\n${String(row.project_details ?? "").trim().toLowerCase().replace(/\s+/g, " ")}`;
+    setQuoteKey.run(key, row.id);
+  }
   add("orders", "public_ref", "public_ref TEXT NOT NULL DEFAULT ''");
   add("orders", "seller_id", "seller_id TEXT NOT NULL DEFAULT ''");
   add("orders", "buyer_id", "buyer_id TEXT");
@@ -404,6 +420,13 @@ function ensureColumns(database: DatabaseSync) {
       product_id TEXT NOT NULL REFERENCES products(id),
       created_at TEXT NOT NULL,
       PRIMARY KEY (user_id, product_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS follows (
+      follower_id TEXT NOT NULL REFERENCES users(id),
+      seller_id TEXT NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (follower_id, seller_id)
     );
 
     CREATE TABLE IF NOT EXISTS likes (
@@ -814,6 +837,7 @@ function mapProduct(row: Row): Product {
     deactivatedAt: row.deactivated_at ? str(row.deactivated_at) : null,
     billingStartedAt: row.billing_started_at ? str(row.billing_started_at) : null,
     feeExempt: num(row.fee_exempt) === 1,
+    quoteFeeExempt: num(row.quote_fee_exempt) === 1,
     moderationStatus: str(row.moderation_status) === "restricted" ? "restricted" : "",
     rightsConfirmed: num(row.rights_confirmed) === 1,
     rightsConfirmedAt: row.rights_confirmed_at ? str(row.rights_confirmed_at) : null,
@@ -897,6 +921,7 @@ function mapUser(row: Row): User {
     payoutZelle: str(row.payout_zelle),
     autoConfirmOrders: num(row.auto_confirm_orders) === 1,
     suspended: num(row.suspended) === 1,
+    bio: str(row.bio),
   };
 }
 
@@ -1036,6 +1061,8 @@ function mapQuote(row: Row): QuoteRecord {
     status,
     src: str(row.src),
     createdAt: str(row.created_at),
+    billable: num(row.billable) !== 0,
+    feeReason: str(row.fee_reason),
   };
 }
 
@@ -1751,6 +1778,10 @@ export function setListingFeeExempt(id: string, exempt: boolean) {
   db.prepare("UPDATE products SET fee_exempt = ?, updated_at = ? WHERE id = ?").run(exempt ? 1 : 0, new Date().toISOString(), id);
 }
 
+export function setQuoteFeeExempt(id: string, exempt: boolean) {
+  db.prepare("UPDATE products SET quote_fee_exempt = ?, updated_at = ? WHERE id = ?").run(exempt ? 1 : 0, new Date().toISOString(), id);
+}
+
 export function setBillingMethod(userId: string, method: string) {
   db.prepare("UPDATE users SET billing_method = ? WHERE id = ?").run(method, userId);
 }
@@ -2243,6 +2274,39 @@ export function listFavorites(userId: string) {
   ).map(mapPublic);
 }
 
+export function isFollowing(followerId: string, sellerId: string) {
+  return Boolean(one("SELECT 1 AS n FROM follows WHERE follower_id = ? AND seller_id = ?", followerId, sellerId));
+}
+
+export function followerCount(sellerId: string) {
+  return num(one("SELECT COUNT(*) AS n FROM follows WHERE seller_id = ?", sellerId)?.n);
+}
+
+export function toggleFollow(followerId: string, sellerId: string) {
+  if (!followerId || !sellerId || followerId === sellerId) return false;
+  if (isFollowing(followerId, sellerId)) {
+    db.prepare("DELETE FROM follows WHERE follower_id = ? AND seller_id = ?").run(followerId, sellerId);
+    return false;
+  }
+  db.prepare("INSERT INTO follows (follower_id, seller_id, created_at) VALUES (?, ?, ?)").run(followerId, sellerId, new Date().toISOString());
+  return true;
+}
+
+export function listFollowing(followerId: string) {
+  return many(
+    `SELECT u.username, u.public_id, u.display_name
+     FROM follows f
+     JOIN users u ON u.id = f.seller_id
+     WHERE f.follower_id = ?
+     ORDER BY f.created_at DESC`,
+    followerId,
+  ).map((row) => ({
+    username: str(row.username),
+    publicId: str(row.public_id),
+    displayName: str(row.display_name),
+  }));
+}
+
 export type InteractionKind = "order" | "quote";
 
 export type InteractionRecord = {
@@ -2512,6 +2576,10 @@ export function deleteReview(id: string) {
 
 export function updateDisplayName(id: string, displayName: string) {
   db.prepare("UPDATE users SET display_name = ? WHERE id = ?").run(displayName, id);
+}
+
+export function updateUserBio(id: string, bio: string) {
+  db.prepare("UPDATE users SET bio = ? WHERE id = ?").run(bio, id);
 }
 
 export function listBrowseHistory(userId: string) {
@@ -3022,6 +3090,19 @@ export function confirmOrderPaymentReceived(id: string, sellerId: string) {
   return true;
 }
 
+export function setBuyerPaymentMethod(id: string, method: string) {
+  const order = getOrder(id);
+  if (!order || order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined") return false;
+  if (order.paymentStatus === "paid" || order.status === "paid") return false;
+  const result = db
+    .prepare(
+      `UPDATE orders SET buyer_payment = ?, payment_status = 'unpaid'
+       WHERE id = ? AND payment_status != 'paid' AND status NOT IN ('paid', 'fulfilled', 'canceled')`,
+    )
+    .run(method, id);
+  return result.changes > 0;
+}
+
 export function recordBuyerPayment(id: string, method: string) {
   const order = getOrder(id);
   if (!order || order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined") return false;
@@ -3111,6 +3192,15 @@ export function updateOrderStatus(id: string, userId: string, status: OrderStatu
   return { updated: result.changes > 0, justPaid };
 }
 
+export function quoteRequestKey(email: string, details: string) {
+  return `${email.trim().toLowerCase()}\n${details.trim().toLowerCase().replace(/\s+/g, " ")}`;
+}
+
+export function hasBillableQuote(productId: string, requestKey: string) {
+  if (!requestKey.trim()) return false;
+  return Boolean(one("SELECT 1 AS n FROM quotes WHERE product_id = ? AND request_key = ? AND billable = 1", productId, requestKey));
+}
+
 export function insertQuote(input: {
   id: string;
   productId: string;
@@ -3122,11 +3212,15 @@ export function insertQuote(input: {
   projectDetails: string;
   documents: { path: string; name: string }[];
   src: string;
+  billable: boolean;
+  requestKey: string;
+  feeReason: string;
 }) {
   db.prepare(
     `INSERT INTO quotes (
-      id, product_id, name, email, phone, message, quantity, project_details, documents_json, status, src, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?)`,
+      id, product_id, name, email, phone, message, quantity, project_details, documents_json, status, src, created_at,
+      billable, request_key, fee_reason
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.productId,
@@ -3139,6 +3233,9 @@ export function insertQuote(input: {
     JSON.stringify(input.documents),
     input.src,
     new Date().toISOString(),
+    input.billable ? 1 : 0,
+    input.requestKey,
+    input.feeReason,
   );
 }
 

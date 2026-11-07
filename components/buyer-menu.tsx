@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 const LINKS = [
   ["Orders", "/orders"],
   ["Saved", "/saved"],
+  ["Following", "/following"],
   ["Browse history", "/history"],
 ] as const;
 

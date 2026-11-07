@@ -37,9 +37,10 @@ async function BillingScreen({
             <span>C$1.49 / month</span>
           </div>
           <div className="flex items-baseline justify-between gap-6">
-            <span>Quote request</span>
+            <span>Valid new quote request</span>
             <span>{quoteRequest} each</span>
           </div>
+          <p className="text-muted">Quote fees add up during the month and are included with the listing fee on the next bill. Twigigi does not charge the card for each quote. The same buyer is not charged again for the same request.</p>
         </div>
         <form action={saveBillingMethod} className="mt-8">
           <input type="hidden" name="next" value={next} />

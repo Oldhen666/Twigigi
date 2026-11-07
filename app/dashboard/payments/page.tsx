@@ -17,7 +17,11 @@ export default async function Page({
   const params = await searchParams;
   const user = await requireSeller();
   const bills = listSellerBills(user.id);
-  const years = [...new Set(bills.map((bill) => billingYear(bill.createdAt)).filter(Boolean))];
+  const accrued = bills.filter((bill) => bill.kind === "quote" && bill.status === "accrued");
+  const receipts = bills.filter((bill) => !(bill.kind === "quote" && bill.status === "accrued"));
+  const accruedTotals = new Map<string, number>();
+  for (const bill of accrued) accruedTotals.set(bill.currency, (accruedTotals.get(bill.currency) ?? 0) + bill.amountCents);
+  const years = [...new Set(receipts.map((bill) => billingYear(bill.createdAt)).filter(Boolean))];
   const currentYear = billingYear(new Date().toISOString());
   if (currentYear && !years.includes(currentYear)) years.unshift(currentYear);
   years.sort((left, right) => Number(right) - Number(left));
@@ -55,6 +59,30 @@ export default async function Page({
           <>
             <BillingMethodForm saved={user.billingMethod} />
             <section className="mt-6 rounded-3xl border border-line bg-card p-5">
+              <h2 className="font-serif text-2xl">Quote fees this period</h2>
+              <p className="mt-2 text-sm leading-6 text-muted">These add up during the month and go on your next Twigigi bill with the listing fee. Twigigi does not charge the card for each quote. If you deactivate a Twig, fees already counted stay on that next bill.</p>
+              {accrued.length === 0 ? (
+                <p className="mt-3 text-sm text-muted">No quote fee is waiting.</p>
+              ) : (
+                <>
+                  <p className="mt-3 text-sm font-medium">
+                    {[...accruedTotals.entries()].map(([currency, cents]) => `${formatMoney(cents, currency)} ${currency}`).join(" · ")}
+                  </p>
+                  <ul className="mt-3 divide-y divide-line">
+                    {accrued.map((bill) => (
+                      <li key={`${bill.createdAt}-${bill.title}-${bill.amountCents}`} className="flex flex-wrap items-baseline justify-between gap-3 py-3 text-sm">
+                        <div>
+                          <p className="font-medium">{bill.title}</p>
+                          <p className="text-muted">Quote request · on the next bill · {formatDate(bill.createdAt)}</p>
+                        </div>
+                        <p className="font-serif text-lg">{formatMoney(bill.amountCents, bill.currency)} {bill.currency}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </section>
+            <section className="mt-6 rounded-3xl border border-line bg-card p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="font-serif text-2xl">Receipts</h2>
                 <div className="flex flex-wrap gap-2">
@@ -65,11 +93,11 @@ export default async function Page({
                   ))}
                 </div>
               </div>
-              {bills.length === 0 ? (
+              {receipts.length === 0 ? (
                 <p className="mt-3 text-sm text-muted">No receipt yet.</p>
               ) : (
                 <ul className="mt-4 divide-y divide-line">
-                  {bills.map((bill) => (
+                  {receipts.map((bill) => (
                     <li key={`${bill.createdAt}-${bill.title}-${bill.kind}`} className="flex flex-wrap items-baseline justify-between gap-3 py-3 text-sm">
                       <div>
                         <p className="font-medium">{bill.title}</p>

@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const user = await requireSeller();
   const requested = new URL(request.url).searchParams.get("year") || "";
   const year = /^\d{4}$/.test(requested) ? requested : billingYear(new Date().toISOString());
-  const bills = listSellerBills(user.id).filter((bill) => billingYear(bill.createdAt) === year);
+  const bills = listSellerBills(user.id).filter((bill) => billingYear(bill.createdAt) === year && bill.status !== "accrued");
   const lines = [
     `Twigigi receipts ${year}`,
     user.displayName,

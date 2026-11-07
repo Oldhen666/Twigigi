@@ -38,6 +38,8 @@ import {
   acceptPlacedOrder,
   insertProduct,
   insertQuote,
+  hasBillableQuote,
+  quoteRequestKey,
   insertReview,
   openInteraction,
   confirmInteractionParty,
@@ -47,6 +49,7 @@ import {
   reviewPlacement,
   updateContentReport,
   updateDisplayName,
+  updateUserBio,
   getContentReport,
   getInteraction,
   getInteractionBySource,
@@ -56,6 +59,7 @@ import {
   reserveStock,
   setOrderChoices,
   setOrderPaymentSnapshot,
+  setBuyerPaymentMethod,
   recordPaymentLinkChange,
   setInteracPrompt,
   sellerReviewOrder,
@@ -80,11 +84,13 @@ import {
   setAutoConfirm,
   setBillingStarted,
   setListingFeeExempt,
+  setQuoteFeeExempt,
   recordTwigBill,
   reactivateProduct,
   replacePasswordReset,
   takePasswordReset,
   toggleFavorite,
+  toggleFollow,
   toggleLike,
   toggleGuestLike,
   allocatePublicId,
@@ -1481,6 +1487,11 @@ export async function requestQuote(_prev: FormState, formData: FormData): Promis
   const id = newId("quo");
   const sessionUser = await getCurrentUser();
   const emailMatch = findUserByEmail(parsed.data.email);
+  const projectDetails = lines.join("\n").slice(0, 2000);
+  const requestKey = quoteRequestKey(parsed.data.email, projectDetails);
+  const duplicate = hasBillableQuote(product.id, requestKey);
+  const feeReason = product.quoteFeeExempt ? "waived" : duplicate ? "duplicate" : "";
+  const billable = feeReason === "";
   insertQuote({
     id,
     productId: product.id,
@@ -1489,24 +1500,30 @@ export async function requestQuote(_prev: FormState, formData: FormData): Promis
     phone: parsed.data.phone,
     message: parsed.data.message,
     quantity: Math.max(quantity, 1),
-    projectDetails: lines.join("\n").slice(0, 2000),
+    projectDetails,
     documents,
     src: await trafficSource(),
+    billable,
+    requestKey,
+    feeReason,
   });
   const quoteSeller = findUserById(product.userId);
   const quotedAt = new Date().toISOString();
-  recordTwigBill({
-    id: newId("bill"),
-    userId: product.userId,
-    productId: product.id,
-    amountCents: QUOTE_SUBMISSION_CENTS,
-    currency: billingCurrency(product.location),
-    method: quoteSeller?.billingMethod || "",
-    kind: "quote",
-    periodStart: quotedAt,
-    periodEnd: quotedAt,
-    status: "recorded",
-  });
+  if (billable) {
+    const window = activeWindow(quotedAt);
+    recordTwigBill({
+      id: newId("bill"),
+      userId: product.userId,
+      productId: product.id,
+      amountCents: QUOTE_SUBMISSION_CENTS,
+      currency: billingCurrency(product.location),
+      method: quoteSeller?.billingMethod || "",
+      kind: "quote",
+      periodStart: window.start,
+      periodEnd: window.end,
+      status: "accrued",
+    });
+  }
   openInteraction({
     kind: "quote",
     sourceId: id,
@@ -1515,6 +1532,24 @@ export async function requestQuote(_prev: FormState, formData: FormData): Promis
     buyerId: sessionUser?.id ?? emailMatch?.id ?? null,
     buyerEmail: parsed.data.email,
   });
+  const notify = sellerNotifyEmails(product, quoteSeller?.email ?? "");
+  if (notify.length > 0) {
+    const details = lines.join("\n").trim();
+    const note = [
+      "You have a new quote request on Twigigi.",
+      "",
+      `Twig: ${product.title}`,
+      `From: ${parsed.data.name}`,
+      `Email: ${parsed.data.email}`,
+      parsed.data.phone ? `Phone: ${parsed.data.phone}` : null,
+      `Quantity: ${Math.max(quantity, 1)}`,
+      details ? "" : null,
+      details || null,
+      "",
+      `Open it: ${appUrl()}/dashboard/quotes/${id}`,
+    ].filter((line): line is string => line !== null);
+    await sendOrderEmail(notify, { subject: `New quote: ${product.title}`, text: note.join("\n"), replyTo: parsed.data.email });
+  }
   redirect(`/quote/${id}`);
 }
 
@@ -1574,6 +1609,15 @@ export async function setUserRole(formData: FormData) {
   }
   updateUserRole(user.id, role);
   updateTag(sellerTag(user.publicId.toLowerCase()));
+  redirect(next);
+}
+
+export async function toggleFollowSeller(formData: FormData) {
+  const user = await requireUser();
+  const sellerId = findUserByUsername(text(formData, "seller"));
+  const next = safeNext(text(formData, "next"));
+  if (!sellerId || sellerId === user.id) redirect(next);
+  toggleFollow(user.id, sellerId);
   redirect(next);
 }
 
@@ -1839,6 +1883,23 @@ export async function markOrderProgress(_prev: FormState, formData: FormData): P
   return { next: sent ? back : `${back}?mail=0` };
 }
 
+export async function changeOrderPayment(formData: FormData) {
+  const id = text(formData, "id");
+  const method = text(formData, "method");
+  const back = `/order/${id}`;
+  const order = getOrder(id);
+  if (!order) redirect("/orders");
+  if (order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled" || order.status === "canceled") redirect(back);
+  const product = getProductById(order.productId);
+  const fulfillment = order.fulfillment === "delivery" || order.fulfillment === "shipping" ? order.fulfillment : "pickup";
+  const methods = product && order.fulfillment !== "digital" ? methodsForFulfillment(product.paymentMethods, fulfillment) : [];
+  if (!product || !methods.includes(method)) redirect(`${back}?pay=choose`);
+  if (!setBuyerPaymentMethod(id, method)) redirect(back);
+  setOrderPaymentSnapshot(id, paymentSnapshot([product], method));
+  if (method === "interac") setInteracPrompt(id, product.interacQuestion, product.interacPassword);
+  redirect(back);
+}
+
 export async function buyerReportPayment(formData: FormData) {
   const id = text(formData, "id");
   const method = text(formData, "method");
@@ -2019,6 +2080,14 @@ function refreshReviewTags(placement: { username: string; slug: string }) {
   if (placement.slug) updateTag(productTag(placement.username, placement.slug));
 }
 
+export async function updateSellerBio(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireUser();
+  const bio = text(formData, "bio").trim().replace(/\s+/g, " ").slice(0, 280);
+  updateUserBio(user.id, bio);
+  updateTag(sellerTag(user.publicId.toLowerCase()));
+  return { next: safeNext(text(formData, "next")) };
+}
+
 export async function updateAccountUsername(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireUser();
   const claimed = claimPublicUsername(user.id, text(formData, "username"));
@@ -2063,6 +2132,26 @@ export async function setListingFree(formData: FormData) {
     if (!seller || product.userId !== seller.id) redirect("/dashboard");
   }
   setListingFeeExempt(product.id, text(formData, "free") === "1");
+  const owner = findUserById(product.userId);
+  if (owner) {
+    updateTag(productTag(owner.publicId, product.slug));
+    updateTag(sellerTag(owner.publicId));
+  }
+  redirect(back || "/admin/twigs");
+}
+
+export async function setQuoteFeeFree(formData: FormData) {
+  const actor = await getImpersonation();
+  const admin = actor ?? (await getCurrentUser());
+  const back = safeNext(text(formData, "next"));
+  if (!admin || admin.role !== "admin") redirect("/dashboard");
+  const product = getProductById(text(formData, "id"));
+  if (!product) redirect(back || "/admin/twigs");
+  if (actor) {
+    const seller = await getCurrentUser();
+    if (!seller || product.userId !== seller.id) redirect("/dashboard");
+  }
+  setQuoteFeeExempt(product.id, text(formData, "free") === "1");
   const owner = findUserById(product.userId);
   if (owner) {
     updateTag(productTag(owner.publicId, product.slug));

@@ -6,6 +6,7 @@ import { getOrder, getProductById } from "@/lib/db";
 import { formatMoney, orderHeading, pickupTimes } from "@/lib/format";
 import { timeZoneForLocation } from "@/lib/places";
 import { formatPickupChoice } from "@/lib/pickup";
+import { CopyText } from "@/components/copy-text";
 import { buttonClass } from "@/components/ui";
 import { OrderPaymentFacts } from "@/components/order-payment-facts";
 import { OrderTrack } from "@/components/order-track";
@@ -36,6 +37,17 @@ async function OrderScreen({
   const backTo = orderRollbackTarget(order);
   const cashPickup = isCashMethod(order.buyerPayment) && order.fulfillment === "pickup";
   const fulfillWord = order.fulfillment === "pickup" ? "Local pickup" : order.fulfillment === "delivery" ? "Local delivery" : order.fulfillment === "shipping" ? "Shipping" : "Digital file";
+  const ordered = orderedWhen(order.createdAt, order.productLocation);
+  const buyerLines = [
+    order.buyerName,
+    [order.email, order.phone].filter(Boolean).join(" · "),
+    order.address,
+    order.deliveryNote ? `Delivery instructions: ${order.deliveryNote}` : "",
+    order.buyerNote ? `Note to seller: ${order.buyerNote}` : "",
+    order.fulfillment === "pickup" && product?.pickupNote ? `Pickup location: ${product.pickupNote}` : "",
+    order.pickupWindow ? `Pickup time: ${formatPickupChoice(order.pickupWindow)}` : "",
+    ordered,
+  ].filter((line) => line.trim());
   return (
     <main className="mx-auto w-full max-w-3xl px-5 pb-16">
       <p className="text-sm text-muted">{order.publicRef}</p>
@@ -59,13 +71,18 @@ async function OrderScreen({
       ) : order.variantLabel ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
       <OrderPaymentFacts order={order} cardPaymentUrl={product?.cardPaymentUrl ?? ""} />
       <p className="mt-2 text-sm text-muted">{order.quantity} {order.quantity === 1 ? "item" : "items"} · {fulfillWord}</p>
-      <p className="mt-4 text-sm">{order.buyerName}</p>
-      <p className="text-sm text-muted">{order.email}{order.phone ? ` · ${order.phone}` : ""}</p>
-      {order.address ? <p className="text-sm text-muted">{order.address}</p> : null}
-      {order.deliveryNote ? <p className="text-sm text-muted">Delivery instructions: {order.deliveryNote}</p> : null}
-      {order.buyerNote ? <p className="text-sm text-muted">Note to seller: {order.buyerNote}</p> : null}
-      {order.fulfillment === "pickup" && product?.pickupNote ? <p className="text-sm text-muted">Pickup location: {product.pickupNote}</p> : null}
-      {order.pickupWindow ? <p className="text-sm text-muted">Pickup time: {formatPickupChoice(order.pickupWindow)}</p> : null}
+      <div className="mt-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm">{order.buyerName}</p>
+          <p className="text-sm text-muted">{order.email}{order.phone ? ` · ${order.phone}` : ""}</p>
+          {order.address ? <p className="text-sm text-muted">{order.address}</p> : null}
+          {order.deliveryNote ? <p className="text-sm text-muted">Delivery instructions: {order.deliveryNote}</p> : null}
+          {order.buyerNote ? <p className="text-sm text-muted">Note to seller: {order.buyerNote}</p> : null}
+          {order.fulfillment === "pickup" && product?.pickupNote ? <p className="text-sm text-muted">Pickup location: {product.pickupNote}</p> : null}
+          {order.pickupWindow ? <p className="text-sm text-muted">Pickup time: {formatPickupChoice(order.pickupWindow)}</p> : null}
+        </div>
+        <CopyText value={buyerLines.join("\n")} />
+      </div>
       {order.fulfillment === "digital" ? (
         <div className="mt-4 rounded-2xl border border-line bg-card p-4 text-sm">
           <p className="text-muted">
@@ -84,7 +101,7 @@ async function OrderScreen({
           ) : null}
         </div>
       ) : null}
-      <p className="mt-2 text-sm text-muted">{orderedWhen(order.createdAt, order.productLocation)}</p>
+      <p className="mt-2 text-sm text-muted">{ordered}</p>
       <SellerOrderFlow
         order={{
           ...order,

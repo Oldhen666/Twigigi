@@ -12,7 +12,7 @@ import { ReviewSeller } from "@/components/review-seller";
 import { Stage } from "@/components/stage";
 import { buttonClass } from "@/components/ui";
 import { ReloadForm } from "@/components/reload-form";
-import { acceptSellerChange, confirmBuyerPickup, confirmReceipt } from "@/lib/actions";
+import { acceptSellerChange, changeOrderPayment, confirmBuyerPickup, confirmReceipt } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { findUserById, getInteractionBySource, getOrder, getProductById, hasReview } from "@/lib/db";
 import { formatDate, formatMoney, orderHeading } from "@/lib/format";
@@ -42,6 +42,10 @@ async function OrderView({
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   const canceled = order.status === "canceled" || order.reviewState === "declined";
   const digital = product?.cta === "file" || order.fulfillment === "digital";
+  const payFulfillment = order.fulfillment === "delivery" || order.fulfillment === "shipping" ? order.fulfillment : "pickup";
+  const offeredPayments = !digital && product ? methodsForFulfillment(product.paymentMethods, payFulfillment) : [];
+  const choosingPayment = query.pay === "choose" && !paid && !canceled && offeredPayments.length > 1;
+  const otherPaymentHref = offeredPayments.length > 1 ? `/order/${order.id}?pay=choose` : "";
   const copy = buyerOrderCopy(order);
   const question = order.interacQuestion || (order.buyerPayment === "interac" ? product?.interacQuestion ?? "" : "");
   const password = order.interacPassword || (order.buyerPayment === "interac" ? product?.interacPassword ?? "" : "");
@@ -184,16 +188,35 @@ async function OrderView({
               ) : null}
             </section>
 
-            {!paid && product && isCashMethod(order.buyerPayment) ? (
+            {choosingPayment ? (
+              <form action={changeOrderPayment} className="mt-4 rounded-3xl border border-line bg-white px-4 py-4">
+                <h2 className="font-semibold">How will you pay?</h2>
+                <input type="hidden" name="id" value={order.id} />
+                <div className="mt-4 space-y-2">
+                  {offeredPayments.map((id) => (
+                    <label key={id} className="block rounded-2xl border border-line px-4 py-3">
+                      <input type="radio" name="method" value={id} defaultChecked={id === order.buyerPayment} className="mr-2" />
+                      <span className="font-medium">{methodLabel(id)}</span>
+                    </label>
+                  ))}
+                </div>
+                <button className={`${buttonClass} mt-4 w-full`}>Continue</button>
+                <Link href={`/order/${order.id}`} className="mt-3 block text-center text-sm text-muted">Back</Link>
+              </form>
+            ) : null}
+            {!choosingPayment && !paid && product && isCashMethod(order.buyerPayment) ? (
               <section className="mt-4 rounded-3xl border border-line bg-white px-4 py-4">
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="font-semibold">Pay the seller</h2>
                   <p className="text-sm text-muted">Cash on pickup</p>
                 </div>
                 <p className="mt-3 text-sm leading-6">Pay {formatMoney(order.totalCents || order.amountCents, order.currency)} in cash at pickup.</p>
+                {otherPaymentHref ? (
+                  <Link href={otherPaymentHref} className="mt-3 block text-center text-sm font-medium text-forest">Use other payment</Link>
+                ) : null}
               </section>
             ) : null}
-            {!paid && product && !isCashMethod(order.buyerPayment) ? (
+            {!choosingPayment && !paid && product && !isCashMethod(order.buyerPayment) ? (
               <BuyerPay
                 orderId={order.id}
                 methods={[order.buyerPayment]}
@@ -211,9 +234,9 @@ async function OrderView({
                 currency={order.currency}
                 orderNote={order.publicRef ? `Order ${order.publicRef}` : ""}
                 orderRef={order.publicRef}
-                sellerName={order.displayName}
                 variant="sheet"
                 reported={order.paymentStatus === "verifying"}
+                otherPaymentHref={otherPaymentHref}
               />
             ) : null}
 
@@ -341,7 +364,6 @@ async function OrderView({
             amountCents={order.totalCents || order.amountCents}
             currency={order.currency}
             orderNote={order.publicRef ? `Order ${order.publicRef}` : ""}
-            sellerName={order.displayName}
           />
         ) : null}
         {!paid && !canceled && order.reviewState === "accepted" && product && order.buyerPayment && !showPlaced ? (

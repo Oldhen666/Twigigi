@@ -36,6 +36,7 @@ export type User = {
   payoutZelle: string;
   autoConfirmOrders: boolean;
   suspended: boolean;
+  bio: string;
 };
 
 export type ProductOption = {
@@ -139,6 +140,7 @@ export type Product = ProductInput & {
   deactivatedAt: string | null;
   billingStartedAt: string | null;
   feeExempt: boolean;
+  quoteFeeExempt: boolean;
   moderationStatus: "" | "restricted";
   rightsConfirmed: boolean;
   rightsConfirmedAt: string | null;
@@ -258,6 +260,8 @@ export type QuoteRecord = {
   status: "new" | "contacted" | "closed";
   src: string;
   createdAt: string;
+  billable: boolean;
+  feeReason: string;
 };
 
 export type MessageRecord = {

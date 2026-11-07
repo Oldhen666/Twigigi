@@ -15,6 +15,7 @@ function parentFor(path: string) {
     clean === "/dashboard" ||
     clean === "/orders" ||
     clean === "/saved" ||
+    clean === "/following" ||
     clean === "/history" ||
     clean === "/reviews" ||
     clean === "/login" ||

@@ -10,7 +10,7 @@ async function QuotesScreen() {
   return (
     <main className="page-frame pb-16">
       <h1 className="font-serif text-4xl">Quotes</h1>
-      <p className="mt-2 text-sm text-muted">Each quote submission is $0.25, in CAD or USD for that Twig.</p>
+      <p className="mt-2 text-sm text-muted">A valid new quote is $0.25, in CAD or USD for that Twig. It is added to your next monthly Twigigi bill with the listing fee. The same buyer is not charged again for the same request, and a waived Twig is not charged.</p>
       {quotes.length === 0 ? (
         <p className="mt-8 text-sm text-muted">No quote record</p>
       ) : (
@@ -20,7 +20,7 @@ async function QuotesScreen() {
               <Link href={`/dashboard/quotes/${quote.id}`} className="block rounded-2xl border border-line bg-card p-4 text-sm">
                 <p className="font-medium">{quote.name}</p>
                 <p className="text-muted">{quote.productTitle} · qty {quote.quantity}</p>
-                <p className="mt-1 text-muted">{quote.status} · {formatDate(quote.createdAt)}</p>
+                <p className="mt-1 text-muted">{quote.status} · {formatDate(quote.createdAt)} · {quote.billable ? "On the next bill" : quote.feeReason === "waived" ? "Quote fee waived" : "Not billed again"}</p>
               </Link>
             </li>
           ))}
