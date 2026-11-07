@@ -4,12 +4,12 @@ import { useState } from "react";
 import { removeProduct } from "@/lib/actions";
 import { ghostClass } from "@/components/ui";
 
-export function DeleteTwig({ productId, mode = "draft" }: { productId: string; mode?: "draft" | "deactivated" }) {
+export function DeleteTwig({ productId, mode = "draft", variant = "link" }: { productId: string; mode?: "draft" | "deactivated"; variant?: "link" | "menu" }) {
   const [open, setOpen] = useState(false);
   const retired = mode === "deactivated";
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={`font-medium text-danger ${retired ? "ml-auto" : ""}`}>
+      <button type="button" onClick={() => setOpen(true)} className={variant === "menu" ? "w-full rounded-xl px-3 py-2 text-left text-danger hover:bg-paper" : `font-medium text-danger ${retired ? "ml-auto" : ""}`}>
         Delete
       </button>
       {open ? (

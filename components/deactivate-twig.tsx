@@ -10,12 +10,14 @@ export function DeactivateTwig({
   endsLabel,
   deleteLabel,
   next = "",
+  variant = "link",
 }: {
   productId: string;
   mode: "live" | "ending" | "deactivated";
   endsLabel: string;
   deleteLabel: string;
   next?: string;
+  variant?: "link" | "menu";
 }) {
   const [open, setOpen] = useState(false);
   const reactivating = mode !== "live";
@@ -28,7 +30,7 @@ export function DeactivateTwig({
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={`ml-auto font-medium ${reactivating ? "text-forest" : "text-danger"}`}>
+      <button type="button" onClick={() => setOpen(true)} className={variant === "menu" ? "w-full rounded-xl px-3 py-2 text-left hover:bg-paper" : `ml-auto font-medium ${reactivating ? "text-forest" : "text-danger"}`}>
         {reactivating ? "Reactivate" : "Deactivate"}
       </button>
       {open ? (

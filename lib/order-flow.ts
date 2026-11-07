@@ -17,6 +17,33 @@ export function shipsToBuyer(fulfillment: string) {
   return fulfillment === "delivery" || fulfillment === "shipping";
 }
 
+export function sellerAttention(order: {
+  status: string;
+  reviewState: string;
+  paymentStatus: string;
+  fulfillment: string;
+  fulfillmentState: string;
+  buyerPayment: string;
+  pickupConfirmedAt?: string | null;
+  fileSentAt?: string | null;
+}) {
+  if (order.status === "canceled" || order.reviewState === "declined" || order.reviewState === "changes") return "";
+  if (order.status === "fulfilled" || order.fulfillmentState === "handed") return "";
+  if (isCashMethod(order.buyerPayment) && order.fulfillment === "pickup") {
+    if (order.fulfillmentState === "ready") {
+      return order.paymentStatus === "paid" || order.status === "paid" ? "Confirm handover" : "Confirm payment and handover";
+    }
+    if (!order.pickupConfirmedAt) return "Confirm pickup time";
+    return "Mark ready for pickup";
+  }
+  const paid = order.paymentStatus === "paid" || order.status === "paid";
+  if (order.reviewState === "requested") return "Review this order";
+  if (!paid && paymentNeedsConfirm(order.buyerPayment)) return "Confirm payment";
+  if (order.fulfillment === "digital") return order.fileSentAt ? "" : "Send the file";
+  if (!fulfillmentDone(order.fulfillmentState)) return shipsToBuyer(order.fulfillment) ? "Ship this order" : "Mark ready for pickup";
+  return "";
+}
+
 type StageOrder = {
   status: string;
   reviewState: ReviewState;

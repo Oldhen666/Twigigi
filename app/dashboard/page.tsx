@@ -1,16 +1,10 @@
-import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
+import { TwigCard } from "@/components/twig-card";
 import { getImpersonation, requireSeller } from "@/lib/auth";
-import { payAndPublish, reactivateTwig, setListingFree } from "@/lib/actions";
-import { activeWindow, formatListingFee, listingFeeCents, listingFeeCurrency, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
-import { DeactivateTwig } from "@/components/deactivate-twig";
-import { DeleteTwig } from "@/components/delete-twig";
-import { TwigCheckbox, TwigSelectAll, TwigSelectionProvider } from "@/components/twig-selection";
-import { CopyLink } from "@/components/share-bar";
-import { productHasActivity, quoteChargesSince, sellerProducts, sellerSales, sellerStats } from "@/lib/db";
-import { ctaCopy, addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
-import { storedUpload } from "@/lib/uploads";
+import { listOrders, productHasActivity, sellerProducts, sellerSales, sellerStats } from "@/lib/db";
+import { formatMoney, isTwigLive } from "@/lib/format";
+import { sellerAttention } from "@/lib/order-flow";
 
 async function DashboardBody() {
   const user = await requireSeller();
@@ -18,26 +12,22 @@ async function DashboardBody() {
   const stats = sellerStats(user.id);
   const sales = sellerSales(user.id);
   const products = sellerProducts(user.id);
-  const summary = [
-    ["Views", String(stats.views), "/dashboard/views"],
-    ["Orders", String(stats.orders), "/dashboard/orders"],
-    ["Quotes", String(stats.quotes), "/dashboard/quotes"],
-  ];
-  const billingEndsLabel = formatBillingDate(nextBillingDate());
+  const orders = listOrders(user.id);
+  const attention = orders.filter((order) => sellerAttention(order)).length;
+  const totalOrders = orders.filter((order) => order.status !== "canceled" && order.reviewState !== "declined").length;
+  const live = products.filter((product) => isTwigLive(product)).length;
+  const drafts = products.filter((product) => product.status === "draft").length;
+  const preview = products.slice(0, 3);
 
   return (
     <main className="page-frame pb-16">
       <div className="mt-6">
-        <h1 className="font-serif text-4xl">Selling</h1>
-        <p className="mt-2 text-sm text-muted">Hi, {user.displayName}</p>
-        <p className="mt-3 flex flex-wrap gap-x-4">
-          <Link href="/dashboard/payments" className="font-medium text-forest">Payment settings</Link>
-          <Link href={`/${user.publicId}`} className="font-medium text-forest">Your page</Link>
+        <h1 className="font-serif text-4xl">Overview</h1>
+        <p className="mt-2 text-sm text-muted">Manage your orders and listings.</p>
+        <p className="mt-2 text-sm text-muted">
+          Buyers pay you directly. Confirm a payment only after you see the money.{" "}
+          <Link href="/dashboard/help" className="font-medium text-forest">Help</Link>
         </p>
-        <div className="mt-4 rounded-3xl border border-line bg-card px-4 py-4 text-sm">
-          <p className="font-medium">Orders are placed right away.</p>
-          <p className="mt-1 text-muted">Buyers pay you directly. Cash is only for local pickup and stays unpaid until you confirm the cash. For e-Transfer, PayPal, or Venmo, confirm the payment only after you see the money, then prepare pickup or shipping. Cancel an order you cannot fulfill.</p>
-        </div>
         {user.billingMethod || acting ? null : (
           <p className="mt-3 text-sm">
             <Link href="/billing?next=/dashboard" className="font-medium text-forest">Add a payment method</Link>
@@ -46,204 +36,77 @@ async function DashboardBody() {
         )}
       </div>
 
-      <section className="mt-6 overflow-hidden rounded-3xl border border-line bg-card">
-        <div className="grid grid-cols-3 divide-x divide-line">
-          {summary.map(([label, value, href]) => (
-            <Link key={label} href={href} className="px-4 py-3 hover:bg-paper-deep">
-              <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
-              <p className="mt-1 font-serif text-2xl">{value}</p>
-            </Link>
-          ))}
+      <section className="mt-6 grid gap-3 sm:grid-cols-2">
+        <Link href="/dashboard/orders" className="rounded-3xl border border-line bg-card px-4 py-4">
+          <p className="text-sm text-muted">Total orders</p>
+          <p className="mt-2 font-serif text-3xl">{totalOrders}</p>
+          <p className="mt-1 text-xs text-muted">All time</p>
+        </Link>
+        <div className="rounded-3xl border border-line bg-card px-4 py-4">
+          <p className="text-sm text-muted">Confirmed paid</p>
+          <p className="mt-2 font-serif text-3xl">{moneyOf(sales, "paid")}</p>
+          <p className="mt-1 text-xs text-muted">Seller-reported</p>
         </div>
+        <Link href="/dashboard/orders" className="rounded-3xl border border-line bg-card px-4 py-4">
+          <p className="text-sm text-muted">Awaiting payment</p>
+          <p className="mt-2 font-serif text-3xl">{moneyOf(sales, "awaiting")}</p>
+          <p className="mt-1 text-xs text-muted">Unpaid order value</p>
+        </Link>
+        <Link href="/dashboard/views" className="rounded-3xl border border-line bg-card px-4 py-4">
+          <p className="text-sm text-muted">Listing views</p>
+          <p className="mt-2 font-serif text-3xl">{stats.views}</p>
+          <p className="mt-1 text-xs text-muted">All time</p>
+        </Link>
       </section>
 
-      <section className="mt-4 rounded-3xl border border-line bg-card px-4 py-4 text-sm">
-        {sales.length === 0 ? (
-          <p className="text-muted">No sales yet.</p>
+      <section className={`mt-4 rounded-3xl border px-4 py-4 ${attention > 0 ? "border-clay/30 bg-clay/10" : "border-line bg-card"}`}>
+        <p className="flex items-center gap-2 font-medium">
+          <span aria-hidden>🔔</span>
+          {attention === 1 ? "1 order requiring attention" : `${attention} orders requiring attention`}
+        </p>
+        <p className="mt-1 text-sm text-muted">Review payments, pickup requests, and orders ready for fulfillment.</p>
+        <Link href="/dashboard/orders" className="mt-3 flex h-11 items-center justify-center rounded-full border border-line bg-white text-sm">
+          Manage orders →
+        </Link>
+      </section>
+
+      <section className="mt-8">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 className="font-serif text-2xl">Your Twigs</h2>
+            <p className="mt-1 text-sm text-muted">{live} live · {drafts} {drafts === 1 ? "draft" : "drafts"}</p>
+          </div>
+          <Link href="/dashboard/twigs" className="text-sm font-medium text-forest">View all</Link>
+        </div>
+        {preview.length === 0 ? (
+          <div className="mt-4 rounded-3xl border border-dashed border-line bg-card p-6">
+            <p className="font-serif text-2xl">You have something to sell.</p>
+            <p className="mt-2 text-sm text-muted">Make the Twig, then share the link.</p>
+            <Link href="/start" className="mt-4 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">Create a Twig</Link>
+          </div>
         ) : (
-          <div className="space-y-3">
-            {sales.map((row) => (
-              <div key={row.currency} className="grid gap-2 sm:grid-cols-3">
-                <p><span className="block text-xs uppercase tracking-wide text-muted">Sales</span><span className="font-serif text-2xl">{formatMoney(row.salesCents, row.currency)}</span></p>
-                <p><span className="block text-xs uppercase tracking-wide text-muted">Paid orders</span><span className="font-serif text-2xl">{formatMoney(row.paidCents, row.currency)}</span></p>
-                <p><span className="block text-xs uppercase tracking-wide text-muted">Awaiting payment</span><span className="font-serif text-2xl">{formatMoney(row.awaitingCents, row.currency)}</span></p>
-              </div>
+          <div className="mt-4 space-y-3">
+            {preview.map((product) => (
+              <TwigCard
+                key={product.id}
+                product={product}
+                publicId={user.publicId}
+                acting={acting}
+                canDelete={product.status === "deactivated" || (product.status === "draft" && !productHasActivity(product.id))}
+                returnTo="/dashboard"
+              />
             ))}
           </div>
         )}
-        <p className="mt-3 text-muted">Payments are collected directly by you.</p>
+        {stats.quotes > 0 ? <p className="mt-4 text-sm"><Link href="/dashboard/quotes" className="font-medium text-forest">Quotes</Link></p> : null}
       </section>
-
-      {products.length === 0 ? (
-        <div className="mt-8 rounded-3xl border border-dashed border-line bg-card p-6">
-          <p className="font-serif text-2xl">You have something to sell.</p>
-          <p className="mt-2 text-sm text-muted">Make the Twig, then share the link.</p>
-          <Link href="/start" className="mt-4 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card">
-            Create a Twig
-          </Link>
-        </div>
-      ) : (
-        <TwigSelectionProvider
-          items={products.map((product) => ({
-            id: product.id,
-            title: product.title,
-            status: product.status,
-            canDelete: product.status === "deactivated" || (product.status === "draft" && !productHasActivity(product.id)),
-          }))}
-        >
-        <section className="mt-8 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <TwigSelectAll />
-              <h2 className="font-serif text-2xl">Twigs</h2>
-            </div>
-            <Link href="/start" className="inline-flex h-11 items-center rounded-full bg-forest px-5 text-sm font-medium text-card shadow-[0_8px_18px_rgba(27,67,50,0.18)]">+ New Twig</Link>
-          </div>
-          {products.map((product) => {
-            const live = isTwigLive(product);
-            const ending = live && Boolean(product.deactivatesAt);
-            const url = productUrl(user.publicId, product.slug);
-            const restricted = product.moderationStatus === "restricted";
-            const badge = restricted ? "Restricted" : product.status === "deactivated" ? "Deactivated" : ending ? "Deactivating" : live ? "Live" : "Draft";
-            const period = activeWindow(product.billingStartedAt || product.createdAt);
-            const activeLabel = `${formatBillingDate(period.start)} – ${formatBillingDate(period.end)}`;
-            const free = product.feeExempt;
-            const skipPay = free || acting;
-            const currency = listingFeeCurrency(product.cta, product.location);
-            const money = (cents: number) => `${formatMoney(cents, currency)} ${currency}`;
-            const listingLabel = formatListingFee(currency);
-            const quoteEach = money(QUOTE_SUBMISSION_CENTS);
-            const quoteUse = product.cta === "quote" ? quoteChargesSince(product.id, period.start) : null;
-            const endsLabel = product.deactivatesAt ? formatBillingDate(product.deactivatesAt) : billingEndsLabel;
-            const deactivatedLabel = product.deactivatedAt ? formatBillingDate(product.deactivatedAt, true) : "";
-            const deleteLabel = formatBillingDate(
-              addDays(product.status === "deactivated" && product.deactivatedAt ? product.deactivatedAt : product.deactivatesAt || nextBillingDate(), DEACTIVATION_GRACE_DAYS),
-              true,
-            );
-            return (
-              <article key={product.id} className="flex gap-4 rounded-3xl border border-line bg-card p-4">
-                <TwigCheckbox id={product.id} title={product.title} />
-                {live ? (
-                  <Link href={url} aria-label={product.title} className="relative block h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-paper-deep">
-                    {product.images[0] ? (
-                      <Image src={product.images[0]} alt="" fill unoptimized={storedUpload(product.images[0])} className="object-cover" sizes="96px" />
-                    ) : null}
-                  </Link>
-                ) : (
-                  <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-paper-deep">
-                    {product.images[0] ? (
-                      <Image src={product.images[0]} alt="" fill unoptimized={storedUpload(product.images[0])} className="object-cover" sizes="96px" />
-                    ) : null}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    {live ? (
-                      <Link href={url} className="min-w-0 hover:underline">
-                        <h3 className="font-serif text-2xl leading-tight">{product.title}</h3>
-                      </Link>
-                    ) : (
-                      <h3 className="font-serif text-2xl leading-tight">{product.title}</h3>
-                    )}
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${live && !ending ? "bg-moss text-forest" : ending ? "bg-paper-deep text-clay" : "bg-paper-deep text-muted"}`}>
-                      {badge}
-                    </span>
-                  </div>
-                  <p className="mt-1 font-serif text-xl text-forest">
-                    {product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}
-                  </p>
-                  <p className="mt-1 text-sm text-muted">
-                    {ctaCopy(product.cta).label} · {product.viewCount} {product.viewCount === 1 ? "view" : "views"}
-                  </p>
-                  <div className="mt-2 space-y-0.5 text-sm text-muted">
-                    {product.status === "published" && !ending && !restricted ? (
-                      <>
-                        <p>Active {activeLabel}</p>
-                        {free ? <p>Free forever</p> : listingFeeCents(product.cta) > 0 ? <p>Next charge {billingEndsLabel} · {listingLabel} / month</p> : <p>No listing fee</p>}
-                        {product.cta === "quote" ? <p>Each quote {quoteEach}{quoteUse && quoteUse.count > 0 ? ` · ${quoteUse.count} this period · ${money(quoteUse.cents)}` : ""}</p> : null}
-                      </>
-                    ) : null}
-                    {ending ? (
-                      <>
-                        <p>Active until {endsLabel}</p>
-                        <p>Next charge canceled</p>
-                        <p>This page turns off on {endsLabel}</p>
-                      </>
-                    ) : null}
-                    {restricted ? <p>This listing is hidden from the public page while Twigigi reviews it.</p> : null}
-                    {product.status === "deactivated" ? (
-                      <>
-                        <p>Inactive{deactivatedLabel ? ` since ${deactivatedLabel}` : ""}</p>
-                        {listingStillPaid(product) ? (
-                          free ? <p>Free forever</p> : <p>Paid through {billingEndsLabel}. Next charge {billingEndsLabel}.</p>
-                        ) : (
-                          <>
-                            <p>Next charge none</p>
-                            {free ? <p>Free forever</p> : listingFeeCents(product.cta) > 0 ? <p>Reactivate for {listingLabel} / month</p> : <p>No listing fee</p>}
-                          </>
-                        )}
-                        {product.cta === "quote" ? <p>Each quote {quoteEach}</p> : null}
-                        <p>{listingStillPaid(product) ? "Turn it back on" : "Pay again"} before {deleteLabel} or this Twig is permanently deleted.</p>
-                      </>
-                    ) : null}
-                    {product.status === "draft" ? (
-                      <>
-                        <p>Not active</p>
-                        {free ? <p>Free forever</p> : listingFeeCents(product.cta) > 0 ? <p>Listing {listingLabel} / month when you publish</p> : <p>No listing fee</p>}
-                        {product.cta === "quote" ? <p>Each quote {quoteEach}</p> : null}
-                      </>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
-                    <Link href={`/dashboard/products/${product.id}`} className="font-medium text-forest">Edit</Link>
-                    {acting ? (
-                      <form action={setListingFree}>
-                        <input type="hidden" name="id" value={product.id} />
-                        <input type="hidden" name="free" value={free ? "0" : "1"} />
-                        <input type="hidden" name="next" value="/dashboard" />
-                        <button className="font-medium text-forest">{free ? "Charge this Twig" : "Make free forever"}</button>
-                      </form>
-                    ) : null}
-                    {live ? <CopyLink url={url} /> : null}
-                    {product.status === "published" ? (
-                      <DeactivateTwig productId={product.id} mode={ending ? "ending" : "live"} endsLabel={endsLabel} deleteLabel={deleteLabel} />
-                    ) : null}
-                    {product.status === "deactivated" ? (
-                      <>
-                        {listingStillPaid(product) ? (
-                          <form action={reactivateTwig}>
-                            <input type="hidden" name="id" value={product.id} />
-                            <button className="font-medium text-forest">Reactivate</button>
-                          </form>
-                        ) : (
-                          <form action={payAndPublish}>
-                            <input type="hidden" name="id" value={product.id} />
-                            <button className="font-medium text-forest">{skipPay ? "Reactivate" : "Pay and reactivate"}</button>
-                          </form>
-                        )}
-                        <DeleteTwig productId={product.id} mode="deactivated" />
-                      </>
-                    ) : null}
-                    {product.status === "draft" ? (
-                      <>
-                        <form action={payAndPublish}>
-                          <input type="hidden" name="id" value={product.id} />
-                          <button className="font-medium text-forest">{skipPay ? "Publish" : "Pay and publish"}</button>
-                        </form>
-                        <DeleteTwig productId={product.id} />
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </section>
-        </TwigSelectionProvider>
-      )}
-
     </main>
   );
+}
+
+function moneyOf(rows: { currency: string; paidCents: number; awaitingCents: number }[], key: "paid" | "awaiting") {
+  if (rows.length === 0) return formatMoney(0);
+  return rows.map((row) => formatMoney(key === "paid" ? row.paidCents : row.awaitingCents, row.currency)).join(" · ");
 }
 
 export const metadata = { title: "Selling", robots: { index: false, follow: false } };
