@@ -55,8 +55,6 @@ async function CheckoutScreen({ params }: { params: Promise<{ username: string }
             interacPassword: product.interacPassword,
             venmoUsername: product.venmoUsername,
             paypalMe: product.paypalMe,
-            zelleMode: product.zelleMode,
-            zelleContact: product.zelleContact,
             fulfillments: fulfillmentOptions(product).filter((option) => option.id === "pickup" || option.id === "delivery" || option.id === "shipping"),
           }))}
         />

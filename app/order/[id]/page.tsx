@@ -169,8 +169,7 @@ async function OrderView({
             paypalMe={product.paypalMe}
             amountCents={order.totalCents || order.amountCents}
             currency={order.currency}
-            zelleMode={product.zelleMode}
-            zelleContact={product.zelleContact}
+            orderNote={order.publicRef ? `Order ${order.publicRef}` : ""}
           />
         ) : null}
         {!paid && !canceled && order.reviewState === "accepted" && product && order.buyerPayment ? (
@@ -192,8 +191,7 @@ async function OrderView({
             paypalMe={product.paypalMe}
             amountCents={order.totalCents || order.amountCents}
             currency={order.currency}
-            zelleMode={product.zelleMode}
-            zelleContact={product.zelleContact}
+            orderNote={order.publicRef ? `Order ${order.publicRef}` : ""}
             showContacts
           />
         ) : null}

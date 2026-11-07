@@ -9,7 +9,7 @@ import { updateTag } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, sellerContactProblem, venmoUsernameProblem, zelleContactProblem } from "@/lib/payments";
+import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, sellerContactProblem, venmoUsernameProblem } from "@/lib/payments";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
@@ -562,8 +562,6 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const paypalRaw = text(formData, "paypalMe").trim().slice(0, 200);
   const paypalName = paypalMeName(paypalRaw);
   const paypalMe = paypalName ? `https://paypal.me/${paypalName}` : paypalRaw;
-  const zelleMode = text(formData, "zelleMode") === "email" ? "email" : "phone";
-  const zelleContact = text(formData, "zelleContact").trim().slice(0, 80);
   const sellerContactMode = text(formData, "sellerContactMode") === "phone" ? "phone" : "email";
   const sellerContact = text(formData, "sellerContact").trim().slice(0, 80);
   if (priced && intent === "publish") {
@@ -589,12 +587,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       const problem = paypalMeProblem(paypalRaw);
       if (problem) errors.paypalMe = problem;
     }
-    if (paymentMethods.includes("zelle")) {
-      const problem = zelleContactProblem(zelleMode, zelleContact);
-      if (problem) errors.zelleContact = problem;
-    }
     if ((shippingEnabled || deliveryEnabled) && !paymentMethods.some((id) => isTransferMethod(id))) {
-      errors.paymentMethods = "Add a transfer method for delivery and shipping, such as Interac, PayPal, Venmo, or Zelle.";
+      errors.paymentMethods = "Add a transfer method for delivery and shipping, such as Interac, PayPal, or Venmo.";
     }
     const contactProblem = sellerContactProblem(sellerContactMode, sellerContact);
     if (contactProblem) errors.sellerContact = contactProblem;
@@ -724,8 +718,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     interacPassword: paymentMethods.includes("interac") ? interacPassword : "",
     venmoUsername,
     paypalMe: paymentMethods.includes("paypal") ? paypalMe : "",
-    zelleMode,
-    zelleContact,
+    zelleMode: "phone",
+    zelleContact: "",
     sellerContactMode: priced ? sellerContactMode : "email",
     sellerContact: priced ? sellerContact : "",
     fileLinks: parsedLinks.links,
@@ -968,7 +962,7 @@ async function sendPaymentLink(orderId: string, sellerId: string) {
   const updated = getOrder(orderId);
   const product = updated ? getProductById(updated.productId) : null;
   if (!updated) return;
-  await notifyBuyer(updated, `Order confirmed: ${updated.productTitle}`, acceptNote(updated, product?.interacEmail ?? "", product?.paypalMe ?? ""));
+  await notifyBuyer(updated, `Order confirmed: ${updated.productTitle}`, acceptNote(updated, product?.interacEmail ?? "", product?.paypalMe ?? "", product?.venmoUsername ?? ""));
 }
 
 export async function placeOrder(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -1601,7 +1595,7 @@ export async function reviewSellerOrder(_prev: FormState, formData: FormData): P
   const updated = getOrder(id);
   if (!updated) return { next: back };
   const product = getProductById(updated.productId);
-  const sent = await notifyBuyer(updated, `Order confirmed: ${updated.productTitle}`, acceptNote(updated, product?.interacEmail ?? "", product?.paypalMe ?? ""));
+  const sent = await notifyBuyer(updated, `Order confirmed: ${updated.productTitle}`, acceptNote(updated, product?.interacEmail ?? "", product?.paypalMe ?? "", product?.venmoUsername ?? ""));
   return { next: sent ? back : `${back}?mail=0` };
 }
 
@@ -1616,7 +1610,7 @@ export async function acceptSellerChange(formData: FormData) {
   const next = getOrder(id);
   if (next) {
     const product = getProductById(next.productId);
-    await notifyBuyer(next, `Order confirmed: ${next.productTitle}`, acceptNote(next, product?.interacEmail ?? "", product?.paypalMe ?? ""));
+    await notifyBuyer(next, `Order confirmed: ${next.productTitle}`, acceptNote(next, product?.interacEmail ?? "", product?.paypalMe ?? "", product?.venmoUsername ?? ""));
   }
   redirect(back);
 }

@@ -2,7 +2,7 @@
 
 import { PickupCalendar } from "@/components/pickup-calendar";
 import { formatMoney } from "@/lib/format";
-import { methodLabel, paypalMeUrl, safeCardUrl, safeEmail, safePhone, safeVenmo } from "@/lib/payments";
+import { methodLabel, paypalMeUrl, safeCardUrl, safeEmail, venmoProfileUrl } from "@/lib/payments";
 import { buttonClass } from "@/components/ui";
 
 export function PickupFacts({
@@ -43,8 +43,6 @@ export function PayChoice({
   paypalMe = "",
   amountCents = 0,
   currency = "CAD",
-  zelleMode = "phone",
-  zelleContact = "",
   error = "",
   empty = "",
   showPayLink = true,
@@ -60,17 +58,14 @@ export function PayChoice({
   paypalMe?: string;
   amountCents?: number;
   currency?: string;
-  zelleMode?: "phone" | "email";
-  zelleContact?: string;
   error?: string;
   empty?: string;
   showPayLink?: boolean;
 }) {
   if (methods.length === 0) return empty ? <p className="text-sm text-danger">{empty}</p> : null;
   const email = selected === "interac" ? safeEmail(interacEmail) : "";
-  const venmo = selected === "venmo" ? safeVenmo(venmoUsername) : "";
+  const venmo = selected === "venmo" ? venmoProfileUrl(venmoUsername) : "";
   const paypal = selected === "paypal" ? paypalMeUrl(paypalMe, { amountCents, currency }) : "";
-  const zelle = selected === "zelle" ? (zelleMode === "email" ? safeEmail(zelleContact) : safePhone(zelleContact)) : "";
   const card = selected === "card" ? safeCardUrl(cardPaymentUrl) : "";
   return (
     <fieldset>
@@ -85,7 +80,7 @@ export function PayChoice({
       </div>
       {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
       {email ? <p className="mt-3 text-sm text-muted">e-Transfer instructions arrive after the seller confirms the order.</p> : null}
-      {venmo ? <p className="mt-3 text-sm">Venmo: @{venmo}</p> : null}
+      {venmo ? <p className="mt-3 text-sm">Venmo: {venmo}</p> : null}
       {showPayLink && selected === "paypal" ? (
         paypal ? (
           <a href={paypal} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>
@@ -94,16 +89,6 @@ export function PayChoice({
         ) : (
           <p className="mt-3 text-sm text-muted">The seller has not added a PayPal.Me link.</p>
         )
-      ) : null}
-      {zelle ? (
-        <p className="mt-3 text-sm">
-          Zelle:{" "}
-          {zelleMode === "email" ? (
-            <a className="break-all text-forest" href={`mailto:${zelle}`}>{zelle}</a>
-          ) : (
-            <a className="text-forest" href={`tel:${zelle.replace(/\D/g, "")}`}>{zelle}</a>
-          )}
-        </p>
       ) : null}
       {selected === "cash" ? <p className="mt-3 text-sm text-muted">Pay the seller in cash when you pick it up.</p> : null}
       {card ? (

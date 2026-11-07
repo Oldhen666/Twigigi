@@ -1,6 +1,6 @@
 import { buttonClass } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
-import { methodLabel, paypalMeUrl, safeCardUrl, safeEmail, safePhone, safeVenmo } from "@/lib/payments";
+import { methodLabel, paypalMeUrl, safeCardUrl, safeEmail, venmoPayUrl } from "@/lib/payments";
 
 export function PayMethods({
   methods,
@@ -12,8 +12,7 @@ export function PayMethods({
   paypalMe = "",
   amountCents = 0,
   currency = "CAD",
-  zelleMode = "phone",
-  zelleContact = "",
+  orderNote = "",
   showContacts = false,
   note = "",
   empty = "",
@@ -27,8 +26,7 @@ export function PayMethods({
   paypalMe?: string;
   amountCents?: number;
   currency?: string;
-  zelleMode?: "phone" | "email";
-  zelleContact?: string;
+  orderNote?: string;
   showContacts?: boolean;
   note?: string;
   empty?: string;
@@ -36,10 +34,9 @@ export function PayMethods({
   const labels = methods.map((id) => methodLabel(id)).filter(Boolean);
   const href = showContacts && methods.includes("card") && methodLabel("card") ? safeCardUrl(cardPaymentUrl) : "";
   const email = showContacts && methods.includes("interac") ? safeEmail(interacEmail) : "";
-  const venmo = showContacts && methods.includes("venmo") ? safeVenmo(venmoUsername) : "";
+  const venmo = showContacts && methods.includes("venmo") ? venmoPayUrl(venmoUsername, { amountCents, note: orderNote }) : "";
   const paypal = showContacts && methods.includes("paypal") ? paypalMeUrl(paypalMe, { amountCents, currency }) : "";
-  const zelle = showContacts && methods.includes("zelle") ? (zelleMode === "email" ? safeEmail(zelleContact) : safePhone(zelleContact)) : "";
-  if (labels.length === 0 && !href && !email && !venmo && !zelle && !paypal) {
+  if (labels.length === 0 && !href && !email && !venmo && !paypal) {
     return empty ? <p className="mt-4 text-sm text-danger">{empty}</p> : null;
   }
   return (
@@ -73,25 +70,15 @@ export function PayMethods({
           {interacPassword ? <p className="mt-1">Password: {interacPassword}</p> : null}
         </div>
       ) : null}
-      {venmo ? <p className="mt-3 text-sm">Venmo: @{venmo}</p> : null}
+      {venmo ? (
+        <a href={venmo} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>
+          Pay {formatMoney(amountCents, currency)} with Venmo
+        </a>
+      ) : null}
       {paypal ? (
         <a href={paypal} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>
           Pay {formatMoney(amountCents, currency)} with PayPal
         </a>
-      ) : null}
-      {zelle ? (
-        <p className="mt-3 text-sm">
-          Zelle:{" "}
-          {zelleMode === "email" ? (
-            <a className="text-forest" href={`mailto:${zelle}`}>
-              {zelle}
-            </a>
-          ) : (
-            <a className="text-forest" href={`tel:${zelle.replace(/\D/g, "")}`}>
-              {zelle}
-            </a>
-          )}
-        </p>
       ) : null}
       {href ? (
         <a href={href} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>

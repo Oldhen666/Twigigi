@@ -7,7 +7,7 @@ import type { Product, ProductOption, ProductVariant } from "@/lib/types";
 import { MAX_VALUES, OPTION_NAMES, normalizeVariants, variantLabel } from "@/lib/variants";
 import { inputClass, labelClass } from "@/components/ui";
 import { CA_PROVINCES, US_STATES, joinLocation, lookupCurrentPlace, lookupIpPlace, splitLocation } from "@/lib/places";
-import { digitalPayModeOf, digitalPayProblem, parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile, type DigitalPayMode } from "@/lib/payments";
+import { digitalPayModeOf, digitalPayProblem, parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile, venmoProfileUrl, type DigitalPayMode } from "@/lib/payments";
 
 const DIGITAL_PAY_CHOICES: Record<DigitalPayMode, { label: string; placeholder: string; instruction: string }> = {
   paypal_email: {
@@ -95,11 +95,6 @@ export function BuyOfferFields({
   const [interacPassword, setInteracPassword] = useState(seed?.fields.interacPassword ?? product?.interacPassword ?? "");
   const [venmoUsername, setVenmoUsername] = useState(seed?.fields.venmoUsername ?? product?.venmoUsername ?? "");
   const [paypalMe, setPaypalMe] = useState(seed?.fields.paypalMe ?? product?.paypalMe ?? "");
-  const [zelleMode, setZelleMode] = useState<"phone" | "email">(() => {
-    if (seed) return seed.fields.zelleMode === "email" ? "email" : "phone";
-    return product?.zelleMode === "email" ? "email" : "phone";
-  });
-  const [zelleContact, setZelleContact] = useState(seed?.fields.zelleContact ?? product?.zelleContact ?? "");
   const [deliveryArea, setDeliveryArea] = useState(seed?.fields.shippingNote ?? product?.shippingNote ?? "");
   const [sellerMode, setSellerMode] = useState<"phone" | "email">(() => {
     if (seed) return seed.fields.sellerContactMode === "phone" ? "phone" : "email";
@@ -111,14 +106,12 @@ export function BuyOfferFields({
   const interacRef = useRef<HTMLInputElement>(null);
   const venmoRef = useRef<HTMLInputElement>(null);
   const paypalRef = useRef<HTMLInputElement>(null);
-  const zelleRef = useRef<HTMLInputElement>(null);
   const sellerRef = useRef<HTMLInputElement>(null);
   const poke = useRef(false);
   const pokeCard = useRef(false);
   const pokeInterac = useRef(false);
   const pokeVenmo = useRef(false);
   const pokePaypal = useRef(false);
-  const pokeZelle = useRef(false);
   const notify = useRef(onChange);
   notify.current = onChange;
   const seen = useRef(false);
@@ -128,7 +121,7 @@ export function BuyOfferFields({
       return;
     }
     notify.current?.();
-  }, [price, unlimited, samePrice, options, variants, enabled, variable, pickup, ship, methods, cardUrl, interacEmail, interacQuestion, interacPassword, venmoUsername, paypalMe, zelleContact, zelleMode, deliveryArea, sellerContact, sellerMode]);
+  }, [price, unlimited, samePrice, options, variants, enabled, variable, pickup, ship, methods, cardUrl, interacEmail, interacQuestion, interacPassword, venmoUsername, paypalMe, deliveryArea, sellerContact, sellerMode]);
   useEffect(() => {
     const allowed = new Set((digital ? paymentsForDigitalFile() : paymentsForCountry(payCountry)).map((method) => method.id));
     setMethods((current) => {
@@ -156,28 +149,13 @@ export function BuyOfferFields({
       pokePaypal.current = false;
       paypalRef.current?.dispatchEvent(new Event("input", { bubbles: true }));
     }
-    if (pokeZelle.current) {
-      pokeZelle.current = false;
-      zelleRef.current?.dispatchEvent(new Event("input", { bubbles: true }));
-    }
   }, [methods]);
-  const zelleModeSeen = useRef(zelleMode);
-  useEffect(() => {
-    if (zelleModeSeen.current === zelleMode) return;
-    zelleModeSeen.current = zelleMode;
-    zelleRef.current?.dispatchEvent(new Event("input", { bubbles: true }));
-  }, [zelleMode]);
   const sellerModeSeen = useRef(sellerMode);
   useEffect(() => {
     if (sellerModeSeen.current === sellerMode) return;
     sellerModeSeen.current = sellerMode;
     sellerRef.current?.dispatchEvent(new Event("input", { bubbles: true }));
   }, [sellerMode]);
-
-  function chooseZelle(mode: "phone" | "email") {
-    setZelleMode(mode);
-    setZelleContact("");
-  }
 
   function chooseSeller(mode: "phone" | "email") {
     setSellerMode(mode);
@@ -190,7 +168,6 @@ export function BuyOfferFields({
     if (id === "interac") pokeInterac.current = true;
     if (id === "venmo") pokeVenmo.current = true;
     if (id === "paypal") pokePaypal.current = true;
-    if (id === "zelle") pokeZelle.current = true;
     setMethods((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   }
   const baseCents = parseDollars(price) ?? product?.priceCents ?? 0;
@@ -474,20 +451,16 @@ export function BuyOfferFields({
           interacPassword={interacPassword}
           venmoUsername={venmoUsername}
           paypalMe={paypalMe}
-          zelleMode={zelleMode}
-          zelleContact={zelleContact}
           methodsRef={methodsRef}
           cardRef={cardRef}
           interacRef={interacRef}
           venmoRef={venmoRef}
           paypalRef={paypalRef}
-          zelleRef={zelleRef}
           error={errors?.paymentMethods}
           cardError={errors?.cardPaymentUrl}
           interacError={errors?.interacEmail}
           venmoError={errors?.venmoUsername}
           paypalError={errors?.paypalMe}
-          zelleError={errors?.zelleContact}
           onToggle={toggleMethod}
           onCardUrl={setCardUrl}
           onInteracEmail={setInteracEmail}
@@ -495,8 +468,6 @@ export function BuyOfferFields({
           onInteracPassword={setInteracPassword}
           onVenmoUsername={setVenmoUsername}
           onPaypalMe={setPaypalMe}
-          onZelleMode={chooseZelle}
-          onZelleContact={setZelleContact}
         />
       </div>
 
@@ -514,20 +485,16 @@ function PaymentChoices({
   interacPassword,
   venmoUsername,
   paypalMe,
-  zelleMode,
-  zelleContact,
   methodsRef,
   cardRef,
   interacRef,
   venmoRef,
   paypalRef,
-  zelleRef,
   error,
   cardError,
   interacError,
   venmoError,
   paypalError,
-  zelleError,
   onToggle,
   onCardUrl,
   onInteracEmail,
@@ -535,8 +502,6 @@ function PaymentChoices({
   onInteracPassword,
   onVenmoUsername,
   onPaypalMe,
-  onZelleMode,
-  onZelleContact,
 }: {
   country: string;
   digital?: boolean;
@@ -547,20 +512,16 @@ function PaymentChoices({
   interacPassword: string;
   venmoUsername: string;
   paypalMe: string;
-  zelleMode: "phone" | "email";
-  zelleContact: string;
   methodsRef: RefObject<HTMLInputElement | null>;
   cardRef: RefObject<HTMLInputElement | null>;
   interacRef: RefObject<HTMLInputElement | null>;
   venmoRef: RefObject<HTMLInputElement | null>;
   paypalRef: RefObject<HTMLInputElement | null>;
-  zelleRef: RefObject<HTMLInputElement | null>;
   error?: string;
   cardError?: string;
   interacError?: string;
   venmoError?: string;
   paypalError?: string;
-  zelleError?: string;
   onToggle: (id: string) => void;
   onCardUrl: (value: string) => void;
   onInteracEmail: (value: string) => void;
@@ -568,8 +529,6 @@ function PaymentChoices({
   onInteracPassword: (value: string) => void;
   onVenmoUsername: (value: string) => void;
   onPaypalMe: (value: string) => void;
-  onZelleMode: (mode: "phone" | "email") => void;
-  onZelleContact: (value: string) => void;
 }) {
   const [payMode, setPayMode] = useState<DigitalPayMode>(digitalPayModeOf(cardUrl));
   const choices = paymentsForCountry(country);
@@ -618,7 +577,7 @@ function PaymentChoices({
   const interacOn = methods.includes("interac");
   const venmoOn = methods.includes("venmo");
   const paypalOn = methods.includes("paypal");
-  const zelleOn = methods.includes("zelle");
+  const venmoBase = venmoProfileUrl(venmoUsername);
   return (
     <div className="mt-4 space-y-3">
       {choices.length === 0 ? <p className="text-sm text-muted">Choose a country above to see payment methods.</p> : null}
@@ -666,15 +625,25 @@ function PaymentChoices({
           ) : null}
           {method.id === "venmo" && venmoOn ? (
             <div className="mt-3 pl-8">
-              <Field label="Username" required error={venmoError}>
+              <Field label="Venmo username" required error={venmoError}>
                 <input
                   ref={venmoRef}
                   name="venmoUsername"
                   value={venmoUsername}
                   onChange={(event) => onVenmoUsername(event.target.value)}
-                  placeholder="@username (Venmo username)"
+                  placeholder="johnsmith"
+                  autoComplete="off"
                   className={inputClass}
                 />
+                <span className="mt-1 block text-sm text-muted">
+                  {venmoBase ? (
+                    <>
+                      Your Venmo link: {venmoBase}. After the buyer orders, Twigigi adds the total and the order number, such as {venmoBase}?txn=pay&amp;amount=49.99&amp;note=Order%20TW-10001.
+                    </>
+                  ) : (
+                    <>Enter your Venmo username. Twigigi turns it into a link like https://venmo.com/johnsmith, then adds the order total and order number after the buyer orders.</>
+                  )}
+                </span>
               </Field>
             </div>
           ) : null}
@@ -700,31 +669,6 @@ function PaymentChoices({
               </Field>
             </div>
           ) : null}
-          {method.id === "zelle" && zelleOn ? (
-            <div className="mt-3 space-y-3 pl-8">
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="zelleMode" value="phone" checked={zelleMode === "phone"} onChange={() => onZelleMode("phone")} className="accent-forest" />
-                  Phone
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="zelleMode" value="email" checked={zelleMode === "email"} onChange={() => onZelleMode("email")} className="accent-forest" />
-                  Email
-                </label>
-              </div>
-              <Field label={zelleMode === "email" ? "Email" : "Phone"} required error={zelleError}>
-                <input
-                  ref={zelleRef}
-                  name="zelleContact"
-                  type={zelleMode === "email" ? "email" : "tel"}
-                  value={zelleContact}
-                  onChange={(event) => onZelleContact(event.target.value)}
-                  placeholder={zelleMode === "email" ? "name@email.com (email)" : "5551234567 (phone)"}
-                  className={inputClass}
-                />
-              </Field>
-            </div>
-          ) : null}
         </div>
       ))}
       {error ? <p className="text-sm text-danger">{error}</p> : null}
@@ -738,12 +682,6 @@ function PaymentChoices({
       )}
       {venmoOn ? null : <input ref={venmoRef} type="hidden" name="venmoUsername" value={venmoUsername} />}
       {paypalOn ? null : <input ref={paypalRef} type="hidden" name="paypalMe" value={paypalMe} />}
-      {zelleOn ? null : (
-        <>
-          <input type="hidden" name="zelleMode" value={zelleMode} />
-          <input ref={zelleRef} type="hidden" name="zelleContact" value={zelleContact} />
-        </>
-      )}
       {cardOn ? (
         <Field label="Credit card payment link" required error={cardError}>
           <input

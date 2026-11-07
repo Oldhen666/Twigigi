@@ -18,8 +18,6 @@ type PayDetails = {
   interacPassword?: string;
   venmoUsername: string;
   paypalMe?: string;
-  zelleMode: "phone" | "email";
-  zelleContact: string;
 };
 
 type Action = (state: FormState, formData: FormData) => Promise<FormState>;
@@ -196,8 +194,6 @@ export function CheckoutForm({
           paypalMe={payments.paypalMe ?? ""}
           amountCents={total ?? 0}
           currency={currency}
-          zelleMode={payments.zelleMode}
-          zelleContact={payments.zelleContact}
           error={fieldErrors?.paymentMethod}
           empty={needsTransfer ? "Delivery and shipping have to be paid by transfer first. This seller has not set one up." : ""}
         />

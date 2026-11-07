@@ -713,7 +713,7 @@ function parseStoredMethods(raw: string) {
   try {
     const parsed = JSON.parse(raw || "[]");
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is string => typeof item === "string");
+    return parsed.filter((item): item is string => typeof item === "string" && item !== "zelle");
   } catch {
     return [];
   }

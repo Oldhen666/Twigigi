@@ -36,8 +36,6 @@ export type CartCatalogItem = {
   interacPassword?: string;
   venmoUsername: string;
   paypalMe?: string;
-  zelleMode: "phone" | "email";
-  zelleContact: string;
   fulfillments: FulfillmentOption[];
 };
 

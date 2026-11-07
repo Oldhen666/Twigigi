@@ -40,10 +40,6 @@ export default async function Page({
                 <span className={labelClass}>Venmo username</span>
                 <input name="venmo" defaultValue={user.payoutVenmo} className={inputClass} />
               </label>
-              <label>
-                <span className={labelClass}>Zelle phone or email</span>
-                <input name="zelle" defaultValue={user.payoutZelle} className={inputClass} />
-              </label>
               <button className={`${buttonClass} w-fit`}>Save receiving details</button>
             </form>
           </section>

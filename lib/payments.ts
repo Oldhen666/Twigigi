@@ -12,7 +12,6 @@ export const CA_PAYMENTS: PayMethod[] = [
 export const US_PAYMENTS: PayMethod[] = [
   { id: "cash", label: "Cash" },
   { id: "venmo", label: "Venmo" },
-  { id: "zelle", label: "Zelle" },
   { id: "paypal", label: "PayPal" },
 ];
 
@@ -108,17 +107,6 @@ export function safePhone(value: string) {
   return trimmed;
 }
 
-export function zelleContactProblem(mode: string, value: string) {
-  if (mode === "email") {
-    const trimmed = value.trim();
-    if (!trimmed) return "Enter a Zelle email.";
-    return safeEmail(trimmed) ? null : "Enter an email like name@email.com.";
-  }
-  const trimmed = value.trim();
-  if (!trimmed) return "Enter a Zelle phone number.";
-  return safePhone(trimmed) ? null : "Enter a phone number.";
-}
-
 export function safeVenmo(value: string) {
   const trimmed = value.trim().replace(/^@/, "");
   if (!/^[A-Za-z0-9_-]{1,30}$/.test(trimmed)) return "";
@@ -128,7 +116,21 @@ export function safeVenmo(value: string) {
 export function venmoUsernameProblem(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "Enter a Venmo username.";
-  return safeVenmo(trimmed) ? null : "Enter a Venmo username like @name.";
+  return safeVenmo(trimmed) ? null : "Enter a Venmo username like johnsmith.";
+}
+
+export function venmoProfileUrl(username: string) {
+  const name = safeVenmo(username);
+  return name ? `https://venmo.com/${name}` : "";
+}
+
+export function venmoPayUrl(username: string, payment: { amountCents: number; note?: string }) {
+  const profile = venmoProfileUrl(username);
+  if (!profile || payment.amountCents < 1) return "";
+  const amount = (payment.amountCents / 100).toFixed(2);
+  const note = (payment.note ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+  const query = note ? `txn=pay&amount=${amount}&note=${encodeURIComponent(note)}` : `txn=pay&amount=${amount}`;
+  return `${profile}?${query}`;
 }
 
 const PAYPAL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;

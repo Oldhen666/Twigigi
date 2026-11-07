@@ -4,7 +4,7 @@ import { useState } from "react";
 import { buyerReportPayment } from "@/lib/actions";
 import { buttonClass } from "@/components/ui";
 import { formatMoney } from "@/lib/format";
-import { isCashMethod, methodLabel, paypalMeUrl, safeCardUrl, safeEmail, safePhone, safeVenmo } from "@/lib/payments";
+import { isCashMethod, methodLabel, paypalMeUrl, safeCardUrl, safeEmail, venmoPayUrl } from "@/lib/payments";
 
 export function BuyerPay({
   orderId,
@@ -17,8 +17,7 @@ export function BuyerPay({
   paypalMe = "",
   amountCents,
   currency,
-  zelleMode = "phone",
-  zelleContact = "",
+  orderNote = "",
 }: {
   orderId: string;
   methods: string[];
@@ -30,14 +29,12 @@ export function BuyerPay({
   paypalMe?: string;
   amountCents: number;
   currency: string;
-  zelleMode?: "phone" | "email";
-  zelleContact?: string;
+  orderNote?: string;
 }) {
   const [method, setMethod] = useState(methods[0] ?? "");
   const email = method === "interac" ? safeEmail(interacEmail) : "";
-  const venmo = method === "venmo" ? safeVenmo(venmoUsername) : "";
+  const venmo = method === "venmo" ? venmoPayUrl(venmoUsername, { amountCents, note: orderNote }) : "";
   const paypal = method === "paypal" ? paypalMeUrl(paypalMe, { amountCents, currency }) : "";
-  const zelle = method === "zelle" ? (zelleMode === "email" ? safeEmail(zelleContact) : safePhone(zelleContact)) : "";
   const card = method === "card" ? safeCardUrl(cardPaymentUrl) : "";
   const cash = isCashMethod(method);
   if (methods.length === 0) return <p className="mt-4 text-sm text-muted">The seller has not added a way to pay yet.</p>;
@@ -62,17 +59,17 @@ export function BuyerPay({
           {interacPassword ? <p className="mt-1">Password: {interacPassword}</p> : null}
         </div>
       ) : null}
-      {venmo ? <p className="text-sm">Venmo: @{venmo}</p> : null}
+      {venmo ? (
+        <a href={venmo} target="_blank" rel="noreferrer" className={`${buttonClass} w-full`}>
+          Pay {formatMoney(amountCents, currency)} with Venmo
+        </a>
+      ) : method === "venmo" ? (
+        <p className="text-sm text-muted">The seller has not added a Venmo username.</p>
+      ) : null}
       {paypal ? (
         <a href={paypal} target="_blank" rel="noreferrer" className={`${buttonClass} w-full`}>
           Pay {formatMoney(amountCents, currency)} with PayPal
         </a>
-      ) : null}
-      {zelle ? (
-        <p className="text-sm">
-          Zelle:{" "}
-          {zelleMode === "email" ? <a className="text-forest" href={`mailto:${zelle}`}>{zelle}</a> : <a className="text-forest" href={`tel:${zelle.replace(/\D/g, "")}`}>{zelle}</a>}
-        </p>
       ) : null}
       {card ? (
         <a href={card} target="_blank" rel="noreferrer" className={`${buttonClass} w-full`}>Pay by card</a>

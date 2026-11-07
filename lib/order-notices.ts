@@ -1,6 +1,6 @@
 import { appUrl, formatMoney } from "@/lib/format";
 import { sendOrderEmail } from "@/lib/mail";
-import { methodLabel, paypalMeUrl, safeEmail } from "@/lib/payments";
+import { methodLabel, paypalMeUrl, safeEmail, venmoPayUrl } from "@/lib/payments";
 import { paymentNeedsConfirm, shipsToBuyer } from "@/lib/order-flow";
 import type { OrderRecord } from "@/lib/types";
 
@@ -9,7 +9,7 @@ export async function notifyBuyer(order: OrderRecord, subject: string, lines: Ar
   return sendOrderEmail(order.email, { subject, text });
 }
 
-export function acceptNote(order: OrderRecord, interacEmail = "", paypalMe = "") {
+export function acceptNote(order: OrderRecord, interacEmail = "", paypalMe = "", venmoUsername = "") {
   const total = formatMoney(order.totalCents || order.amountCents, order.currency);
   const method = order.buyerPayment ? methodLabel(order.buyerPayment) : "";
   const lines = [
@@ -31,6 +31,8 @@ export function acceptNote(order: OrderRecord, interacEmail = "", paypalMe = "")
   }
   const paypal = order.buyerPayment === "paypal" ? paypalMeUrl(paypalMe, { amountCents: order.totalCents || order.amountCents, currency: order.currency }) : "";
   if (paypal) lines.push(`PayPal: ${paypal}`);
+  const venmo = order.buyerPayment === "venmo" ? venmoPayUrl(venmoUsername, { amountCents: order.totalCents || order.amountCents, note: order.publicRef ? `Order ${order.publicRef}` : "" }) : "";
+  if (venmo) lines.push(`Venmo: ${venmo}`);
   if (!paymentNeedsConfirm(order.buyerPayment)) {
     lines.push("Pay in cash when you pick it up. The seller will email you when it is ready.");
   } else if (order.paymentStatus !== "paid") {
