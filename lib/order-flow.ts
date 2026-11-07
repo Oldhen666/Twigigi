@@ -39,6 +39,44 @@ export function orderCanComplete(order: StageOrder, now = Date.now()) {
   return Number.isFinite(ready) && now - ready >= ORDER_COMPLETE_DAYS * 24 * 60 * 60 * 1000;
 }
 
+export type TrackState = "done" | "current" | "upcoming" | "stopped";
+export type TrackStep = { label: string; state: TrackState };
+
+export function orderTrack(order: StageOrder): TrackStep[] {
+  const declined = order.status === "canceled" || order.reviewState === "declined";
+  const completed = order.status === "fulfilled";
+  const accepted = order.reviewState === "accepted";
+  const changes = order.reviewState === "changes";
+  const paid = order.paymentStatus === "paid" || order.status === "paid" || completed;
+  const prepaid = paymentNeedsConfirm(order.buyerPayment);
+  const digital = order.fulfillment === "digital";
+  const ships = shipsToBuyer(order.fulfillment);
+  const fulfilled = fulfillmentDone(order.fulfillmentState) || (digital && Boolean(order.fileSentAt));
+  const received = Boolean(order.buyerReceivedAt);
+  const finishOpen = completed || orderCanComplete(order);
+  const fulfillLabel = digital ? "File sent" : ships ? "Sent" : "Ready for pickup";
+  const steps: { label: string; reached: boolean }[] = [
+    { label: "Requested", reached: true },
+    { label: changes && !declined ? "Change proposed" : "Confirmed", reached: accepted || completed || paid || fulfilled || received },
+  ];
+  if (prepaid) steps.push({ label: "Payment received", reached: paid || completed });
+  steps.push({ label: fulfillLabel, reached: fulfilled || completed });
+  steps.push({ label: "Receipt confirmed", reached: received || completed || finishOpen });
+  steps.push({ label: declined ? "Declined" : "Completed", reached: completed });
+  if (declined) {
+    const kept = steps.filter((step) => step.reached && step.label !== "Declined");
+    return [
+      ...(kept.length > 0 ? kept : [steps[0]]).map((step) => ({ label: step.label, state: "done" as const })),
+      { label: "Declined", state: "stopped" as const },
+    ];
+  }
+  const current = steps.findIndex((step) => !step.reached);
+  return steps.map((step, index) => ({
+    label: step.label,
+    state: step.reached ? "done" : index === current ? "current" : "upcoming",
+  }));
+}
+
 export function orderStage(order: StageOrder) {
   if (order.status === "canceled" || order.reviewState === "declined") return "Declined";
   if (order.status === "fulfilled") return "Completed";

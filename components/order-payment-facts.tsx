@@ -1,5 +1,5 @@
 import { formatMoney } from "@/lib/format";
-import { cardLinkProvider, orderIsPaid, orderPaymentMethodLabel, paymentConfirmationLabel, paymentFlowOf } from "@/lib/order-money";
+import { cardLinkProvider, orderIsPaid, orderPaymentMethodLabel, paymentFlowOf } from "@/lib/order-money";
 import type { OrderRecord } from "@/lib/types";
 
 export function OrderPaymentFacts({ order, cardPaymentUrl = "" }: { order: OrderRecord; cardPaymentUrl?: string }) {
@@ -14,7 +14,6 @@ export function OrderPaymentFacts({ order, cardPaymentUrl = "" }: { order: Order
     ...(provider ? [["Payment provider", provider]] : []),
     ["Payment status", status],
     ["Payment recipient", flow === "seller_direct" ? "Seller directly" : "Twigigi Checkout"],
-    ["Payment confirmation", paymentConfirmationLabel(flow, paid && order.status !== "canceled")],
     ...(flow === "seller_direct" ? [["Payout", "Not applicable — payment received directly by seller"]] : []),
   ];
   return (

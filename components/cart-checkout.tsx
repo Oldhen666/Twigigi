@@ -416,7 +416,6 @@ export function CartCheckout({
           deliveryNote={chosen.id === "shipping" ? review.deliveryNote : ""}
           sellerNote={review.sellerNote}
           payment={paymentMethod ? methodLabel(paymentMethod) : ""}
-          merchandise={formatMoney(merchandise, currency)}
           shipping={chosen.id === "pickup" ? "" : fee === 0 ? "Free" : formatMoney(fee, currency)}
           total={formatMoney(total, currency)}
           gaps={reviewGaps(review, {
@@ -576,7 +575,6 @@ function OrderReviewDialog({
   deliveryNote,
   sellerNote,
   payment,
-  merchandise,
   shipping,
   total,
   gaps,
@@ -593,7 +591,6 @@ function OrderReviewDialog({
   deliveryNote: string;
   sellerNote: string;
   payment: string;
-  merchandise: string;
   shipping: string;
   total: string;
   gaps: string[];
@@ -640,7 +637,6 @@ function OrderReviewDialog({
           {deliveryNote ? <div><dt className="text-muted">Delivery instructions</dt><dd>{deliveryNote}</dd></div> : null}
           {sellerNote ? <div><dt className="text-muted">Note to seller</dt><dd>{sellerNote}</dd></div> : null}
           <div className="flex justify-between gap-3"><dt className="text-muted">Pay by</dt><dd>{payment || "Not chosen"}</dd></div>
-          <div className="flex justify-between gap-3"><dt className="text-muted">Items</dt><dd>{merchandise}</dd></div>
           {shipping ? <div className="flex justify-between gap-3"><dt className="text-muted">Shipping</dt><dd>{shipping}</dd></div> : null}
           <div className="flex justify-between gap-3 font-serif text-2xl text-forest"><dt>Total</dt><dd>{total}</dd></div>
         </dl>

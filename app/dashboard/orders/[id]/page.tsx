@@ -7,7 +7,10 @@ import { formatDate, formatMoney, orderHeading, srcLabel } from "@/lib/format";
 import { formatPickupChoice } from "@/lib/pickup";
 import { buttonClass } from "@/components/ui";
 import { OrderPaymentFacts } from "@/components/order-payment-facts";
+import { OrderTrack } from "@/components/order-track";
+import { ReloadForm } from "@/components/reload-form";
 import { SellerOrderFlow } from "@/components/seller-order-flow";
+import { orderTrack } from "@/lib/order-flow";
 
 async function OrderScreen({
   params,
@@ -28,6 +31,7 @@ async function OrderScreen({
     <main className="mx-auto w-full max-w-3xl px-5 pb-16">
       <p className="text-sm text-muted">{order.publicRef}</p>
       <h1 className="mt-1 font-serif text-4xl">{orderHeading(order)}</h1>
+      <OrderTrack steps={orderTrack(order)} />
       {order.lines.length > 1 ? (
         <div className="mt-4 space-y-1 text-sm">
           {order.lines.map((line) => (
@@ -58,10 +62,10 @@ async function OrderScreen({
           {fileNote === "mail" ? <p className="mt-2 text-danger">The email could not be sent. Check the mail settings, then try again.</p> : null}
           {fileNote === "wait" ? <p className="mt-2 text-danger">Confirm the payment before emailing the file.</p> : null}
           {(order.reviewState === "accepted" && (order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled")) ? (
-            <form action={sendOrderFile} className="mt-3">
+            <ReloadForm action={sendOrderFile} className="mt-3">
               <input type="hidden" name="id" value={order.id} />
               <button className={buttonClass}>{order.fileSentAt ? "Email the file link again" : "Email file link and password"}</button>
-            </form>
+            </ReloadForm>
           ) : null}
         </div>
       ) : null}

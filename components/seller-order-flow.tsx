@@ -1,6 +1,7 @@
+import { ReloadForm } from "@/components/reload-form";
 import { completeOrder, confirmOrderPayment, markOrderProgress, reviewSellerOrder } from "@/lib/actions";
 import { formatDate, formatMoney } from "@/lib/format";
-import { ORDER_COMPLETE_DAYS, fulfillmentDone, orderCanComplete, orderStage, paymentNeedsConfirm, shipsToBuyer } from "@/lib/order-flow";
+import { ORDER_COMPLETE_DAYS, fulfillmentDone, orderCanComplete, paymentNeedsConfirm, shipsToBuyer } from "@/lib/order-flow";
 import type { OrderRecord } from "@/lib/types";
 import { buttonClass } from "@/components/ui";
 
@@ -11,7 +12,6 @@ export function SellerOrderFlow({
   order: OrderRecord;
   mail: string;
 }) {
-  const stage = orderStage(order);
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   const prepaid = paymentNeedsConfirm(order.buyerPayment);
   const closed = order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined";
@@ -22,18 +22,11 @@ export function SellerOrderFlow({
   const canComplete = orderCanComplete(order);
   const readyDate = order.readyAt ? Date.parse(order.readyAt) : NaN;
   const opensAt = Number.isFinite(readyDate) ? new Date(readyDate + ORDER_COMPLETE_DAYS * 24 * 60 * 60 * 1000).toISOString() : "";
+  const showInterac = order.buyerPayment === "interac" && Boolean(order.interacQuestion || order.interacPassword);
+  if (!mail && !reviewing && !confirmed && order.reviewState !== "changes" && !showInterac) return null;
   return (
     <section className="mt-6 rounded-2xl border border-line bg-card p-4">
-      <p className="text-sm font-medium">Order progress</p>
-      <p className="mt-1 text-sm text-muted">{stage}</p>
-      <ol className="mt-3 space-y-1 text-sm text-muted">
-        <li>1. Order requested</li>
-        <li>2. Seller review · accept, propose a change, or decline</li>
-        <li>3. Order confirmed</li>
-        <li>4. Payment and fulfillment, tracked separately</li>
-        <li>5. Completed</li>
-      </ol>
-      {mail === "0" ? <p className="mt-3 text-sm text-danger">The status was saved, but the email could not be sent.</p> : null}
+      {mail === "0" ? <p className="text-sm text-danger">The status was saved, but the email could not be sent.</p> : null}
       {mail === "note" ? <p className="mt-3 text-sm text-danger">Describe the change in a few words.</p> : null}
       {mail === "amount" ? <p className="mt-3 text-sm text-danger">Enter a new total of at least $0.50, or leave it blank.</p> : null}
       {order.reviewState === "changes" ? (
@@ -45,12 +38,12 @@ export function SellerOrderFlow({
       ) : null}
       {reviewing ? (
         <div className="mt-4 space-y-3">
-          <form action={reviewSellerOrder}>
+          <ReloadForm action={reviewSellerOrder}>
             <input type="hidden" name="id" value={order.id} />
             <input type="hidden" name="decision" value="accept" />
             <button className={buttonClass}>{order.reviewState === "changes" ? "Accept the original order" : "Accept order"}</button>
-          </form>
-          <form action={reviewSellerOrder} className="space-y-2">
+          </ReloadForm>
+          <ReloadForm action={reviewSellerOrder} className="space-y-2">
             <input type="hidden" name="id" value={order.id} />
             <input type="hidden" name="decision" value="propose" />
             <label className="block text-sm">
@@ -62,12 +55,12 @@ export function SellerOrderFlow({
               <input name="proposalAmount" inputMode="decimal" placeholder="Leave blank to keep the current total" className="mt-1 h-11 w-full rounded-2xl border border-line bg-white px-3" />
             </label>
             <button className="text-sm text-forest">Send change to buyer</button>
-          </form>
-          <form action={reviewSellerOrder}>
+          </ReloadForm>
+          <ReloadForm action={reviewSellerOrder}>
             <input type="hidden" name="id" value={order.id} />
             <input type="hidden" name="decision" value="decline" />
             <button className="text-sm text-danger">Decline order</button>
-          </form>
+          </ReloadForm>
         </div>
       ) : null}
       {confirmed ? (
@@ -86,32 +79,32 @@ export function SellerOrderFlow({
                 : "Not yet"}
           </p>
           {prepaid && !paid ? (
-            <form action={confirmOrderPayment}>
+            <ReloadForm action={confirmOrderPayment}>
               <input type="hidden" name="id" value={order.id} />
               <button className={buttonClass}>Payment received</button>
-            </form>
+            </ReloadForm>
           ) : null}
           {!prepaid && !paid ? (
-            <form action={confirmOrderPayment}>
+            <ReloadForm action={confirmOrderPayment}>
               <input type="hidden" name="id" value={order.id} />
               <button className="text-forest">Cash received</button>
-            </form>
+            </ReloadForm>
           ) : null}
           {canFulfill && order.fulfillment === "pickup" ? (
-            <form action={markOrderProgress}>
+            <ReloadForm action={markOrderProgress}>
               <input type="hidden" name="id" value={order.id} />
               <input type="hidden" name="state" value="ready" />
               <button className={buttonClass}>Ready for pickup</button>
               <p className="mt-1 text-muted">This emails the buyer that the order is ready for pickup.</p>
-            </form>
+            </ReloadForm>
           ) : null}
           {canFulfill && shipsToBuyer(order.fulfillment) ? (
-            <form action={markOrderProgress}>
+            <ReloadForm action={markOrderProgress}>
               <input type="hidden" name="id" value={order.id} />
               <input type="hidden" name="state" value="sent" />
               <button className={buttonClass}>Sent out for delivery</button>
               <p className="mt-1 text-muted">This emails the buyer that the order was sent.</p>
-            </form>
+            </ReloadForm>
           ) : null}
           {prepaid && !paid && !digital ? <p className="text-muted">Confirm the payment before you mark it ready or sent.</p> : null}
           {fulfillmentDone(order.fulfillmentState) && !canComplete && !order.buyerReceivedAt ? (
@@ -121,22 +114,22 @@ export function SellerOrderFlow({
             </p>
           ) : null}
           {canComplete ? (
-            <form action={completeOrder}>
+            <ReloadForm action={completeOrder}>
               <input type="hidden" name="id" value={order.id} />
               <button className={buttonClass}>Complete order</button>
               <p className="mt-1 text-muted">
                 {order.buyerReceivedAt ? "The buyer confirmed receipt." : `${ORDER_COMPLETE_DAYS} days have passed since it was marked ready.`}
               </p>
-            </form>
+            </ReloadForm>
           ) : null}
-          <form action={reviewSellerOrder}>
+          <ReloadForm action={reviewSellerOrder}>
             <input type="hidden" name="id" value={order.id} />
             <input type="hidden" name="decision" value="decline" />
             <button className="text-danger">Cancel order</button>
-          </form>
+          </ReloadForm>
         </div>
       ) : null}
-      {order.buyerPayment === "interac" && (order.interacQuestion || order.interacPassword) ? (
+      {showInterac ? (
         <div className="mt-4 text-sm">
           {order.interacQuestion ? <p>e-Transfer question: {order.interacQuestion}</p> : null}
           {order.interacPassword ? <p>e-Transfer password: {order.interacPassword}</p> : null}

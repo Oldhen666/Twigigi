@@ -1534,48 +1534,48 @@ export async function confirmInteraction(formData: FormData) {
   redirect(next);
 }
 
-export async function reviewSellerOrder(formData: FormData) {
+export async function reviewSellerOrder(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireSeller();
   const id = text(formData, "id");
   const back = `/dashboard/orders/${id}`;
   const order = getOrder(id);
-  if (!order || order.sellerId !== user.id) redirect("/dashboard/orders");
+  if (!order || order.sellerId !== user.id) return { next: "/dashboard/orders" };
   const decision = text(formData, "decision");
   if (decision === "propose") {
     const note = text(formData, "proposalNote").trim().slice(0, 500);
-    if (note.length < 4) redirect(`${back}?mail=note`);
+    if (note.length < 4) return { next: `${back}?mail=note` };
     const amount = proposalAmount(text(formData, "proposalAmount"));
-    if (amount === "invalid") redirect(`${back}?mail=amount`);
-    if (!sellerReviewOrder(id, user.id, "propose", note, amount ?? 0)) redirect(back);
-    const next = getOrder(id);
-    if (!next) redirect(back);
-    const sent = await notifyBuyer(next, `Change proposed: ${next.productTitle}`, [
-      `${next.displayName} proposed a change to order ${next.publicRef}.`,
+    if (amount === "invalid") return { next: `${back}?mail=amount` };
+    if (!sellerReviewOrder(id, user.id, "propose", note, amount ?? 0)) return { next: back };
+    const updated = getOrder(id);
+    if (!updated) return { next: back };
+    const sent = await notifyBuyer(updated, `Change proposed: ${updated.productTitle}`, [
+      `${updated.displayName} proposed a change to order ${updated.publicRef}.`,
       note,
-      amount ? `New total: ${formatMoney(amount, next.currency)}` : "The total stays the same.",
+      amount ? `New total: ${formatMoney(amount, updated.currency)}` : "The total stays the same.",
       "Open the order to accept the change.",
     ]);
-    redirect(sent ? back : `${back}?mail=0`);
+    return { next: sent ? back : `${back}?mail=0` };
   }
   if (decision === "decline") {
-    if (!sellerReviewOrder(id, user.id, "decline")) redirect(back);
+    if (!sellerReviewOrder(id, user.id, "decline")) return { next: back };
     if (order.lines.length > 0) {
       for (const line of order.lines) releaseStock(line.productId, line.quantity);
     } else releaseStock(order.productId, order.quantity);
-    const next = getOrder(id);
-    if (next) {
-      const sent = await notifyBuyer(next, `Order declined: ${next.productTitle}`, [
-        `${next.displayName} declined order ${next.publicRef}.`,
+    const updated = getOrder(id);
+    if (updated) {
+      const sent = await notifyBuyer(updated, `Order declined: ${updated.productTitle}`, [
+        `${updated.displayName} declined order ${updated.publicRef}.`,
       ]);
-      redirect(sent ? back : `${back}?mail=0`);
+      return { next: sent ? back : `${back}?mail=0` };
     }
-    redirect(back);
+    return { next: back };
   }
-  if (!sellerReviewOrder(id, user.id, "accept")) redirect(back);
-  const next = getOrder(id);
-  if (!next) redirect(back);
-  const sent = await notifyBuyer(next, `Order confirmed: ${next.productTitle}`, acceptNote(next));
-  redirect(sent ? back : `${back}?mail=0`);
+  if (!sellerReviewOrder(id, user.id, "accept")) return { next: back };
+  const updated = getOrder(id);
+  if (!updated) return { next: back };
+  const sent = await notifyBuyer(updated, `Order confirmed: ${updated.productTitle}`, acceptNote(updated));
+  return { next: sent ? back : `${back}?mail=0` };
 }
 
 export async function acceptSellerChange(formData: FormData) {
@@ -1591,13 +1591,13 @@ export async function acceptSellerChange(formData: FormData) {
   redirect(back);
 }
 
-export async function confirmOrderPayment(formData: FormData) {
+export async function confirmOrderPayment(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireSeller();
   const id = text(formData, "id");
   const back = `/dashboard/orders/${id}`;
-  if (!confirmOrderPaymentReceived(id, user.id)) redirect(back);
+  if (!confirmOrderPaymentReceived(id, user.id)) return { next: back };
   const order = getOrder(id);
-  if (!order) redirect(back);
+  if (!order) return { next: back };
   const sent = order.fulfillment === "digital"
     ? await sendPaymentConfirmed(id)
     : await notifyBuyer(order, `Payment confirmed: ${order.productTitle}`, [
@@ -1606,17 +1606,17 @@ export async function confirmOrderPayment(formData: FormData) {
           ? "They will email you when it is sent out for delivery."
           : "They will email you when it is ready for pickup.",
       ]);
-  redirect(sent ? back : `${back}?mail=0`);
+  return { next: sent ? back : `${back}?mail=0` };
 }
 
-export async function markOrderProgress(formData: FormData) {
+export async function markOrderProgress(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireSeller();
   const id = text(formData, "id");
   const back = `/dashboard/orders/${id}`;
   const state = text(formData, "state") === "sent" ? "sent" : "ready";
-  if (!markOrderFulfillment(id, user.id, state)) redirect(back);
+  if (!markOrderFulfillment(id, user.id, state)) return { next: back };
   const order = getOrder(id);
-  if (!order) redirect(back);
+  if (!order) return { next: back };
   const product = getProductById(order.productId);
   const place = order.fulfillment === "pickup" ? product?.pickupNote.trim() ?? "" : "";
   const sent = await notifyBuyer(
@@ -1624,7 +1624,7 @@ export async function markOrderProgress(formData: FormData) {
     state === "ready" ? `Ready for pickup: ${order.productTitle}` : `Sent: ${order.productTitle}`,
     readyNote(order, place),
   );
-  redirect(sent ? back : `${back}?mail=0`);
+  return { next: sent ? back : `${back}?mail=0` };
 }
 
 export async function confirmReceipt(formData: FormData) {
@@ -1654,11 +1654,11 @@ export async function confirmReceipt(formData: FormData) {
   redirect(back);
 }
 
-export async function completeOrder(formData: FormData) {
+export async function completeOrder(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireSeller();
   const id = text(formData, "id");
   completeSellerOrder(id, user.id);
-  redirect(`/dashboard/orders/${id}`);
+  return { next: `/dashboard/orders/${id}` };
 }
 
 function proposalAmount(raw: string) {
@@ -1856,18 +1856,18 @@ export async function closeOrderDispute(formData: FormData) {
   return recordMoneyAction(formData, (id) => setDispute(id, false));
 }
 
-export async function sendOrderFile(formData: FormData) {
+export async function sendOrderFile(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireSeller();
   const id = text(formData, "id");
   const order = getOrder(id);
   const back = `/dashboard/orders/${id}`;
-  if (!order || order.sellerId !== user.id) redirect("/dashboard");
+  if (!order || order.sellerId !== user.id) return { next: "/dashboard" };
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
-  if (!paid || order.fulfillment !== "digital" || order.fileLinks.length === 0) redirect(`${back}?file=wait`);
+  if (!paid || order.fulfillment !== "digital" || order.fileLinks.length === 0) return { next: `${back}?file=wait` };
   const sent = await deliverPaidFile(id);
-  if (!sent) redirect(`${back}?file=mail`);
+  if (!sent) return { next: `${back}?file=mail` };
   markFileSent(id, user.id);
-  redirect(`${back}?file=sent`);
+  return { next: `${back}?file=sent` };
 }
 
 export async function setLeadStatus(formData: FormData) {
