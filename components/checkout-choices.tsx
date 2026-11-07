@@ -78,14 +78,11 @@ export function PayChoice({
         ))}
       </div>
       {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
-      {selected === "interac" ? <p className="mt-3 text-sm text-muted">e-Transfer details are on the order as soon as it is placed.</p> : null}
-      {selected === "venmo" && !showPayLink ? <p className="mt-3 text-sm text-muted">The Venmo link, with the total and order number, is on the order after you place it.</p> : null}
       {showPayLink && venmo ? (
         <a href={venmo} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>
           Pay {formatMoney(amountCents, currency)} with Venmo
         </a>
       ) : null}
-      {selected === "paypal" && !showPayLink ? <p className="mt-3 text-sm text-muted">The PayPal link, with the total and order number, is on the order after you place it.</p> : null}
       {showPayLink && selected === "paypal" ? (
         paypal ? (
           <a href={paypal} target="_blank" rel="noreferrer" className={`${buttonClass} mt-3 w-full`}>

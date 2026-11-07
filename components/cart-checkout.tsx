@@ -663,7 +663,7 @@ function OrderReviewDialog({
           <p className="mt-2 text-sm text-muted">
             {cash
               ? "You pay in cash when you pick it up. It stays unpaid until the seller confirms the cash."
-              : "Payment instructions will be provided after you place your order."}
+              : "You'll receive payment details after placing your order."}
           </p>
           <div className="mt-4 rounded-2xl bg-paper px-4 py-3">
             {shipping ? <div className="mb-2 flex justify-between text-sm text-muted"><span>Shipping</span><span>{shipping}</span></div> : null}
@@ -671,7 +671,6 @@ function OrderReviewDialog({
               <p className="font-medium">Order total</p>
               <p className="text-2xl font-semibold text-forest">{total} {currency}</p>
             </div>
-            <p className="mt-1 text-sm text-muted">No payment is collected by Twigigi.</p>
           </div>
           <p className="mt-4 flex gap-2 text-sm leading-6 text-muted">
             <AlertIcon />
@@ -695,7 +694,7 @@ function OrderReviewDialog({
           Back to checkout
         </button>
         <p className="mt-3 text-center text-xs leading-5 text-muted">
-          By placing your order, you agree to Twigigi&apos;s <Link href="/terms" className="text-forest">Terms of Service</Link> and acknowledge that payment and fulfillment are handled directly by the seller.
+          By placing your order, you agree to Twigigi&apos;s <Link href="/terms" className="text-forest">Terms of Service</Link>.
         </p>
       </div>
     </div>
