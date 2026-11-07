@@ -66,27 +66,38 @@ export function BuyerPay({
           <h2 className="font-semibold">Pay the seller</h2>
           <p className="text-sm text-muted">{methodLabel(method)}</p>
         </div>
-        <div className="mt-4 divide-y divide-line rounded-2xl bg-paper px-4">
-          {rows.map((row) => (
-            <div key={row.label} className="flex items-center justify-between gap-3 py-3">
-              <div className="min-w-0">
-                <p className="text-sm text-muted">{row.label}</p>
-                <p className={`mt-0.5 break-all ${row.strong ? "text-lg font-semibold text-forest" : "font-medium"}`}>{row.value}</p>
+        {method === "paypal" ? (
+          paypal ? (
+            <a href={paypal} target="_blank" rel="noreferrer" className={`${buttonClass} mt-4 w-full`}>
+              Pay {formatMoney(amountCents, currency)} with PayPal
+            </a>
+          ) : (
+            <p className="mt-3 text-sm text-muted">The seller has not added a PayPal.Me link.</p>
+          )
+        ) : (
+          <div className="mt-4 divide-y divide-line rounded-2xl bg-paper px-4">
+            {rows.map((row) => (
+              <div key={row.label} className="flex items-center justify-between gap-3 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm text-muted">{row.label}</p>
+                  <p className={`mt-0.5 break-all ${row.strong ? "text-lg font-semibold text-forest" : "font-medium"}`}>{row.value}</p>
+                </div>
+                <CopyChip value={row.value} />
               </div>
-              <CopyChip value={row.value} />
-            </div>
-          ))}
-        </div>
-        {venmo ? (
+            ))}
+          </div>
+        )}
+        {method === "paypal" ? null : venmo ? (
           <a href={venmo} target="_blank" rel="noreferrer" className="mt-3 inline-block text-sm text-forest">Open Venmo</a>
         ) : null}
-        {paypal ? (
-          <a href={paypal} target="_blank" rel="noreferrer" className="mt-3 inline-block text-sm text-forest">Open PayPal</a>
-        ) : null}
-        {card ? (
+        {method === "paypal" ? null : card ? (
           <a href={card} target="_blank" rel="noreferrer" className="mt-3 inline-block text-sm text-forest">Open card payment</a>
         ) : null}
-        <p className="mt-3 text-sm leading-6 text-muted">Include your order number in the transfer message to help the seller identify your payment.</p>
+        <p className="mt-3 text-sm leading-6 text-muted">
+          {method === "paypal"
+            ? `PayPal opens with ${amountLabel} filled in${orderRef ? ` for order ${orderRef}` : ""}.`
+            : "Include your order number in the transfer message to help the seller identify your payment."}
+        </p>
         {reported ? (
           <p className="mt-4 text-center text-sm text-muted">The seller is checking this payment. It is not paid until they confirm the money arrived.</p>
         ) : (

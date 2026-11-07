@@ -636,13 +636,11 @@ function PaymentChoices({
                   className={inputClass}
                 />
                 <span className="mt-1 block text-sm text-muted">
-                  {venmoBase ? (
-                    <>
-                      Your Venmo link: {venmoBase}. After the buyer orders, Twigigi adds the total and the order number, such as {venmoBase}?txn=pay&amp;amount=49.99&amp;note=Order%20TW-10001.
-                    </>
-                  ) : (
-                    <>Enter your Venmo username. Twigigi turns it into a link like https://venmo.com/johnsmith, then adds the order total and order number after the buyer orders.</>
-                  )}
+                  Create yours at{" "}
+                  <a href="https://account.venmo.com/settings/profile" target="_blank" rel="noreferrer" className="text-forest">
+                    https://account.venmo.com/settings/profile
+                  </a>
+                  , then enter your username here.{venmoBase ? <> Your Venmo link: {venmoBase}.</> : <> Example: johnsmith.</>}
                 </span>
               </Field>
             </div>
@@ -664,7 +662,7 @@ function PaymentChoices({
                   <a href="https://www.paypal.com/paypalme/" target="_blank" rel="noreferrer" className="text-forest">
                     https://www.paypal.com/paypalme/
                   </a>
-                  , then paste it here. Example: https://paypal.me/yourname. Do not add an amount or a currency. At checkout, Twigigi adds the order total and the listing currency, such as https://paypal.me/yourname/149.00CAD.
+                  , then paste it here. Example: https://paypal.me/yourname. Do not add an amount or a currency.
                 </span>
               </Field>
             </div>
