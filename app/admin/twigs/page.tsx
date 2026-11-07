@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { adminSetTwig, setListingFree } from "@/lib/actions";
+import { adminSetTwig, duplicateTwig, setListingFree } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { listAllProducts } from "@/lib/db";
 
@@ -19,6 +19,10 @@ export default async function Page() {
             </div>
             <div className="flex items-center gap-3">
               <Link href={`/dashboard/products/${product.id}`} className="text-forest">Edit</Link>
+              <form action={duplicateTwig}>
+                <input type="hidden" name="id" value={product.id} />
+                <button className="text-forest">Duplicate</button>
+              </form>
               <form action={setListingFree}>
                 <input type="hidden" name="id" value={product.id} />
                 <input type="hidden" name="free" value={product.feeExempt ? "0" : "1"} />

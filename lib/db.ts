@@ -1490,6 +1490,24 @@ export function uniqueSlug(userId: string, base: string, exceptId?: string) {
   return slug;
 }
 
+function duplicateTitle(title: string) {
+  const suffix = " (copy)";
+  const stripped = title.replace(/ \(copy(?: \d+)?\)$/, "").trim();
+  return `${stripped.slice(0, 80 - suffix.length).trimEnd()}${suffix}`;
+}
+
+export function duplicateProduct(sourceId: string, id: string) {
+  const product = getProductById(sourceId);
+  if (!product) return null;
+  const title = duplicateTitle(product.title);
+  const slug = uniqueSlug(product.userId, slugify(title));
+  insertProduct(id, product.userId, { ...product, title, slug, status: "draft" });
+  if (product.currency && product.currency !== "CAD") {
+    db.prepare("UPDATE products SET currency = ? WHERE id = ?").run(product.currency, id);
+  }
+  return { id, userId: product.userId, slug, title };
+}
+
 export function insertProduct(id: string, userId: string, input: ProductInput) {
   const now = new Date().toISOString();
   db.prepare(

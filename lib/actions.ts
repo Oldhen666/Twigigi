@@ -23,6 +23,7 @@ import {
   clearDeactivatesAt,
   clearDeactivatedAt,
   deleteProduct,
+  duplicateProduct,
   confirmListingRights,
   findListingByPath,
   findUserByEmail,
@@ -1993,6 +1994,17 @@ export async function setListingFree(formData: FormData) {
     updateTag(sellerTag(owner.publicId));
   }
   redirect(back || "/admin/twigs");
+}
+
+export async function duplicateTwig(formData: FormData) {
+  await requireAdmin();
+  const product = getProductById(text(formData, "id"));
+  if (!product) redirect("/admin/twigs");
+  const copy = duplicateProduct(product.id, newId("prd"));
+  const seller = findUserById(product.userId);
+  if (seller) updateTag(sellerTag(seller.publicId));
+  if (copy && seller) updateTag(productTag(seller.publicId, copy.slug));
+  redirect("/admin/twigs");
 }
 
 export async function adminSetTwig(formData: FormData) {
