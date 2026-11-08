@@ -63,6 +63,7 @@ export function orderCanComplete(order: StageOrder, now = Date.now()) {
   if (order.reviewState !== "accepted") return false;
   const paid = order.paymentStatus === "paid" || order.status === "paid";
   if (!paid) return false;
+  if (order.fulfillment === "digital" && (order.fileSentAt || fulfillmentDone(order.fulfillmentState))) return true;
   if (!fulfillmentDone(order.fulfillmentState)) return false;
   if (order.buyerReceivedAt) return true;
   if (!order.readyAt) return false;

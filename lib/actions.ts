@@ -32,6 +32,7 @@ import {
   findUserByUsername,
   findUserById,
   getOrder,
+  setOrderFileIssue,
   getProductById,
   getQuote,
   insertContentReport,
@@ -2057,15 +2058,58 @@ export async function confirmReceipt(formData: FormData) {
   const seller = findUserById(order.sellerId);
   if (product && seller) {
     const notify = sellerNotifyEmails(product, seller.email);
+    const digital = order.fulfillment === "digital";
     if (notify.length > 0) {
       await sendOrderEmail(notify, {
-        subject: `Receipt confirmed: ${order.productTitle}`,
-        text: [`${order.buyerName} confirmed receipt of order ${order.publicRef}.`, "You can mark the order complete.", "", `${appUrl()}/dashboard/orders/${order.id}`].join("\n"),
+        subject: digital ? `File access confirmed: ${order.productTitle}` : `Receipt confirmed: ${order.productTitle}`,
+        text: [
+          digital
+            ? `${order.buyerName} could open the file for order ${order.publicRef}.`
+            : `${order.buyerName} confirmed receipt of order ${order.publicRef}.`,
+          "You can mark the order complete.",
+          "",
+          `${appUrl()}/dashboard/orders/${order.id}`,
+        ].join("\n"),
         replyTo: order.email,
       });
     }
   }
   redirect(back);
+}
+
+const FILE_ISSUE_REASONS: Record<string, string> = {
+  link: "Link doesn't work",
+  access: "Access denied",
+  password: "Incorrect password",
+  file: "Wrong or missing file",
+};
+
+export async function reportDigitalFileIssue(formData: FormData) {
+  const id = text(formData, "id");
+  const order = getOrder(id);
+  const back = `/order/${id}`;
+  if (!order || order.fulfillment !== "digital" || order.status === "canceled") redirect("/");
+  const reason = FILE_ISSUE_REASONS[text(formData, "reason")];
+  if (!reason) redirect(back);
+  setOrderFileIssue(id, reason);
+  const product = getProductById(order.productId);
+  const seller = findUserById(order.sellerId);
+  if (product && seller) {
+    const notify = sellerNotifyEmails(product, seller.email);
+    if (notify.length > 0) {
+      await sendOrderEmail(notify, {
+        subject: `File issue: ${order.productTitle}`,
+        text: [
+          `${order.buyerName} could not use the file for order ${order.publicRef}.`,
+          `Issue: ${reason}`,
+          "",
+          `${appUrl()}/dashboard/orders/${order.id}`,
+        ].join("\n"),
+        replyTo: order.email,
+      });
+    }
+  }
+  redirect(`${back}?file=help`);
 }
 
 export async function completeOrder(_prev: FormState, formData: FormData): Promise<FormState> {

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { CopyOrderNumber } from "@/components/copy-order-number";
+import { DigitalFileAccess } from "@/components/digital-file-access";
 import { PrintReceipt } from "@/components/print-receipt";
 import { SellerContactButton } from "@/components/seller-contact";
 import { InteractionLine } from "@/components/interaction-line";
@@ -44,6 +45,7 @@ async function OrderView({
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   const canceled = order.status === "canceled" || order.reviewState === "declined";
   const digital = product?.cta === "file" || order.fulfillment === "digital";
+  const filePage = digital && paid && (order.fileLinks.length > 0 || Boolean(order.fileSentAt));
   const payFulfillment = order.fulfillment === "delivery" || order.fulfillment === "shipping" ? order.fulfillment : "pickup";
   const offeredPayments = !digital && product ? methodsForFulfillment(product.paymentMethods, payFulfillment) : [];
   const choosingPayment = query.pay === "choose" && !paid && !canceled && offeredPayments.length > 1;
@@ -52,7 +54,6 @@ async function OrderView({
   const question = order.interacQuestion || (order.buyerPayment === "interac" ? product?.interacQuestion ?? "" : "");
   const password = order.interacPassword || (order.buyerPayment === "interac" ? product?.interacPassword ?? "" : "");
   const buyerOwns = Boolean(account && (account.id === order.buyerId || account.email.toLowerCase() === order.email.toLowerCase() || (interaction && (account.id === interaction.buyerId || account.email.toLowerCase() === interaction.buyerEmail))));
-  const fileReady = Boolean(paid && digital && order.fileLinks.length > 0);
   const orderNumber = order.publicRef || interaction?.publicRef || "";
   const itemCount = order.lines.length > 0 ? order.lines.reduce((sum, line) => sum + line.quantity, 0) : order.quantity;
   const fulfillmentLabel = digital
@@ -161,16 +162,37 @@ async function OrderView({
                 ))}
               </div>
               <div className="mt-4 flex items-center justify-between gap-4 border-t border-line pt-4 text-sm text-muted">
-                <div className="space-y-3">
-                  {place ? <p className="flex items-center gap-2"><PinIcon /><span className="text-ink">{place}</span></p> : null}
-                  {whenLabel ? <p className="flex items-center gap-2"><CalendarIcon /><span className="text-ink">{whenLabel}</span></p> : null}
-                  {order.deliveryNote ? <p>Delivery instructions: {order.deliveryNote}</p> : null}
-                  {order.buyerNote ? <p>Note to seller: {order.buyerNote}</p> : null}
-                </div>
-                <PrintReceipt orderNumber={orderNumber} rows={receiptRows} />
+                {filePage ? (
+                  <p className="font-medium text-forest">Payment confirmed</p>
+                ) : (
+                  <div className="space-y-3">
+                    {place ? <p className="flex items-center gap-2"><PinIcon /><span className="text-ink">{place}</span></p> : null}
+                    {whenLabel ? <p className="flex items-center gap-2"><CalendarIcon /><span className="text-ink">{whenLabel}</span></p> : null}
+                    {order.deliveryNote ? <p>Delivery instructions: {order.deliveryNote}</p> : null}
+                    {order.buyerNote ? <p>Note to seller: {order.buyerNote}</p> : null}
+                  </div>
+                )}
+                <PrintReceipt orderNumber={orderNumber} rows={receiptRows} label={filePage ? "View receipt" : "Print receipt"} />
               </div>
             </section>
 
+            {filePage ? (
+              <DigitalFileAccess
+                orderId={order.id}
+                orderNumber={orderNumber}
+                links={order.fileLinks}
+                password={order.filePassword}
+                accessConfirmed={Boolean(order.buyerReceivedAt)}
+                issue={order.fileIssue}
+                helpSent={query.file === "help"}
+                contactMode={contact.mode}
+                contactValue={contact.value}
+                interactionId={buyerOwns && interaction ? interaction.id : ""}
+                productTitle={orderHeading(order)}
+                reviewed={interaction ? hasReview(interaction.id) : false}
+              />
+            ) : (
+            <>
             <section className="mt-4 rounded-3xl border border-line bg-white px-4 py-5">
               <h2 className="font-semibold">Order progress</h2>
               <ol className="mt-5 grid grid-cols-3 text-center">
@@ -286,6 +308,8 @@ async function OrderView({
               {orderNumber ? <span className="text-muted" aria-hidden>·</span> : null}
               {orderNumber ? <CopyOrderNumber value={orderNumber} variant="link" /> : null}
             </div>
+            </>
+            )}
           </>
         ) : (
           <>
@@ -350,7 +374,24 @@ async function OrderView({
           </section>
         ) : null}
 
-        {fulfillmentDone(order.fulfillmentState) && !order.buyerReceivedAt && !canceled ? (
+        {filePage && !showPlaced ? (
+          <DigitalFileAccess
+            orderId={order.id}
+            orderNumber={orderNumber}
+            links={order.fileLinks}
+            password={order.filePassword}
+            accessConfirmed={Boolean(order.buyerReceivedAt)}
+            issue={order.fileIssue}
+            helpSent={query.file === "help"}
+            contactMode={contact.mode}
+            contactValue={contact.value}
+            interactionId={buyerOwns && interaction ? interaction.id : ""}
+            productTitle={orderHeading(order)}
+            reviewed={interaction ? hasReview(interaction.id) : false}
+          />
+        ) : null}
+
+        {fulfillmentDone(order.fulfillmentState) && !order.buyerReceivedAt && !canceled && !digital ? (
           <form action={confirmReceipt} className="mt-4">
             <input type="hidden" name="id" value={order.id} />
             <button className={`${buttonClass} w-full`}>Confirm item received</button>
@@ -358,7 +399,7 @@ async function OrderView({
           </form>
         ) : null}
 
-        {interaction && buyerOwns && fulfillmentDone(order.fulfillmentState) ? (
+        {interaction && buyerOwns && fulfillmentDone(order.fulfillmentState) && !digital ? (
           <ReviewSeller
             interactionId={interaction.id}
             kind="order"
@@ -367,16 +408,6 @@ async function OrderView({
           />
         ) : null}
 
-        {fileReady ? (
-          <div className="mt-4 space-y-2 rounded-2xl bg-paper-deep px-4 py-3 text-sm">
-            {order.fileLinks.map((link) => (
-              <p key={link}>
-                <a href={link} className="break-all text-forest" target="_blank" rel="noreferrer">{link}</a>
-              </p>
-            ))}
-            {order.filePassword ? <p>Password: {order.filePassword}</p> : null}
-          </div>
-        ) : null}
         {!paid && !canceled && order.reviewState === "accepted" && product && !order.buyerPayment && !digital ? (
           <BuyerPay
             orderId={order.id}

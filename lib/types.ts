@@ -233,6 +233,7 @@ export type OrderRecord = {
   fileLinks: string[];
   filePassword: string;
   fileSentAt: string | null;
+  fileIssue: string;
   lines: OrderLine[];
   reviewState: "requested" | "accepted" | "changes" | "declined";
   proposalNote: string;

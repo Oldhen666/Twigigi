@@ -265,6 +265,7 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "file_password", "file_password TEXT NOT NULL DEFAULT ''");
   add("orders", "file_links", "file_links TEXT NOT NULL DEFAULT '[]'");
   add("orders", "file_password", "file_password TEXT NOT NULL DEFAULT ''");
+  add("orders", "file_issue", "file_issue TEXT NOT NULL DEFAULT ''");
   addFileSentAt(database);
   add("orders", "lines_json", "lines_json TEXT NOT NULL DEFAULT '[]'");
   add("orders", "buyer_payment", "buyer_payment TEXT NOT NULL DEFAULT ''");
@@ -1018,6 +1019,7 @@ function mapOrder(row: Row): OrderRecord {
     fileLinks: readStoredFileLinks(str(row.file_links)),
     filePassword: str(row.file_password),
     fileSentAt: row.file_sent_at ? str(row.file_sent_at) : null,
+    fileIssue: str(row.file_issue),
     lines: parseOrderLines(str(row.lines_json)),
     reviewState: row.review_state === "accepted" || row.review_state === "changes" || row.review_state === "declined" ? row.review_state : "requested",
     proposalNote: str(row.proposal_note),
@@ -2906,6 +2908,10 @@ export function markFileSent(id: string, userId: string) {
   ).run(now, now, id, userId);
 }
 
+export function setOrderFileIssue(id: string, issue: string) {
+  db.prepare("UPDATE orders SET file_issue = ? WHERE id = ? AND fulfillment = 'digital'").run(issue.slice(0, 160), id);
+}
+
 export function setPaypalOrderId(orderId: string, paypalOrderId: string) {
   db.prepare("UPDATE orders SET paypal_order_id = ? WHERE id = ?").run(paypalOrderId, orderId);
 }
@@ -3232,7 +3238,8 @@ function ships(fulfillment: string) {
 export function confirmBuyerReceipt(id: string) {
   const order = getOrder(id);
   if (!order || order.status === "canceled" || order.reviewState === "declined") return false;
-  if (!fulfillmentDone(order.fulfillmentState)) return false;
+  const digitalReady = order.fulfillment === "digital" && order.fileLinks.length > 0 && (order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled");
+  if (!fulfillmentDone(order.fulfillmentState) && !digitalReady) return false;
   const now = new Date().toISOString();
   db.prepare(`UPDATE orders SET buyer_received_at = COALESCE(NULLIF(buyer_received_at, ''), ?) WHERE id = ?`).run(now, id);
   db.prepare(`UPDATE interactions SET buyer_confirmed_at = COALESCE(buyer_confirmed_at, ?) WHERE source_id = ?`).run(now, id);

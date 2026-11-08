@@ -3,9 +3,13 @@
 export function PrintReceipt({
   orderNumber,
   rows,
+  label = "Print receipt",
+  className = "",
 }: {
   orderNumber: string;
   rows: { label: string; value: string }[];
+  label?: string;
+  className?: string;
 }) {
   return (
     <>
@@ -25,8 +29,8 @@ export function PrintReceipt({
           }
         }
       `}</style>
-      <button type="button" onClick={() => window.print()} className="ml-auto shrink-0 text-sm font-medium text-forest">
-        Print receipt
+      <button type="button" onClick={() => window.print()} className={className || "ml-auto shrink-0 text-sm font-medium text-forest"}>
+        {label}
       </button>
       <section id="order-receipt" className="hidden print:block">
         <p className="text-xs font-medium uppercase tracking-[0.16em]">Twigigi</p>

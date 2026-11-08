@@ -33,10 +33,11 @@ export function SellerOrderFlow({
   if (isCashMethod(order.buyerPayment) && order.fulfillment === "pickup" && order.status !== "canceled" && order.reviewState !== "declined") {
     return <CashPickupSeller order={order} mail={mail} pickupSchedules={pickupSchedules} pickupSummary={pickupSummary} />;
   }
-  if (!mail && !reviewing && !confirmed && order.reviewState !== "changes" && !showInterac) return null;
+  if (!mail && !reviewing && !confirmed && order.reviewState !== "changes" && !showInterac && !(digital && order.fileIssue)) return null;
   return (
     <section className="mt-6 rounded-2xl border border-line bg-card p-4">
       {mail === "0" ? <p className="text-sm text-danger">The status was saved, but the email could not be sent.</p> : null}
+      {digital && order.fileIssue ? <p className="text-sm">The buyer could not open the file: {order.fileIssue}</p> : null}
       {mail === "ship" ? <p className="text-sm text-danger">Enter the carrier and a tracking number.</p> : null}
       {mail === "note" ? <p className="mt-3 text-sm text-danger">Describe the change in a few words.</p> : null}
       {mail === "amount" ? <p className="mt-3 text-sm text-danger">Enter a new total of at least $0.50, or leave it blank.</p> : null}
