@@ -5,6 +5,8 @@ export type BillingMethod = "card" | "paypal" | "stripe";
 
 export const LISTING_CENTS = 149;
 export const QUOTE_SUBMISSION_CENTS = 25;
+export const MINIMUM_BILL_CENTS = LISTING_CENTS;
+export const QUOTE_CARRY_MONTHS = 3;
 
 export function billingCurrency(location: string) {
   return splitLocation(location).country === "US" ? "USD" : "CAD";
@@ -17,6 +19,11 @@ export function listingFeeCurrency(cta: string, location: string) {
 
 export function formatListingFee(currency: string) {
   return currency === "USD" ? "USD$1.49" : "C$1.49";
+}
+
+export function platformFee(cents: number, currency: string) {
+  const amount = (cents / 100).toFixed(2);
+  return currency === "USD" ? `USD$${amount}` : `C$${amount}`;
 }
 
 export function listingFeeCents(cta: string, feeExempt = false) {
@@ -42,6 +49,23 @@ export function listingStillPaid(
   const anchor = product.deactivatedAt || product.billingStartedAt || product.createdAt;
   const until = Date.parse(nextBillingDate(new Date(anchor)));
   return Number.isFinite(until) && until > now.getTime();
+}
+
+export function quoteCarryExpired(oldestIso: string | null, now = new Date()) {
+  if (!oldestIso) return false;
+  const oldest = Date.parse(oldestIso);
+  const start = new Date(periodStart(now));
+  if (!Number.isFinite(oldest) || Number.isNaN(start.getTime())) return false;
+  start.setUTCMonth(start.getUTCMonth() - QUOTE_CARRY_MONTHS);
+  return oldest < start.getTime();
+}
+
+export function periodCharge(input: { listingCents: number; quoteCents: number; oldestQuoteAt: string | null; now?: Date }) {
+  const chargeQuotes = input.listingCents > 0 || input.quoteCents >= MINIMUM_BILL_CENTS || quoteCarryExpired(input.oldestQuoteAt, input.now);
+  return {
+    dueCents: input.listingCents + (chargeQuotes ? input.quoteCents : 0),
+    carriedCents: chargeQuotes ? 0 : input.quoteCents,
+  };
 }
 
 export function activeWindow(startedAt: string | null, now = new Date()) {

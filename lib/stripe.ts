@@ -24,22 +24,63 @@ export async function createStripeConnectLink(input: { accountId: string; email:
   const stripe = getStripe();
   if (!stripe) return null;
   let accountId = input.accountId;
-  if (!accountId) {
-    const account = await stripe.accounts.create({
-      type: "express",
-      country: input.country,
-      email: input.email,
-      capabilities: { card_payments: { requested: true } },
+  try {
+    if (!accountId) {
+      const account = await stripe.accounts.create({
+        type: "express",
+        country: input.country,
+        email: input.email,
+        capabilities: {
+          card_payments: { requested: true },
+          transfers: { requested: true },
+        },
+      });
+      accountId = account.id;
+    }
+    const link = await stripe.accountLinks.create({
+      account: accountId,
+      type: "account_onboarding",
+      refresh_url: `${appUrl()}/dashboard/payments?stripe=refresh`,
+      return_url: `${appUrl()}/dashboard/payments?stripe=return`,
     });
-    accountId = account.id;
+    if (!link.url) return { accountId, url: "", message: "Stripe did not return a connection page." };
+    return { accountId, url: link.url, message: "" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Stripe could not open the connection page.";
+    console.error("Stripe Connect link failed.", message);
+    return { accountId, url: "", message: message.slice(0, 180) };
   }
-  const link = await stripe.accountLinks.create({
-    account: accountId,
-    type: "account_onboarding",
-    refresh_url: `${appUrl()}/dashboard/payments?stripe=refresh`,
-    return_url: `${appUrl()}/dashboard/payments?stripe=return`,
+}
+
+export async function createBillingSetupSession(input: { customerId: string; email: string; userId: string }) {
+  const stripe = getStripe();
+  if (!stripe) return null;
+  let customerId = input.customerId;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: input.email,
+      metadata: { userId: input.userId, purpose: "twigigi_billing" },
+    });
+    customerId = customer.id;
+  }
+  const session = await stripe.checkout.sessions.create({
+    mode: "setup",
+    customer: customerId,
+    currency: "cad",
+    success_url: `${appUrl()}/dashboard/payments?tab=receipts&billing=return&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${appUrl()}/dashboard/payments?tab=receipts&billing=canceled`,
+    metadata: { purpose: "billing_setup", userId: input.userId },
   });
-  return { accountId, url: link.url };
+  if (!session.url) return { customerId, url: "" };
+  return { customerId, url: session.url };
+}
+
+export async function billingSetupCustomer(sessionId: string, userId: string) {
+  const stripe = getStripe();
+  if (!stripe || !sessionId) return "";
+  const session = await stripe.checkout.sessions.retrieve(sessionId);
+  if (session.metadata?.purpose !== "billing_setup" || session.metadata.userId !== userId || session.status !== "complete") return "";
+  return typeof session.customer === "string" ? session.customer : "";
 }
 
 export async function createDigitalStripeCheckout(input: {

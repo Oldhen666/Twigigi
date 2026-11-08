@@ -10,7 +10,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, digitalPayMethods, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
-import { beginDigitalPaypalCheckout, paypalCheckoutError, paypalConfigured } from "@/lib/paypal";
+import { beginDigitalPaypalCheckout, beginPaypalBillingAgreement, paypalCheckoutError, paypalConfigured } from "@/lib/paypal";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
@@ -65,6 +65,7 @@ import {
   setOrderPaymentSnapshot,
   setOrderStripeAccount,
   setStripeAccount,
+  rememberStripeCustomer,
   setBuyerPaymentMethod,
   recordPaymentLinkChange,
   setInteracPrompt,
@@ -138,7 +139,7 @@ import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { ensureVisitor } from "@/lib/visitor";
 import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { normalizeQuoteForm } from "@/lib/quote-form";
-import { createDigitalStripeCheckout, createStripeConnectLink, getStripe } from "@/lib/stripe";
+import { createBillingSetupSession, createDigitalStripeCheckout, createStripeConnectLink, getStripe } from "@/lib/stripe";
 import { DIGITAL_FILE_CATEGORY, categoryProblem, resolveCategory } from "@/lib/categories";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
 
@@ -1260,11 +1261,37 @@ export async function startStripeConnect(formData: FormData) {
   try {
     const linked = await createStripeConnectLink({ accountId: user.stripeAccountId, email: user.email, country });
     if (!linked) redirect("/dashboard/payments?stripe=setup");
-    setStripeAccount(user.id, linked.accountId, user.stripeChargesEnabled);
+    if (linked.accountId) setStripeAccount(user.id, linked.accountId, user.stripeChargesEnabled);
+    if (!linked.url) redirect(`/dashboard/payments?stripe=error&reason=${encodeURIComponent(linked.message || "Stripe could not open the connection page.")}`);
     redirect(linked.url);
   } catch (error) {
     unstable_rethrow(error);
     redirect("/dashboard/payments?stripe=error");
+  }
+}
+
+export async function beginBillingSetup(formData: FormData) {
+  const user = await requireSeller();
+  const method = text(formData, "method") === "paypal" ? "paypal" : "card";
+  try {
+    if (method === "paypal") {
+      if (!paypalConfigured()) redirect("/dashboard/payments?tab=receipts&billing=paypal&reason=PayPal%20is%20not%20set%20up%20on%20this%20server%20yet.");
+      const url = await beginPaypalBillingAgreement();
+      redirect(url);
+    }
+    const session = await createBillingSetupSession({ customerId: user.stripeCustomerId, email: user.email, userId: user.id });
+    if (!session) redirect("/dashboard/payments?tab=receipts&billing=setup");
+    if (session.customerId) rememberStripeCustomer(user.id, session.customerId);
+    if (!session.url) redirect("/dashboard/payments?tab=receipts&billing=error");
+    redirect(session.url);
+  } catch (error) {
+    unstable_rethrow(error);
+    const raw = error instanceof Error ? error.message : "";
+    const reason = raw === "PAYPAL_AUTH" || raw === "PAYPAL_BILLING" || raw === "PERMISSION_DENIED"
+      ? "PayPal has not enabled billing agreements for Twigigi yet. This method is not connected."
+      : raw.slice(0, 180);
+    const code = method === "paypal" ? "paypal" : "error";
+    redirect(`/dashboard/payments?tab=receipts&billing=${code}${reason ? `&reason=${encodeURIComponent(reason)}` : ""}`);
   }
 }
 

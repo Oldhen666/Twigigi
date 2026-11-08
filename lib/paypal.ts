@@ -177,6 +177,37 @@ export function readPaypalWebhookCapture(event: unknown): PaypalCapture | null {
   return readCaptureRecord(record.resource);
 }
 
+export async function beginPaypalBillingAgreement() {
+  const body = await paypalFetch("/v1/billing-agreements/agreement-tokens", {
+    method: "POST",
+    body: {
+      description: "Twigigi listing and quote fees",
+      payer: { payment_method: "PAYPAL" },
+      plan: {
+        type: "MERCHANT_INITIATED_BILLING",
+        merchant_preferences: {
+          return_url: `${appUrl()}/api/paypal/billing/return`,
+          cancel_url: `${appUrl()}/dashboard/payments?tab=receipts&billing=canceled`,
+          accepted_pymt_type: "INSTANT",
+          skip_shipping_address: true,
+        },
+      },
+    },
+  });
+  const links = Array.isArray(body?.links) ? body.links : [];
+  const approval = links.find((link) => link && typeof link === "object" && (link as { rel?: string }).rel === "approval_url") as { href?: string } | undefined;
+  if (!approval?.href) throw new PaypalCheckoutError("PAYPAL_BILLING");
+  return approval.href;
+}
+
+export async function executePaypalBillingAgreement(token: string) {
+  if (!token) throw new PaypalCheckoutError("PAYPAL_BILLING");
+  const body = await paypalFetch("/v1/billing-agreements", { method: "POST", body: { token_id: token } });
+  const id = typeof body?.id === "string" ? body.id : "";
+  if (!id) throw new PaypalCheckoutError("PAYPAL_BILLING");
+  return id;
+}
+
 export async function paypalWebhookVerified(requestHeaders: Headers, event: unknown) {
   const webhookId = process.env.PAYPAL_WEBHOOK_ID || "";
   if (!webhookId) return false;

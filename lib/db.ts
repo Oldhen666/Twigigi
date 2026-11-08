@@ -330,6 +330,9 @@ function ensureColumns(database: DatabaseSync) {
   add("users", "payout_venmo", "payout_venmo TEXT NOT NULL DEFAULT ''");
   add("users", "payout_zelle", "payout_zelle TEXT NOT NULL DEFAULT ''");
   add("users", "stripe_account_id", "stripe_account_id TEXT NOT NULL DEFAULT ''");
+  add("users", "stripe_customer_id", "stripe_customer_id TEXT NOT NULL DEFAULT ''");
+  add("users", "billing_ready", "billing_ready INTEGER NOT NULL DEFAULT 0");
+  add("users", "paypal_billing_id", "paypal_billing_id TEXT NOT NULL DEFAULT ''");
   add("users", "stripe_charges_enabled", "stripe_charges_enabled INTEGER NOT NULL DEFAULT 0");
   add("users", "public_id", "public_id TEXT NOT NULL DEFAULT ''");
   add("users", "bio", "bio TEXT NOT NULL DEFAULT ''");
@@ -930,6 +933,9 @@ function mapUser(row: Row): User {
     role,
     createdAt: str(row.created_at),
     billingMethod: row.billing_method === "card" || row.billing_method === "paypal" || row.billing_method === "stripe" ? row.billing_method : "",
+    billingReady: num(row.billing_ready) === 1,
+    stripeCustomerId: str(row.stripe_customer_id),
+    paypalBillingId: str(row.paypal_billing_id),
     payoutInterac: str(row.payout_interac),
     payoutVenmo: str(row.payout_venmo),
     payoutZelle: str(row.payout_zelle),
@@ -1811,6 +1817,41 @@ export function setQuoteFeeExempt(id: string, exempt: boolean) {
 
 export function setBillingMethod(userId: string, method: string) {
   db.prepare("UPDATE users SET billing_method = ? WHERE id = ?").run(method, userId);
+}
+
+export function rememberStripeCustomer(userId: string, customerId: string) {
+  db.prepare("UPDATE users SET stripe_customer_id = ? WHERE id = ?").run(customerId, userId);
+}
+
+export function setBillingAuthorization(userId: string, input: { method: "card" | "paypal"; ready: boolean; stripeCustomerId?: string; paypalBillingId?: string }) {
+  db.prepare(
+    `UPDATE users
+     SET billing_method = ?, billing_ready = ?, stripe_customer_id = COALESCE(?, stripe_customer_id), paypal_billing_id = COALESCE(?, paypal_billing_id)
+     WHERE id = ?`,
+  ).run(input.method, input.ready ? 1 : 0, input.stripeCustomerId ?? null, input.paypalBillingId ?? null, userId);
+}
+
+export function listBillingListings(userId: string) {
+  return many(
+    "SELECT title, cta, location, fee_exempt FROM products WHERE user_id = ? AND status = 'published'",
+    userId,
+  ).map((row) => ({
+    title: str(row.title),
+    cta: str(row.cta),
+    location: str(row.location),
+    feeExempt: num(row.fee_exempt) === 1,
+  }));
+}
+
+export function quotePeriodCounts(userId: string, since: string) {
+  return many(
+    `SELECT COALESCE(p.location, '') AS location, q.billable AS billable, COUNT(*) AS n
+     FROM quotes q JOIN products p ON p.id = q.product_id
+     WHERE p.user_id = ? AND q.created_at >= ?
+     GROUP BY location, q.billable`,
+    userId,
+    since,
+  ).map((row) => ({ location: str(row.location), billable: num(row.billable) === 1, count: num(row.n) }));
 }
 
 export function setPayoutDetails(userId: string, input: { interac: string; venmo: string; zelle: string }) {

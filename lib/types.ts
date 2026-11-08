@@ -31,6 +31,9 @@ export type User = {
   role: UserRole;
   createdAt: string;
   billingMethod: "" | "card" | "paypal" | "stripe";
+  billingReady: boolean;
+  stripeCustomerId: string;
+  paypalBillingId: string;
   payoutInterac: string;
   payoutVenmo: string;
   payoutZelle: string;

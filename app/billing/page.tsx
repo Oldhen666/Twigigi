@@ -40,7 +40,7 @@ async function BillingScreen({
             <span>Valid new quote request</span>
             <span>{quoteRequest} each</span>
           </div>
-          <p className="text-muted">Quote fees add up during the month and are included with the listing fee on the next bill. Twigigi does not charge the card for each quote. The same buyer is not charged again for the same request.</p>
+          <p className="text-muted">Quote fees add up during the month and are included with the listing fee on the next bill. Twigigi does not charge the card for each quote. A quote-only balance under C$1.49 waits for the next bill. Deactivating a listing stops future listing charges and does not refund the current period. Quote fees already incurred remain payable.</p>
         </div>
         <form action={saveBillingMethod} className="mt-8">
           <input type="hidden" name="next" value={next} />

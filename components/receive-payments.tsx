@@ -9,6 +9,7 @@ export function ReceivePayments({
   stripeReady,
   stripeStarted,
   stripeMessage,
+  stripeReason = "",
   interac,
   venmo,
   zelle,
@@ -17,6 +18,7 @@ export function ReceivePayments({
   stripeReady: boolean;
   stripeStarted: boolean;
   stripeMessage: "" | "setup" | "error";
+  stripeReason?: string;
   interac: string;
   venmo: string;
   zelle: string;
@@ -53,7 +55,7 @@ export function ReceivePayments({
           {stripeStatus}
         </p>
         {stripeMessage === "setup" ? <p className="mt-3 text-sm text-clay">Stripe is not set up on this server yet.</p> : null}
-        {stripeMessage === "error" ? <p className="mt-3 text-sm text-clay">Stripe could not open the connection page.</p> : null}
+        {stripeMessage === "error" ? <p className="mt-3 text-sm text-clay">{stripeReason || "Stripe could not open the connection page."}</p> : null}
         {stripeReady ? null : (
           <form action={startStripeConnect} className="mt-4">
             <input type="hidden" name="country" value={country} />
