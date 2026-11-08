@@ -10,10 +10,10 @@ import { CA_PROVINCES, US_STATES, joinLocation, lookupCurrentPlace, lookupIpPlac
 import { digitalPayModeOf, digitalPayProblem, parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile, paypalMeName, venmoProfileUrl, venmoUsernameFrom, type DigitalPayMode } from "@/lib/payments";
 
 const DIGITAL_PAY_CHOICES: Record<DigitalPayMode, { label: string; placeholder: string; instruction: string }> = {
-  paypal_email: {
-    label: "PayPal email",
-    placeholder: "name@email.com (PayPal email)",
-    instruction: "Enter the PayPal email you already use. Buyers pay you directly, and Twigigi fills in this file's price. PayPal lets them pay by card.",
+  paypal_me: {
+    label: "PayPal.Me link",
+    placeholder: "https://paypal.me/yourname",
+    instruction: "",
   },
   stripe: {
     label: "Stripe payment link",
@@ -544,14 +544,14 @@ function PaymentChoices({
             value={payMode}
             onChange={(event) => {
               const next = event.target.value;
-              if (next !== "paypal_email" && next !== "stripe" && next !== "square" && next !== "paypal_link") return;
+              if (next !== "paypal_me" && next !== "stripe" && next !== "square" && next !== "paypal_link") return;
               setPayMode(next);
               if (cardUrl.trim() && digitalPayProblem(cardUrl, next)) onCardUrl("");
             }}
             aria-label="Payment setup"
             className={inputClass}
           >
-            <option value="paypal_email">PayPal email</option>
+            <option value="paypal_me">PayPal.Me link</option>
             <option value="stripe">Stripe payment link</option>
             <option value="square">Square payment link</option>
             <option value="paypal_link">PayPal payment link</option>
@@ -564,11 +564,26 @@ function PaymentChoices({
             value={cardUrl}
             onChange={(event) => onCardUrl(event.target.value)}
             placeholder={payChoice.placeholder}
-            inputMode={payMode === "paypal_email" ? "email" : "url"}
-            autoComplete={payMode === "paypal_email" ? "email" : "off"}
+            inputMode="url"
+            autoComplete="off"
             className={inputClass}
           />
-          <span className="mt-1 block text-sm text-muted">{payChoice.instruction}</span>
+          {payMode === "paypal_me" ? (
+            <span className="mt-1 block text-sm text-muted">
+              Create yours at{" "}
+              <a href="https://www.paypal.com/paypalme/" target="_blank" rel="noreferrer" className="text-forest">
+                https://www.paypal.com/paypalme/
+              </a>
+              , then paste it here. Example: https://paypal.me/yourname. Do not add an amount or a currency. Twigigi fills in this file's price when a buyer pays.
+            </span>
+          ) : (
+            <span className="mt-1 block text-sm text-muted">{payChoice.instruction}</span>
+          )}
+          {payMode === "paypal_me" && paypalMeName(cardUrl) ? (
+            <a href={`https://paypal.me/${paypalMeName(cardUrl)}`} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-forest">
+              Test payment link
+            </a>
+          ) : null}
         </Field>
       </div>
     );

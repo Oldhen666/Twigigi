@@ -9,7 +9,7 @@ import { updateTag } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
+import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, readDigitalPayMode, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
@@ -571,7 +571,11 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   }
   const payCountry = splitLocation(cta === "file" ? "" : location).country;
   const paymentMethods = cta === "file" ? ["card"] : priced ? parsePaymentMethods(text(formData, "paymentMethods"), payCountry) : [];
-  const cardPaymentUrl = text(formData, "cardPaymentUrl").trim().slice(0, 500);
+  let cardPaymentUrl = text(formData, "cardPaymentUrl").trim().slice(0, 500);
+  if (cta === "file" && readDigitalPayMode(text(formData, "digitalPayMode")) === "paypal_me") {
+    const name = paypalMeName(cardPaymentUrl);
+    if (name) cardPaymentUrl = `https://paypal.me/${name}`;
+  }
   const interacEmail = text(formData, "interacEmail").trim().slice(0, 80);
   const interacQuestion = text(formData, "interacQuestion").trim().slice(0, 120);
   const interacPassword = text(formData, "interacPassword").trim().slice(0, 80);
@@ -588,7 +592,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       errors.paymentMethods = payCountry ? "Choose at least one way buyers can pay." : "Choose a country before choosing how buyers pay.";
     }
     if (cta === "file") {
-      const problem = digitalPayProblem(cardPaymentUrl, text(formData, "digitalPayMode"));
+      const payMode = text(formData, "digitalPayMode");
+      const problem = digitalPayProblem(cardPaymentUrl, payMode);
       if (problem) errors.cardPaymentUrl = problem;
     } else if (paymentMethods.includes("card")) {
       const problem = cardLinkProblem(cardPaymentUrl);

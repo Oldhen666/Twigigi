@@ -208,10 +208,11 @@ export function cardLinkProblem(url: string) {
   return safeCardUrl(trimmed) ? null : "Use a full http(s) payment link.";
 }
 
-export type DigitalPayMode = "paypal_email" | "stripe" | "square" | "paypal_link";
+export type DigitalPayMode = "paypal_me" | "stripe" | "square" | "paypal_link";
 
 export function readDigitalPayMode(value: string): DigitalPayMode | "" {
-  if (value === "paypal_email" || value === "stripe" || value === "square" || value === "paypal_link") return value;
+  if (value === "paypal_me" || value === "paypal_email") return "paypal_me";
+  if (value === "stripe" || value === "square" || value === "paypal_link") return value;
   return "";
 }
 
@@ -242,22 +243,21 @@ function payHostKind(url: string) {
 
 export function digitalPayModeOf(value: string): DigitalPayMode {
   const trimmed = value.trim();
-  if (!trimmed || safeEmail(trimmed)) return "paypal_email";
+  if (paypalMeName(trimmed)) return "paypal_me";
+  if (!trimmed || safeEmail(trimmed)) return "paypal_me";
   const url = safeCardUrl(trimmed);
-  if (!url) return "paypal_email";
+  if (!url) return "paypal_me";
   const kind = payHostKind(url);
   if (kind === "stripe" || kind === "square") return kind;
-  return "paypal_link";
+  if (kind === "paypal") return "paypal_link";
+  return "paypal_me";
 }
 
 export function digitalPayProblem(value: string, modeRaw = "") {
   const mode = readDigitalPayMode(modeRaw) || digitalPayModeOf(value);
   const trimmed = value.trim();
   if (trimmed.length > 500) return "Keep this under 500 characters.";
-  if (mode === "paypal_email") {
-    if (!trimmed) return "Enter the PayPal email where buyers pay you.";
-    return safeEmail(trimmed) ? null : "Enter an email like name@email.com.";
-  }
+  if (mode === "paypal_me") return paypalMeProblem(trimmed);
   if (!trimmed) {
     if (mode === "stripe") return "Paste your Stripe Payment Link.";
     if (mode === "square") return "Paste your Square payment link.";

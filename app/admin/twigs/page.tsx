@@ -15,7 +15,7 @@ export default async function Page() {
           <li key={product.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card px-4 py-3 text-sm">
             <div>
               <p className="font-medium">{product.title}</p>
-              <p className="text-muted">{product.displayName} · {product.status}{product.deactivatesAt ? " · ending" : ""}{product.feeExempt ? " · free forever" : ""}{product.quoteFeeExempt ? " · quote fee waived" : ""}</p>
+              <p className="text-muted">{product.displayName} · {product.status}{product.deactivatesAt ? " · ending" : ""}{product.feeExempt ? " · free forever" : ""}{product.cta === "quote" && product.quoteFeeExempt ? " · quote fee waived" : ""}</p>
             </div>
             <div className="flex items-center gap-3">
               <Link href={`/dashboard/products/${product.id}`} className="text-forest">Edit</Link>
@@ -23,12 +23,14 @@ export default async function Page() {
                 <input type="hidden" name="id" value={product.id} />
                 <button className="text-forest">Duplicate</button>
               </form>
-              <form action={setQuoteFeeFree}>
-                <input type="hidden" name="id" value={product.id} />
-                <input type="hidden" name="free" value={product.quoteFeeExempt ? "0" : "1"} />
-                <input type="hidden" name="next" value="/admin/twigs" />
-                <button className="text-forest">{product.quoteFeeExempt ? "Charge quote fee" : "Waive quote fee"}</button>
-              </form>
+              {product.cta === "quote" ? (
+                <form action={setQuoteFeeFree}>
+                  <input type="hidden" name="id" value={product.id} />
+                  <input type="hidden" name="free" value={product.quoteFeeExempt ? "0" : "1"} />
+                  <input type="hidden" name="next" value="/admin/twigs" />
+                  <button className="text-forest">{product.quoteFeeExempt ? "Charge quote fee" : "Waive quote fee"}</button>
+                </form>
+              ) : null}
               <form action={setListingFree}>
                 <input type="hidden" name="id" value={product.id} />
                 <input type="hidden" name="free" value={product.feeExempt ? "0" : "1"} />
