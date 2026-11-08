@@ -28,7 +28,7 @@ async function QuoteScreen({
   const details = detailCards(quote.projectDetails);
   const currency = product.currency || "CAD";
   const offer = quote.offerSentAt && quote.offerKind
-    ? { kind: quote.offerKind, cents: quote.offerCents, scope: quote.offerScope, timeline: quote.offerTimeline, validDays: quote.offerValidDays }
+    ? { kind: quote.offerKind, cents: quote.offerCents, scope: quote.offerScope, note: quote.offerNote, timeline: quote.offerTimeline, validDays: quote.offerValidDays }
     : null;
 
   return (
@@ -80,6 +80,12 @@ async function QuoteScreen({
             <p className="mt-1 font-serif text-3xl">{formatMoney(offer.cents, currency)}</p>
             <p className="mt-1 text-sm text-muted">{offer.kind === "fixed" ? "Fixed price" : "Estimated price"} · Valid for {offer.validDays} days{offer.timeline ? ` · ${offer.timeline}` : ""} · Sent {formatDate(quote.offerSentAt)}</p>
             <p className="mt-3 text-sm">{offer.scope}</p>
+            {offer.note ? (
+              <p className="mt-3 text-sm">
+                <span className="block text-xs text-muted">Note</span>
+                {offer.note}
+              </p>
+            ) : null}
           </div>
         ) : null}
 

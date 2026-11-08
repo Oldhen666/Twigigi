@@ -5,7 +5,8 @@ import { Suspense } from "react";
 import { Stage } from "@/components/stage";
 import { buttonClass, ghostClass } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth";
-import { claimBuyerOrders, getInteractionBySource, getQuote } from "@/lib/db";
+import { claimBuyerOrders, findUserById, getInteractionBySource, getProductById, getQuote } from "@/lib/db";
+import { formatDate, formatMoney } from "@/lib/format";
 
 function sentLine(files: number) {
   if (files === 1) return "Your request and 1 attachment have been sent to the seller.";
@@ -21,6 +22,9 @@ async function QuoteView({ params }: { params: Promise<{ id: string }> }) {
   const account = await getCurrentUser();
   if (account && account.email.toLowerCase() === quote.email.toLowerCase()) claimBuyerOrders(account.id, account.email);
   const interaction = getInteractionBySource(quote.id);
+  const product = getProductById(quote.productId);
+  const seller = product ? findUserById(product.userId) : null;
+  const replied = Boolean(quote.offerSentAt && quote.offerKind && product);
   const listing = `/${quote.publicId}/${quote.productSlug}`;
   const signup = `/signup?email=${encodeURIComponent(quote.email)}&next=${encodeURIComponent("/orders")}`;
   return (
@@ -32,10 +36,28 @@ async function QuoteView({ params }: { params: Promise<{ id: string }> }) {
               <path d="M2.5 6.2 4.8 8.5 9.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </span>
-          Quote request sent
+          {replied ? "Quote from the seller" : "Quote request sent"}
         </p>
         <h1 className="mt-3 font-serif text-4xl leading-tight">{quote.productTitle}</h1>
-        <p className="mt-3 text-sm leading-6 text-muted">{sentLine(quote.documents.length)}</p>
+        {replied && quote.offerSentAt && product ? (
+          <section className="mt-5 rounded-2xl bg-paper-deep px-4 py-4">
+            {seller ? <p className="text-sm text-muted">From {seller.displayName}</p> : null}
+            <p className="mt-1 font-serif text-3xl">{formatMoney(quote.offerCents, product.currency || "CAD")}</p>
+            <p className="mt-1 text-sm text-muted">
+              {quote.offerKind === "fixed" ? "Fixed price" : "Estimated price"} · Valid for {quote.offerValidDays} days
+              {quote.offerTimeline ? ` · ${quote.offerTimeline}` : ""} · Sent {formatDate(quote.offerSentAt)}
+            </p>
+            <p className="mt-3 text-sm">{quote.offerScope}</p>
+            {quote.offerNote ? (
+              <p className="mt-3 text-sm">
+                <span className="block text-xs text-muted">Note</span>
+                {quote.offerNote}
+              </p>
+            ) : null}
+          </section>
+        ) : (
+          <p className="mt-3 text-sm leading-6 text-muted">{sentLine(quote.documents.length)}</p>
+        )}
 
         <section className="mt-5 rounded-2xl bg-paper-deep px-4 py-4">
           <h2 className="font-serif text-xl">What happens next?</h2>

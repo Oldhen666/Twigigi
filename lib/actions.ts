@@ -2242,8 +2242,6 @@ export async function closeQuoteRequest(_prev: FormState, formData: FormData): P
   const owned = ownedQuote(text(formData, "id"), user.id);
   if (!owned) return { error: "That quote is not yours." };
   updateQuoteStatus(owned.quote.id, user.id, "closed");
-  const interaction = getInteractionBySource(owned.quote.id);
-  if (interaction) confirmInteractionParty(interaction.id, user.id, user.email, "seller");
   return { next: `/dashboard/quotes/${owned.quote.id}` };
 }
 
@@ -2255,6 +2253,7 @@ export async function sendSellerQuote(_prev: FormState, formData: FormData): Pro
   const days = Number(text(formData, "validDays"));
   const scope = text(formData, "scope").trim().slice(0, 2000);
   const timeline = text(formData, "timeline").trim().replace(/\s+/g, " ").slice(0, 80);
+  const note = text(formData, "note").trim().slice(0, 1000);
   const amount = text(formData, "amount").trim();
   const fieldErrors: Record<string, string> = {};
   if (kind !== "fixed" && kind !== "estimate") fieldErrors.quoteKind = "Choose a quote type.";
@@ -2268,6 +2267,7 @@ export async function sendSellerQuote(_prev: FormState, formData: FormData): Pro
     kind: kind as "fixed" | "estimate",
     cents,
     scope,
+    note,
     timeline,
     validDays: days,
   });
@@ -2288,6 +2288,11 @@ export async function sendSellerQuote(_prev: FormState, formData: FormData): Pro
       "",
       "Scope of work",
       scope,
+      note ? "" : null,
+      note ? "Note" : null,
+      note || null,
+      "",
+      `View this quote: ${appUrl()}/quote/${owned.quote.id}`,
       "",
       "Reply to this email to reach the seller.",
     ].filter((line): line is string => line !== null).join("\n"),

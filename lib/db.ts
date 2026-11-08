@@ -349,6 +349,7 @@ function ensureColumns(database: DatabaseSync) {
   add("quotes", "offer_cents", "offer_cents INTEGER NOT NULL DEFAULT 0");
   add("quotes", "offer_scope", "offer_scope TEXT NOT NULL DEFAULT ''");
   add("quotes", "offer_timeline", "offer_timeline TEXT NOT NULL DEFAULT ''");
+  add("quotes", "offer_note", "offer_note TEXT NOT NULL DEFAULT ''");
   add("quotes", "offer_valid_days", "offer_valid_days INTEGER NOT NULL DEFAULT 0");
   add("quotes", "offer_sent_at", "offer_sent_at TEXT");
   database.exec(`UPDATE twig_bills SET status = 'accrued' WHERE kind = 'quote' AND status = 'recorded'`);
@@ -1072,6 +1073,7 @@ function mapQuote(row: Row): QuoteRecord {
     offerKind: row.offer_kind === "estimate" || row.offer_kind === "fixed" ? row.offer_kind : "",
     offerCents: num(row.offer_cents),
     offerScope: str(row.offer_scope),
+    offerNote: str(row.offer_note),
     offerTimeline: str(row.offer_timeline),
     offerValidDays: num(row.offer_valid_days),
     offerSentAt: row.offer_sent_at ? str(row.offer_sent_at) : null,
@@ -3274,15 +3276,15 @@ export function listQuotes(userId: string) {
 export function saveQuoteOffer(
   id: string,
   userId: string,
-  offer: { kind: "fixed" | "estimate"; cents: number; scope: string; timeline: string; validDays: number },
+  offer: { kind: "fixed" | "estimate"; cents: number; scope: string; note: string; timeline: string; validDays: number },
 ) {
   const sentAt = new Date().toISOString();
   const result = db
     .prepare(
-      `UPDATE quotes SET offer_kind = ?, offer_cents = ?, offer_scope = ?, offer_timeline = ?, offer_valid_days = ?, offer_sent_at = ?, status = 'contacted'
+      `UPDATE quotes SET offer_kind = ?, offer_cents = ?, offer_scope = ?, offer_note = ?, offer_timeline = ?, offer_valid_days = ?, offer_sent_at = ?, status = 'contacted'
        WHERE id = ? AND product_id IN (SELECT id FROM products WHERE user_id = ?)`,
     )
-    .run(offer.kind, offer.cents, offer.scope, offer.timeline, offer.validDays, sentAt, id, userId);
+    .run(offer.kind, offer.cents, offer.scope, offer.note, offer.timeline, offer.validDays, sentAt, id, userId);
   return result.changes > 0;
 }
 

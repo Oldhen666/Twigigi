@@ -6,7 +6,7 @@ import { BuyerSection } from "@/components/buyer-section";
 import { InteractionLine } from "@/components/interaction-line";
 import { ReviewSeller } from "@/components/review-seller";
 import { requireUser } from "@/lib/auth";
-import { claimBuyerOrders, getInteraction, getProductById, listBuyerInteractions, listBuyerOrders, listBuyerQuotes, listUserReviews, openInteraction } from "@/lib/db";
+import { claimBuyerOrders, getInteraction, listBuyerInteractions, listBuyerOrders, listBuyerQuotes, listUserReviews, openInteraction } from "@/lib/db";
 import { formatDate, formatMoney, orderHeading } from "@/lib/format";
 import { fulfillmentDone, orderStage } from "@/lib/order-flow";
 
@@ -90,27 +90,15 @@ async function OrdersScreen() {
         <p className="text-sm text-muted">No quote record</p>
       ) : (
           <ul className="space-y-3">
-            {quotes.map((quote) => {
-              const product = getProductById(quote.productId);
-              const interaction = product
-                ? ensure(quote.id, "quote", quote.productId, product.userId, quote.email || user.email)
-                : bySource.get(quote.id) ?? null;
-              return (
+            {quotes.map((quote) => (
                 <li key={quote.id} className="rounded-2xl border border-line bg-card p-4">
-                  <Link href={`/quote/${quote.id}`} className="font-medium">{quote.productTitle}</Link>
-                  <p className="text-sm text-muted">qty {quote.quantity} · {quote.status} · {formatDate(quote.createdAt)}</p>
-                  {interaction ? <InteractionLine item={interaction} nextPath="/orders" side="buyer" showReview={false} /> : null}
-                  {interaction ? (
-                    <ReviewSeller
-                      interactionId={interaction.id}
-                      kind="quote"
-                      productTitle={quote.productTitle}
-                      reviewed={reviewed.has(interaction.id)}
-                    />
+                  <p className="font-medium">{quote.productTitle}</p>
+                  <p className="text-sm text-muted">qty {quote.quantity} · {formatDate(quote.createdAt)}</p>
+                  {quote.offerSentAt ? (
+                    <Link href={`/quote/${quote.id}`} className="mt-3 inline-flex text-sm font-medium text-forest">View estimate</Link>
                   ) : null}
                 </li>
-              );
-            })}
+              ))}
           </ul>
       )}
       </BuyerSection>

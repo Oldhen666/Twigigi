@@ -15,7 +15,7 @@ export function SellerQuoteActions({
   quoteId: string;
   status: "new" | "contacted" | "closed";
   currency: string;
-  offer: { kind: "fixed" | "estimate"; cents: number; scope: string; timeline: string; validDays: number } | null;
+  offer: { kind: "fixed" | "estimate"; cents: number; scope: string; note: string; timeline: string; validDays: number } | null;
 }) {
   const [open, setOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
@@ -23,6 +23,7 @@ export function SellerQuoteActions({
   const [amount, setAmount] = useState(offer ? (offer.cents / 100).toFixed(2) : "");
   const [scope, setScope] = useState(offer?.scope ?? "");
   const [timeline, setTimeline] = useState(offer?.timeline ?? "");
+  const [note, setNote] = useState(offer?.note ?? "");
   const [days, setDays] = useState(offer?.validDays || 30);
   const [state, send, sending] = useActionState(sendSellerQuote, {} as FormState);
   const [contactState, markContacted, marking] = useActionState(markQuoteContacted, {} as FormState);
@@ -66,6 +67,10 @@ export function SellerQuoteActions({
             <span className={labelClass}>Time to complete <span className="font-normal text-muted">optional</span></span>
             <input name="timeline" value={timeline} onChange={(event) => setTimeline(event.target.value)} maxLength={80} className={inputClass} placeholder="3 days, 1 week" />
           </label>
+          <label className="block">
+            <span className={labelClass}>Note for the buyer <span className="font-normal text-muted">optional</span></span>
+            <textarea name="note" value={note} onChange={(event) => setNote(event.target.value)} rows={3} maxLength={1000} className={`${inputClass} h-auto py-3`} placeholder="Anything you want the buyer to know." />
+          </label>
           <fieldset className="space-y-2">
             <legend className={labelClass}>Quote valid for</legend>
             {[7, 14, 30].map((option) => (
@@ -80,6 +85,7 @@ export function SellerQuoteActions({
             <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Quote preview</p>
             <p className="mt-1 font-serif text-3xl">{preview ?? `${currency} —`}</p>
             <p className="mt-1 text-sm text-muted">{kind === "fixed" ? "Fixed price" : "Estimated price"} · Valid for {days} days{timeline.trim() ? ` · ${timeline.trim()}` : ""}</p>
+            {note.trim() ? <p className="mt-2 text-sm">{note.trim()}</p> : null}
           </div>
           {state.error ? <p className="text-sm text-danger">{state.error}</p> : null}
           <button disabled={sending} className={`${buttonClass} w-full`}>{sending ? "Sending…" : "Send quote"}</button>
