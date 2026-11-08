@@ -39,7 +39,7 @@ export async function ProductView({
   const visitor = account ? "" : await readVisitor();
   const liked = account ? isLiked(account.id, product.id) : visitor ? isGuestLiked(visitor, product.id) : false;
   const likes = likeCount(product.id);
-  const sold = soldCount(product.id);
+  const sold = product.cta === "quote" ? null : soldCount(product.id);
   const reviews = listProductReviews(product.id);
   const rating = sellerReviewSummary(product.userId);
   const reviewAverage = reviews.length ? reviews.reduce((sum, review) => sum + review.overall, 0) / reviews.length : null;
@@ -335,7 +335,7 @@ function ProductMarks({
   saved: boolean;
   liked: boolean;
   likes: number;
-  sold: number;
+  sold: number | null;
 }) {
   const login = `/login?next=${encodeURIComponent(path)}`;
   return (
@@ -355,7 +355,7 @@ function ProductMarks({
           </button>
         </form>
       )}
-      <span className="inline-flex h-6 items-center text-sm leading-none text-ink">{sold} sold</span>
+      {sold == null ? null : <span className="inline-flex h-6 items-center text-sm leading-none text-ink">{sold} sold</span>}
       {ownTwig ? null : signedIn ? (
         <form action={toggleSaved} className="flex items-center">
           <input type="hidden" name="productId" value={productId} />

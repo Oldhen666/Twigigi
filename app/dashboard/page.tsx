@@ -98,7 +98,6 @@ async function DashboardBody() {
             ))}
           </div>
         )}
-        {stats.quotes > 0 ? <p className="mt-4 text-sm"><Link href="/dashboard/quotes" className="font-medium text-forest">Quotes</Link></p> : null}
       </section>
     </main>
   );

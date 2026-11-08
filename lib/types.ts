@@ -262,6 +262,11 @@ export type QuoteRecord = {
   createdAt: string;
   billable: boolean;
   feeReason: string;
+  offerKind: "" | "fixed" | "estimate";
+  offerCents: number;
+  offerScope: string;
+  offerValidDays: number;
+  offerSentAt: string | null;
 };
 
 export type MessageRecord = {

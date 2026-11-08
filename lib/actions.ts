@@ -31,6 +31,7 @@ import {
   findUserById,
   getOrder,
   getProductById,
+  getQuote,
   insertContentReport,
   insertModerationEvent,
   insertMessage,
@@ -108,6 +109,7 @@ import {
   updateOrderStatus,
   updateProduct,
   updateQuoteStatus,
+  saveQuoteOffer,
 } from "@/lib/db";
 import { formatPickupChoice, pickupChoiceProblem } from "@/lib/pickup";
 import {
@@ -2217,6 +2219,77 @@ export async function sendOrderFile(_prev: FormState, formData: FormData): Promi
   if (!sent) return { next: `${back}?file=mail` };
   markFileSent(id, user.id);
   return { next: `${back}?file=sent` };
+}
+
+function ownedQuote(id: string, userId: string) {
+  const quote = getQuote(id);
+  const product = quote ? getProductById(quote.productId) : null;
+  if (!quote || !product || product.userId !== userId) return null;
+  return { quote, product };
+}
+
+export async function markQuoteContacted(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireSeller();
+  const owned = ownedQuote(text(formData, "id"), user.id);
+  if (!owned) return { error: "That quote is not yours." };
+  if (owned.quote.status === "closed") return { error: "This request is closed." };
+  if (owned.quote.status === "new") updateQuoteStatus(owned.quote.id, user.id, "contacted");
+  return { next: `/dashboard/quotes/${owned.quote.id}` };
+}
+
+export async function closeQuoteRequest(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireSeller();
+  const owned = ownedQuote(text(formData, "id"), user.id);
+  if (!owned) return { error: "That quote is not yours." };
+  updateQuoteStatus(owned.quote.id, user.id, "closed");
+  const interaction = getInteractionBySource(owned.quote.id);
+  if (interaction) confirmInteractionParty(interaction.id, user.id, user.email, "seller");
+  return { next: `/dashboard/quotes/${owned.quote.id}` };
+}
+
+export async function sendSellerQuote(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireSeller();
+  const owned = ownedQuote(text(formData, "id"), user.id);
+  if (!owned) return { error: "That quote is not yours." };
+  const kind = text(formData, "quoteKind");
+  const days = Number(text(formData, "validDays"));
+  const scope = text(formData, "scope").trim().slice(0, 2000);
+  const amount = text(formData, "amount").trim();
+  const fieldErrors: Record<string, string> = {};
+  if (kind !== "fixed" && kind !== "estimate") fieldErrors.quoteKind = "Choose a quote type.";
+  if (![7, 14, 30].includes(days)) fieldErrors.validDays = "Choose how long this quote stays valid.";
+  if (scope.length < 2) fieldErrors.scope = "Describe the scope of work.";
+  const amountMatch = amount.match(/^(\d{1,7})(?:\.(\d{1,2}))?$/);
+  const cents = amountMatch ? Number(amountMatch[1]) * 100 + Number((amountMatch[2] ?? "").padEnd(2, "0")) : 0;
+  if (!amountMatch || cents < 1) fieldErrors.amount = "Enter an amount.";
+  if (Object.keys(fieldErrors).length > 0) return { fieldErrors };
+  const saved = saveQuoteOffer(owned.quote.id, user.id, {
+    kind: kind as "fixed" | "estimate",
+    cents,
+    scope,
+    validDays: days,
+  });
+  if (!saved) return { error: "That quote is not yours." };
+  const currency = owned.product.currency || "CAD";
+  const price = formatMoney(cents, currency);
+  const label = kind === "fixed" ? "Fixed price" : "Estimated price";
+  const replyTo = owned.product.contactEmail || user.email;
+  const mailed = await sendOrderEmail(owned.quote.email, {
+    subject: `Quote for ${owned.product.title}`,
+    replyTo,
+    text: [
+      `${user.displayName} sent you a quote for ${owned.product.title}.`,
+      "",
+      `${label}: ${price}`,
+      `Valid for ${days} days.`,
+      "",
+      "Scope of work",
+      scope,
+      "",
+      "Reply to this email to reach the seller.",
+    ].join("\n"),
+  });
+  return { next: `/dashboard/quotes/${owned.quote.id}?notice=${mailed ? "sent" : "saved"}` };
 }
 
 export async function setLeadStatus(formData: FormData) {

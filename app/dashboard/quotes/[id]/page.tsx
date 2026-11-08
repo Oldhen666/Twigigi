@@ -1,67 +1,158 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { confirmInteraction, setLeadStatus } from "@/lib/actions";
+import { CopyText } from "@/components/copy-text";
+import { SellerQuoteActions } from "@/components/seller-quote-actions";
 import { requireSeller } from "@/lib/auth";
 import { getInteractionBySource, getProductById, getQuote } from "@/lib/db";
-import { formatDate, interactionLabel, srcLabel } from "@/lib/format";
+import { formatDate, formatMoney, srcLabel } from "@/lib/format";
 
-async function QuoteScreen({ params }: { params: Promise<{ id: string }> }) {
+const STATUS_LABEL = { new: "New", contacted: "Contacted", closed: "Closed" } as const;
+
+async function QuoteScreen({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireSeller();
   const { id } = await params;
+  const query = await searchParams;
   const quote = getQuote(id);
   const product = quote ? getProductById(quote.productId) : null;
   if (!quote || !product || product.userId !== user.id) notFound();
   const interaction = getInteractionBySource(quote.id);
+  const notice = typeof query.notice === "string" ? query.notice : "";
+  const phone = quote.phone.trim();
+  const contact = [quote.name, quote.email, phone].filter(Boolean).join("\n");
+  const details = detailCards(quote.projectDetails);
+  const currency = product.currency || "CAD";
+  const offer = quote.offerSentAt && quote.offerKind
+    ? { kind: quote.offerKind, cents: quote.offerCents, scope: quote.offerScope, validDays: quote.offerValidDays }
+    : null;
+
   return (
-    <main className="mx-auto w-full max-w-3xl px-5 pb-16">
-      <p className="text-sm text-muted">{quote.productTitle}</p>
-      <h1 className="mt-1 font-serif text-4xl">{quote.name}</h1>
-      <p className="mt-2 text-sm text-muted">qty {quote.quantity} · {quote.status}</p>
-      {quote.projectDetails ? <p className="mt-4 text-sm">{quote.projectDetails}</p> : null}
-      {quote.message ? <p className="mt-2 text-sm text-muted">{quote.message}</p> : null}
-      {quote.documents.length > 0 ? (
-        <ul className="mt-3 space-y-1 text-sm">
-          {quote.documents.map((file) => (
-            <li key={file.path}>
-              <a href={file.path} target="_blank" rel="noreferrer" className="text-forest">{file.name}</a>
-            </li>
+    <main className="page-frame pb-16">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm text-muted">Quote request{interaction ? ` · ${interaction.publicRef}` : ""}</p>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${quote.status === "new" ? "bg-clay/15 text-clay" : quote.status === "contacted" ? "bg-forest/10 text-forest" : "bg-line text-muted"}`}>
+          {STATUS_LABEL[quote.status]}
+        </span>
+      </div>
+      <h1 className="mt-1 font-serif text-4xl">{quote.productTitle}</h1>
+
+      {notice === "sent" ? <p className="mt-4 rounded-2xl bg-forest/10 px-4 py-3 text-sm text-forest">Quote sent to the buyer.</p> : null}
+      {notice === "saved" ? <p className="mt-4 rounded-2xl bg-clay/10 px-4 py-3 text-sm">Quote saved. Email was not sent from this server.</p> : null}
+
+      <section className="mt-4 rounded-3xl border border-line bg-card p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-serif text-3xl">{quote.name}</h2>
+            <p className="mt-1 text-sm text-muted">Submitted {formatDate(quote.createdAt)}</p>
+          </div>
+          {quote.src ? <span className="rounded-full bg-white px-2.5 py-1 text-xs text-muted">{srcLabel(quote.src)}</span> : null}
+        </div>
+
+        <h3 className="mt-6 text-sm font-medium">Contact buyer</h3>
+        <div className={`mt-3 grid gap-2 ${phone ? "grid-cols-3" : "grid-cols-2"}`}>
+          {phone ? <ContactLink href={`tel:${phone.replace(/[^\d+]/g, "")}`} label="Call" icon="phone" /> : null}
+          <ContactLink href={`mailto:${quote.email}?subject=${encodeURIComponent(`Quote request: ${quote.productTitle}`)}`} label="Email" icon="mail" />
+          <CopyText value={contact} label="Copy contact" className="inline-flex h-auto w-full flex-col items-center gap-2 rounded-2xl border border-line bg-white px-2 py-3 text-sm text-ink" />
+        </div>
+        <dl className="mt-4 space-y-2 text-sm">
+          <div className="flex items-start justify-between gap-4">
+            <dt className="text-muted">Email</dt>
+            <dd className="text-right">{quote.email}</dd>
+          </div>
+          {phone ? (
+            <div className="flex items-start justify-between gap-4">
+              <dt className="text-muted">Phone</dt>
+              <dd className="text-right">{phone}</dd>
+            </div>
+          ) : null}
+        </dl>
+
+        <h3 className="mt-6 border-t border-line pt-5 text-sm font-medium">Project details</h3>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <Detail label="Quantity" value={String(quote.quantity)} />
+          {details.map((item) => (
+            <Detail key={`${item.label}-${item.value}`} label={item.label} value={item.value} wide={!item.label || item.label.length > 42 || item.value.length > 42} />
           ))}
-        </ul>
-      ) : null}
-      <p className="mt-4 text-sm text-muted">{quote.email}{quote.phone ? ` · ${quote.phone}` : ""}</p>
-      <p className="text-sm text-muted">{srcLabel(quote.src)} · {formatDate(quote.createdAt)}</p>
-      <form action={setLeadStatus} className="mt-4 flex items-center gap-2">
-        <input type="hidden" name="kind" value="quote" />
-        <input type="hidden" name="id" value={quote.id} />
-        <select name="status" defaultValue={quote.status} className="h-9 rounded-lg border border-line bg-white px-2 text-sm">
-          {["new", "contacted", "closed"].map((option) => (
-            <option key={option} value={option}>{option}</option>
-          ))}
-        </select>
-        <button className="text-sm text-forest">Save</button>
-      </form>
-      {interaction ? (
-        <section className="mt-8 rounded-2xl border border-line bg-card p-4 text-sm">
-          <p className="font-medium">{interaction.publicRef}</p>
-          <p className="text-muted">{interactionLabel(interaction)}</p>
-          {interaction.sellerConfirmedAt ? null : (
-            <form action={confirmInteraction} className="mt-2">
-              <input type="hidden" name="id" value={interaction.id} />
-              <input type="hidden" name="side" value="seller" />
-              <input type="hidden" name="next" value={`/dashboard/quotes/${quote.id}`} />
-              <button className="text-forest">Mark completed</button>
-            </form>
-          )}
-        </section>
-      ) : null}
+          {quote.message ? <Detail label="Message" value={quote.message} wide /> : null}
+        </div>
+        {quote.documents.length > 0 ? (
+          <ul className="mt-3 space-y-1 text-sm">
+            {quote.documents.map((file) => (
+              <li key={file.path}>
+                <a href={file.path} target="_blank" rel="noreferrer" className="text-forest">{file.name}</a>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {offer && quote.offerSentAt ? (
+          <div className="mt-6 rounded-2xl bg-white px-4 py-4">
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Quote sent</p>
+            <p className="mt-1 font-serif text-3xl">{formatMoney(offer.cents, currency)}</p>
+            <p className="mt-1 text-sm text-muted">{offer.kind === "fixed" ? "Fixed price" : "Estimated price"} · Valid for {offer.validDays} days · Sent {formatDate(quote.offerSentAt)}</p>
+            <p className="mt-3 text-sm">{offer.scope}</p>
+          </div>
+        ) : null}
+
+        <SellerQuoteActions quoteId={quote.id} status={quote.status} currency={currency} offer={offer} />
+      </section>
     </main>
   );
 }
 
-export default function Page({ params }: { params: Promise<{ id: string }> }) {
+function ContactLink({ href, label, icon }: { href: string; label: string; icon: "phone" | "mail" }) {
+  return (
+    <a href={href} className="inline-flex flex-col items-center gap-2 rounded-2xl border border-line bg-white px-2 py-3 text-sm text-ink">
+      {icon === "phone" ? (
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M3.2 2.6h2.1l1 2.4-1.3 1.1a8.4 8.4 0 0 0 3.9 3.9l1.1-1.3 2.4 1v2.1c0 .6-.5 1.1-1.1 1.1A10.3 10.3 0 0 1 2.1 3.7c0-.6.5-1.1 1.1-1.1Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <rect x="1.8" y="3.2" width="12.4" height="9.6" rx="1.4" stroke="currentColor" strokeWidth="1.3" />
+          <path d="M2.2 4.1 8 8.4l5.8-4.3" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
+      )}
+      {label}
+    </a>
+  );
+}
+
+function Detail({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={`rounded-2xl bg-white px-4 py-3 ${wide ? "sm:col-span-2" : ""}`}>
+      {label ? <p className="text-xs text-muted">{label}</p> : null}
+      <p className={`${label ? "mt-1" : ""} text-base`}>{value}</p>
+    </div>
+  );
+}
+
+function detailCards(details: string) {
+  return details
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^([^:]{1,80}):\s*(.+)$/);
+      return match ? { label: match[1], value: match[2] } : { label: "", value: line };
+    });
+}
+
+export default function Page({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   return (
     <Suspense fallback={<p className="px-5 text-muted">Loading quote…</p>}>
-      <QuoteScreen params={params} />
+      <QuoteScreen params={params} searchParams={searchParams} />
     </Suspense>
   );
 }

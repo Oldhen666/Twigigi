@@ -146,14 +146,14 @@ export function PagePreview({ draft }: { draft: PagePreviewDraft }) {
                   <>
                     <div className="flex gap-2">
                       <button type="button" tabIndex={-1} className={`${buttonClass} flex-1`}>
-                        Gallery
+                        Upload
                       </button>
                       <button type="button" tabIndex={-1} className={`${buttonClass} flex-1`}>
                         Camera
                       </button>
                     </div>
                     <p className="mt-2 text-sm text-muted">No file chosen</p>
-                    <p className="mt-1 text-sm text-muted">Gallery or camera. PNG, JPG, Word, or PDF. Up to 4 files, 5 MB each.</p>
+                    <p className="mt-1 text-sm text-muted">Upload or camera. PNG, JPG, Word, or PDF. Up to 4 files, 5 MB each.</p>
                   </>
                 ) : field.choices && field.choices.length > 0 ? (
                   <div className="space-y-2">

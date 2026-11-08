@@ -364,14 +364,14 @@ function DocumentUpload({ error }: { error?: string }) {
       <input ref={cameraRef} name="documents" type="file" accept="image/png,image/jpeg" capture="environment" className="sr-only" onChange={refresh} />
       <div className="flex gap-2">
         <button type="button" onClick={() => filesRef.current?.click()} className={`${buttonClass} flex-1`}>
-          Gallery
+          Upload
         </button>
         <button type="button" onClick={() => cameraRef.current?.click()} className={`${buttonClass} flex-1`}>
           Camera
         </button>
       </div>
       <p className="mt-2 text-sm text-muted">{names.length > 0 ? names.join(", ") : "No file chosen"}</p>
-      <p className="mt-1 text-sm text-muted">Gallery or camera. PNG, JPG, Word, or PDF. Up to 4 files, 5 MB each.</p>
+      <p className="mt-1 text-sm text-muted">Upload or camera. PNG, JPG, Word, or PDF. Up to 4 files, 5 MB each.</p>
       {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
     </div>
   );
