@@ -1,12 +1,11 @@
 import { connection } from "next/server";
-import { savePayoutDetails, startStripeConnect } from "@/lib/actions";
 import { BillingMethodForm } from "@/components/billing-method-form";
 import { PaymentSettingsTabs } from "@/components/payment-settings-tabs";
-import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
+import { ReceivePayments } from "@/components/receive-payments";
+import { ghostClass } from "@/components/ui";
 import { requireSeller } from "@/lib/auth";
 import { listSellerBills, setStripeAccount } from "@/lib/db";
 import { billingYear, formatDate, formatMoney } from "@/lib/format";
-import { SELLER_PAYMENT_RESPONSIBILITY } from "@/lib/legal";
 import { refreshStripeConnect } from "@/lib/stripe";
 
 export default async function Page({
@@ -35,56 +34,25 @@ export default async function Page({
   if (currentYear && !years.includes(currentYear)) years.unshift(currentYear);
   years.sort((left, right) => Number(right) - Number(left));
   const initial = params.tab === "receipts" ? "receipts" : "receiving";
+  const stripeMessage = params.stripe === "setup" || params.stripe === "error" ? params.stripe : "";
+  const country = user.payoutInterac || (!user.payoutVenmo && !user.payoutZelle) ? "CA" : "US";
 
   return (
     <main className="page-frame pb-16">
       <h1 className="mt-6 font-serif text-4xl">Payment settings</h1>
-      <p className="mt-2 text-sm text-muted">Where buyers pay you, and the receipts for Twigigi fees.</p>
+      <p className="mt-2 text-sm text-muted">Manage how you receive payments from buyers and pay Twigigi fees.</p>
       <PaymentSettingsTabs
         initial={initial}
         receiving={
-          <section className="rounded-3xl border border-line bg-card p-5">
-            <h2 className="font-serif text-2xl">Card payments for digital files</h2>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              {stripeReady
-                ? "Stripe is connected. Buyers can pay by card, and the money goes to your Stripe account. Twigigi does not take a fee."
-                : "Connect Stripe so buyers can pay by card. The money goes to your Stripe account. Twigigi does not take a fee."}
-            </p>
-            {params.stripe === "setup" ? <p className="mt-3 text-sm text-clay">Stripe is not set up on this server yet.</p> : null}
-            {params.stripe === "error" ? <p className="mt-3 text-sm text-clay">Stripe could not open the connection page.</p> : null}
-            {stripeReady ? null : (
-              <form action={startStripeConnect} className="mt-4 grid gap-4">
-                {user.stripeAccountId ? null : (
-                  <label>
-                    <span className={labelClass}>Country</span>
-                    <select name="country" defaultValue="CA" className={inputClass}>
-                      <option value="CA">Canada</option>
-                      <option value="US">United States</option>
-                    </select>
-                  </label>
-                )}
-                <button className={`${buttonClass} w-fit`}>{user.stripeAccountId ? "Continue Stripe setup" : "Connect Stripe"}</button>
-              </form>
-            )}
-            <p className="mt-5 text-sm text-muted">Where buyers can pay you for other Twigs. These are not the card Twigigi charges.</p>
-            <form action={savePayoutDetails} className="mt-4 grid gap-4" noValidate>
-              <label>
-                <span className={labelClass}>Interac e-Transfer email</span>
-                <input name="interac" defaultValue={user.payoutInterac} className={inputClass} autoComplete="email" />
-              </label>
-              <label>
-                <span className={labelClass}>Venmo username</span>
-                <input name="venmo" defaultValue={user.payoutVenmo} className={inputClass} />
-              </label>
-              <button className={`${buttonClass} w-fit`}>Save receiving details</button>
-            </form>
-            <div className="mt-5 space-y-3 border-t border-line pt-5 text-sm leading-6 text-muted">
-              <h2 className="font-medium text-ink">Seller responsibility for payment information</h2>
-              {SELLER_PAYMENT_RESPONSIBILITY.map((paragraph) => (
-                <p key={paragraph}>{paragraph}</p>
-              ))}
-            </div>
-          </section>
+          <ReceivePayments
+            stripeReady={stripeReady}
+            stripeStarted={Boolean(user.stripeAccountId)}
+            stripeMessage={stripeMessage}
+            interac={user.payoutInterac}
+            venmo={user.payoutVenmo}
+            zelle={user.payoutZelle}
+            initialCountry={country}
+          />
         }
         receipts={
           <>

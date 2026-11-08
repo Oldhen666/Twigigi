@@ -1939,6 +1939,8 @@ export async function confirmOrderPayment(_prev: FormState, formData: FormData):
   const user = await requireSeller();
   const id = text(formData, "id");
   const back = `/dashboard/orders/${id}`;
+  const existing = getOrder(id);
+  if (!existing || existing.fulfillment === "digital") return { next: back };
   if (!confirmOrderPaymentReceived(id, user.id)) return { next: back };
   const order = getOrder(id);
   if (!order) return { next: back };

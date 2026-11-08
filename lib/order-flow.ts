@@ -39,9 +39,9 @@ export function sellerAttention(order: {
     return "Mark ready for pickup";
   }
   const paid = order.paymentStatus === "paid" || order.status === "paid";
+  if (order.fulfillment === "digital") return paid && !order.fileSentAt ? "Send the file" : "";
   if (order.reviewState === "requested") return "Review this order";
   if (!paid && paymentNeedsConfirm(order.buyerPayment)) return "Confirm payment";
-  if (order.fulfillment === "digital") return order.fileSentAt ? "" : "Send the file";
   if (!fulfillmentDone(order.fulfillmentState)) return shipsToBuyer(order.fulfillment) ? "Ship this order" : "Mark ready for pickup";
   return "";
 }

@@ -18,7 +18,7 @@ import { findUserById, getInteractionBySource, getOrder, getProductById, hasRevi
 import { formatDate, formatMoney, orderHeading } from "@/lib/format";
 import { formatPickupChoice, formatClockMinutes, parsePickupChoice } from "@/lib/pickup";
 import { buyerOrderCopy, buyerPlacement, fulfillmentDone } from "@/lib/order-flow";
-import { buyerPayUrl, digitalPayMethods, filePaypalMe, isCashMethod, methodLabel, methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
+import { buyerPayUrl, digitalPayMethods, isCashMethod, methodLabel, methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
 import { confirmStripeSession } from "@/lib/stripe";
 
 async function OrderView({
@@ -44,7 +44,6 @@ async function OrderView({
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   const canceled = order.status === "canceled" || order.reviewState === "declined";
   const digital = product?.cta === "file" || order.fulfillment === "digital";
-  const filePay = digital ? filePaypalMe({ paypalMe: order.paypalMe || product?.paypalMe, cardPaymentUrl: product?.cardPaymentUrl }) : "";
   const payFulfillment = order.fulfillment === "delivery" || order.fulfillment === "shipping" ? order.fulfillment : "pickup";
   const offeredPayments = !digital && product ? methodsForFulfillment(product.paymentMethods, payFulfillment) : [];
   const choosingPayment = query.pay === "choose" && !paid && !canceled && offeredPayments.length > 1;
@@ -246,7 +245,7 @@ async function OrderView({
                 ) : null}
               </section>
             ) : null}
-            {!choosingPayment && !paid && product && !isCashMethod(order.buyerPayment) ? (
+            {!choosingPayment && !digital && !paid && product && !isCashMethod(order.buyerPayment) ? (
               <BuyerPay
                 orderId={order.id}
                 methods={[order.buyerPayment]}
@@ -397,14 +396,14 @@ async function OrderView({
             orderNote={order.publicRef ? `Order ${order.publicRef}` : ""}
           />
         ) : null}
-        {!paid && !canceled && order.reviewState === "accepted" && product && order.buyerPayment && !showPlaced ? (
+        {!paid && !canceled && !digital && order.reviewState === "accepted" && product && order.buyerPayment && !showPlaced ? (
           <PayMethods
             methods={(() => {
               const fulfillment = order.fulfillment === "delivery" || order.fulfillment === "shipping" ? order.fulfillment : "pickup";
-              const offered = digital ? ["paypal"] : methodsForFulfillment(product.paymentMethods, fulfillment);
+              const offered = methodsForFulfillment(product.paymentMethods, fulfillment);
               return order.buyerPayment && offered.includes(order.buyerPayment) ? [order.buyerPayment] : offered;
             })()}
-            cardPaymentUrl={digital ? "" : buyerPayUrl(product.cardPaymentUrl, {
+            cardPaymentUrl={buyerPayUrl(product.cardPaymentUrl, {
               amountCents: order.totalCents || order.amountCents,
               currency: order.currency,
               itemName: order.productTitle,
@@ -413,8 +412,7 @@ async function OrderView({
             interacQuestion={question}
             interacPassword={password}
             venmoUsername={order.venmoUsername}
-            paypalMe={digital ? filePay : order.paypalMe}
-            note={digital && !filePay ? "The seller has not added a PayPal.Me link." : ""}
+            paypalMe={order.paypalMe}
             amountCents={order.totalCents || order.amountCents}
             currency={order.currency}
             orderNote={order.publicRef ? `Order ${order.publicRef}` : ""}

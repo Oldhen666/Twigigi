@@ -82,6 +82,8 @@ export function SellerOrderFlow({
               ? `Confirmed${order.buyerPayment ? ` · ${methodLabel(order.buyerPayment) || order.buyerPayment}` : ""}`
               : order.paymentStatus === "verifying"
                 ? "Buyer says they sent it. Confirm only after you see the money."
+                : digital
+                ? "Unpaid. PayPal or the card payment confirms it, then Twigigi emails the file."
                 : order.buyerPayment
                   ? prepaid
                     ? "Unpaid. The buyer has the payment details."
@@ -109,7 +111,7 @@ export function SellerOrderFlow({
               <p className="mt-1 text-muted">The buyer asked for this time. Confirm it when that time works.</p>
             </ReloadForm>
           ) : null}
-          {prepaid && !paid ? (
+          {prepaid && !paid && !digital ? (
             <ReloadForm action={confirmOrderPayment}>
               <input type="hidden" name="id" value={order.id} />
               <button className={buttonClass}>Payment received</button>
