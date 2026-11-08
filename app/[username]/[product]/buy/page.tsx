@@ -8,6 +8,7 @@ import { sellerPath } from "@/lib/seller-route";
 import { CheckoutForm } from "@/components/checkout-form";
 import { ProductFallback, Stage } from "@/components/stage";
 import { formatMoney, fulfillmentOptions } from "@/lib/format";
+import { filePaypalMe } from "@/lib/payments";
 import { resolveSelection } from "@/lib/variants";
 
 export function generateStaticParams() {
@@ -89,13 +90,13 @@ async function BuyDetails({
               defaultName={account?.displayName ?? ""}
               defaultEmail={account?.email ?? ""}
               payments={{
-                methods: product.cta === "file" ? ["card"] : product.paymentMethods,
-                cardPaymentUrl: product.cardPaymentUrl,
+                methods: product.cta === "file" ? ["paypal"] : product.paymentMethods,
+                cardPaymentUrl: product.cta === "file" ? "" : product.cardPaymentUrl,
                 interacEmail: product.interacEmail,
                 interacQuestion: product.interacQuestion,
                 interacPassword: product.interacPassword,
                 venmoUsername: product.venmoUsername,
-                paypalMe: product.paypalMe,
+                paypalMe: product.cta === "file" ? filePaypalMe(product) : product.paypalMe,
               }}
             />
           </div>

@@ -123,7 +123,7 @@ export function CheckoutForm({
 
       {mode === "file" ? (
         <p className="rounded-xl bg-paper-deep px-3 py-2 text-sm text-muted">
-          Pay the seller by card on the next page. The file link is emailed after they confirm payment. It is not shown on the public page.
+          Pay the seller with PayPal on the next page. The file link is emailed after they confirm payment. It is not shown on the public page.
         </p>
       ) : null}
 
@@ -204,11 +204,11 @@ export function CheckoutForm({
           currency={currency}
           error={fieldErrors?.paymentMethod}
           empty={needsTransfer ? "Delivery and shipping have to be paid by transfer first. This seller has not set one up." : ""}
-          showPayLink={mode === "file"}
+          showPayLink={false}
         />
       ) : null}
       {mode === "buy" && needsTransfer ? <p className="text-sm text-danger">Delivery and shipping have to be paid by transfer first. This seller has not set one up.</p> : null}
-      {mode === "file" ? <p className="text-sm text-muted">Next you pay the seller by card. The file is emailed after they confirm the payment.</p> : null}
+      {mode === "file" ? <p className="text-sm text-muted">Next you pay the seller with PayPal. The file is emailed after they confirm the payment.</p> : null}
 
       {mode === "buy" && fulfillment !== "pickup" ? (
         <>

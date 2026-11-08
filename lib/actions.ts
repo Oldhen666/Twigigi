@@ -9,7 +9,7 @@ import { updateTag } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, digitalPayProblem, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, readDigitalPayMode, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
+import { cardLinkProblem, filePaypalMe, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
@@ -570,21 +570,18 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     if (place) errors.location = place;
   }
   const payCountry = splitLocation(cta === "file" ? "" : location).country;
-  const paymentMethods = cta === "file" ? ["card"] : priced ? parsePaymentMethods(text(formData, "paymentMethods"), payCountry) : [];
+  const paymentMethods = cta === "file" ? ["paypal"] : priced ? parsePaymentMethods(text(formData, "paymentMethods"), payCountry) : [];
   let cardPaymentUrl = text(formData, "cardPaymentUrl").trim().slice(0, 500);
-  if (cta === "file" && readDigitalPayMode(text(formData, "digitalPayMode")) === "paypal_me") {
-    const name = paypalMeName(cardPaymentUrl);
-    if (name) cardPaymentUrl = `https://paypal.me/${name}`;
-  }
   const interacEmail = text(formData, "interacEmail").trim().slice(0, 80);
   const interacQuestion = text(formData, "interacQuestion").trim().slice(0, 120);
   const interacPassword = text(formData, "interacPassword").trim().slice(0, 80);
   const venmoRaw = text(formData, "venmoUsername").trim().slice(0, 200);
   const venmoName = venmoUsernameFrom(venmoRaw);
   const venmoUsername = venmoName || venmoRaw.replace(/^@/, "").slice(0, 30);
-  const paypalRaw = text(formData, "paypalMe").trim().slice(0, 200);
+  const paypalRaw = (cta === "file" ? text(formData, "paypalMe") || cardPaymentUrl : text(formData, "paypalMe")).trim().slice(0, 200);
   const paypalName = paypalMeName(paypalRaw);
-  const paypalMe = paypalName ? `https://paypal.me/${paypalName}` : paypalRaw;
+  let paypalMe = paypalName ? `https://paypal.me/${paypalName}` : paypalRaw;
+  if (cta === "file") cardPaymentUrl = paypalMe;
   const sellerContactMode = text(formData, "sellerContactMode") === "phone" ? "phone" : "email";
   const sellerContact = text(formData, "sellerContact").trim().slice(0, 80);
   if (priced && intent === "publish") {
@@ -592,9 +589,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       errors.paymentMethods = payCountry ? "Choose at least one way buyers can pay." : "Choose a country before choosing how buyers pay.";
     }
     if (cta === "file") {
-      const payMode = text(formData, "digitalPayMode");
-      const problem = digitalPayProblem(cardPaymentUrl, payMode);
-      if (problem) errors.cardPaymentUrl = problem;
+      const problem = paypalMeProblem(paypalMe);
+      if (problem) errors.paypalMe = problem;
     } else if (paymentMethods.includes("card")) {
       const problem = cardLinkProblem(cardPaymentUrl);
       if (problem) errors.cardPaymentUrl = problem;
@@ -1062,8 +1058,10 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       return { fieldErrors: { address: "Enter an address for delivery or shipping." } };
     }
   }
+  const filePay = digital ? filePaypalMe(product) : "";
+  if (digital && !filePay) return { error: "This seller has not added a PayPal.Me link." };
   const payFulfillment = parsed.data.fulfillment === "delivery" || parsed.data.fulfillment === "shipping" ? parsed.data.fulfillment : "pickup";
-  const payMethods = digital ? ["card"] : methodsForFulfillment(product.paymentMethods, payFulfillment);
+  const payMethods = digital ? ["paypal"] : methodsForFulfillment(product.paymentMethods, payFulfillment);
   if (!digital && payMethods.length === 0) return { error: "This seller has not added a way to pay." };
   const schedules = parsed.data.fulfillment === "pickup" ? [product.pickupTime] : [];
   const choice = chosenOrderDetails(formData, parsed.data.fulfillment, payMethods, schedules, true);
@@ -1109,7 +1107,10 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       filePassword: digital ? product.filePassword : "",
     });
     setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note);
-    setOrderPaymentSnapshot(orderId, paymentSnapshot([product], choice.payment));
+    setOrderPaymentSnapshot(
+      orderId,
+      paymentSnapshot([digital ? { ...product, paymentMethods: ["paypal"], paypalMe: filePay } : product], choice.payment),
+    );
     if (!digital) acceptPlacedOrder(orderId);
     if (choice.payment === "interac") setInteracPrompt(orderId, product.interacQuestion, product.interacPassword);
     openInteraction({

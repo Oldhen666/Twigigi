@@ -339,8 +339,8 @@ export function buyerOrderCopy(order: StageOrder & { displayName: string; shipCa
         intro: `Your request has been sent to ${order.displayName}. The file is emailed after they confirm your payment.`,
         next: [
           "Seller reviews and confirms your order.",
-          "You'll get a payment link with the ways this seller accepts.",
-          "After you pay, the seller prepares pickup or shipping.",
+          "Pay the seller with PayPal.Me.",
+          "The file is emailed after they confirm the payment.",
         ],
       };
     }
@@ -395,7 +395,7 @@ export function buyerOrderCopy(order: StageOrder & { displayName: string; shipCa
       badge: "Pay the seller",
       intro: `${order.displayName} confirmed the order. Choose a way to pay on this page, then mark it paid.`,
       next: [
-        "Pay the seller with one of the methods below.",
+        digital ? "Pay the seller with PayPal.Me." : "Pay the seller with one of the methods below.",
         "Mark it paid so they can prepare the order.",
         digital ? "They email the file after that." : shipsToBuyer(order.fulfillment) ? "They add a carrier and tracking number when it ships." : "They mark it ready for pickup.",
       ],

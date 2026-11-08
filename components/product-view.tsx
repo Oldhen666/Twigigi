@@ -170,7 +170,7 @@ export async function ProductView({
               ) : null}
               <SellerCredit username={product.publicId} name={product.displayName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
               <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} sold={sold} />
-              {product.cta === "file" ? <PayMethods methods={["card"]} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
+              {product.cta === "file" ? <PayMethods methods={["paypal"]} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </BuyPicker>
           ) : (
             <>
@@ -178,7 +178,7 @@ export async function ProductView({
                 {product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}
               </p>
               {product.cta === "file" ? (
-                <p className="mt-2 text-sm text-muted">Pay the seller by card. They email the file link and password after confirming payment.</p>
+                <p className="mt-2 text-sm text-muted">Pay the seller with PayPal. They email the file link and password after confirming payment.</p>
               ) : null}
               {options.length > 0 ? (
                 <ul className="mt-3 flex flex-wrap gap-2">
@@ -191,7 +191,7 @@ export async function ProductView({
               ) : null}
               <SellerCredit username={product.publicId} name={product.displayName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
               <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} sold={sold} />
-              {product.cta === "file" ? <PayMethods methods={["card"]} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
+              {product.cta === "file" ? <PayMethods methods={["paypal"]} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </>
           )}
         </div>
