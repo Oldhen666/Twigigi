@@ -12,13 +12,13 @@ import { ReviewSeller } from "@/components/review-seller";
 import { Stage } from "@/components/stage";
 import { buttonClass } from "@/components/ui";
 import { ReloadForm } from "@/components/reload-form";
-import { acceptSellerChange, changeOrderPayment, confirmBuyerPickup, confirmReceipt } from "@/lib/actions";
+import { acceptSellerChange, changeOrderPayment, confirmBuyerPickup, confirmReceipt, payDigitalFile } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { findUserById, getInteractionBySource, getOrder, getProductById, hasReview } from "@/lib/db";
 import { formatDate, formatMoney, orderHeading } from "@/lib/format";
 import { formatPickupChoice, formatClockMinutes, parsePickupChoice } from "@/lib/pickup";
 import { buyerOrderCopy, buyerPlacement, fulfillmentDone } from "@/lib/order-flow";
-import { buyerPayUrl, filePaypalMe, isCashMethod, methodLabel, methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
+import { buyerPayUrl, digitalPayMethods, filePaypalMe, isCashMethod, methodLabel, methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
 import { confirmStripeSession } from "@/lib/stripe";
 
 async function OrderView({
@@ -38,6 +38,8 @@ async function OrderView({
   const account = await getCurrentUser();
   const interaction = getInteractionBySource(order.id);
   const product = getProductById(order.productId);
+  const fileSeller = product ? findUserById(product.userId) : null;
+  const fileMethods = digitalPayMethods({ paypalEmail: product?.paypalEmail ?? "", stripeReady: Boolean(fileSeller?.stripeChargesEnabled) });
   const seller = findUserById(order.sellerId);
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   const canceled = order.status === "canceled" || order.reviewState === "declined";
@@ -51,7 +53,7 @@ async function OrderView({
   const question = order.interacQuestion || (order.buyerPayment === "interac" ? product?.interacQuestion ?? "" : "");
   const password = order.interacPassword || (order.buyerPayment === "interac" ? product?.interacPassword ?? "" : "");
   const buyerOwns = Boolean(account && (account.id === order.buyerId || account.email.toLowerCase() === order.email.toLowerCase() || (interaction && (account.id === interaction.buyerId || account.email.toLowerCase() === interaction.buyerEmail))));
-  const fileReady = Boolean(order.fileSentAt) && order.fileLinks.length > 0;
+  const fileReady = Boolean(paid && digital && order.fileLinks.length > 0);
   const orderNumber = order.publicRef || interaction?.publicRef || "";
   const itemCount = order.lines.length > 0 ? order.lines.reduce((sum, line) => sum + line.quantity, 0) : order.quantity;
   const fulfillmentLabel = digital
@@ -268,6 +270,27 @@ async function OrderView({
           {title}
         </p>
         <p className="mt-4 text-sm leading-6 text-ink">{intro}</p>
+        {digital && !paid && !canceled ? (
+          <div className="mt-4 space-y-3">
+            {query.canceled === "1" ? <p className="text-sm text-clay">Payment canceled. You can try again.</p> : null}
+            {query.paypal === "setup" ? <p className="text-sm text-clay">This payment is not set up yet.</p> : null}
+            {query.paypal === "error" ? <p className="text-sm text-clay">The payment could not be confirmed.</p> : null}
+            {fileMethods.includes("paypal") ? (
+              <form action={payDigitalFile}>
+                <input type="hidden" name="id" value={order.id} />
+                <input type="hidden" name="method" value="paypal" />
+                <button className={`${buttonClass} w-full`}>Pay with PayPal</button>
+              </form>
+            ) : null}
+            {fileMethods.includes("card") ? (
+              <form action={payDigitalFile}>
+                <input type="hidden" name="id" value={order.id} />
+                <input type="hidden" name="method" value="card" />
+                <button className={`${buttonClass} w-full`}>Pay by card</button>
+              </form>
+            ) : null}
+          </div>
+        ) : null}
 
         <section className="mt-4 rounded-2xl bg-ink px-4 py-4 text-card">
           <div className="flex items-center justify-between gap-3">

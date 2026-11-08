@@ -7,7 +7,7 @@ import type { Cta } from "@/lib/types";
 
 const OPTIONS = [
   { id: "buy", title: "Buy now", detail: "They pay you directly." },
-  { id: "file", title: "Digital file", detail: "They pay you directly. You email the file link after you confirm payment." },
+  { id: "file", title: "Digital file", detail: "They pay your PayPal or Stripe. Twigigi emails the file after the payment is confirmed." },
   { id: "quote", title: "Get a quote", detail: "They send their details. You reply with a price." },
 ] as const;
 

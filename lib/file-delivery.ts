@@ -1,7 +1,42 @@
-import { findUserById, getOrder, getProductById } from "@/lib/db";
+import { findUserById, getOrder, getProductById, markFileSent, recordDirectFilePayment, recordSellerPaypalPayment } from "@/lib/db";
 import { appUrl, formatMoney } from "@/lib/format";
 import { sendOrderEmail } from "@/lib/mail";
+import type { PaypalCapture } from "@/lib/paypal";
 import { safeEmail, safePhone } from "@/lib/payments";
+
+export async function fulfillPaypalDigitalOrder(capture: PaypalCapture) {
+  const order = getOrder(capture.orderId);
+  if (!order || order.fulfillment !== "digital" || order.status === "canceled") return false;
+  const expected = order.totalCents || order.amountCents;
+  const currency = order.currency === "USD" ? "USD" : "CAD";
+  if (capture.amountCents !== expected || capture.currency !== currency) return false;
+  const product = getProductById(order.productId);
+  const payee = safeEmail(product?.paypalEmail ?? "");
+  if (!payee) return false;
+  if (capture.payeeEmail && capture.payeeEmail.toLowerCase() !== payee) return false;
+  if (!recordSellerPaypalPayment(order.id, capture.captureId)) return false;
+  const fresh = getOrder(order.id);
+  if (fresh && !fresh.fileSentAt) {
+    const sent = await deliverPaidFile(order.id);
+    if (sent) markFileSent(order.id, order.sellerId);
+  }
+  return true;
+}
+
+export async function fulfillStripeDigitalOrder(orderId: string, payment: { amountCents: number; currency: string; paymentId: string }) {
+  const order = getOrder(orderId);
+  if (!order || order.fulfillment !== "digital" || order.status === "canceled") return false;
+  const expected = order.totalCents || order.amountCents;
+  const currency = order.currency === "USD" ? "USD" : "CAD";
+  if (payment.amountCents !== expected || payment.currency !== currency) return false;
+  if (!recordDirectFilePayment(order.id, "stripe", payment.paymentId)) return false;
+  const fresh = getOrder(order.id);
+  if (fresh && !fresh.fileSentAt) {
+    const sent = await deliverPaidFile(order.id);
+    if (sent) markFileSent(order.id, order.sellerId);
+  }
+  return true;
+}
 
 export async function deliverPaidFile(orderId: string) {
   const order = getOrder(orderId);

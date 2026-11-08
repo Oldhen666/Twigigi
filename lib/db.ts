@@ -253,6 +253,9 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "interac_password", "interac_password TEXT NOT NULL DEFAULT ''");
   add("products", "venmo_username", "venmo_username TEXT NOT NULL DEFAULT ''");
   add("products", "paypal_me", "paypal_me TEXT NOT NULL DEFAULT ''");
+  add("products", "paypal_email", "paypal_email TEXT NOT NULL DEFAULT ''");
+  add("orders", "paypal_order_id", "paypal_order_id TEXT NOT NULL DEFAULT ''");
+  add("orders", "stripe_account_id", "stripe_account_id TEXT NOT NULL DEFAULT ''");
   add("products", "zelle_mode", "zelle_mode TEXT NOT NULL DEFAULT 'phone'");
   add("products", "zelle_contact", "zelle_contact TEXT NOT NULL DEFAULT ''");
   add("products", "seller_contact_mode", "seller_contact_mode TEXT NOT NULL DEFAULT 'email'");
@@ -325,6 +328,8 @@ function ensureColumns(database: DatabaseSync) {
   add("users", "payout_interac", "payout_interac TEXT NOT NULL DEFAULT ''");
   add("users", "payout_venmo", "payout_venmo TEXT NOT NULL DEFAULT ''");
   add("users", "payout_zelle", "payout_zelle TEXT NOT NULL DEFAULT ''");
+  add("users", "stripe_account_id", "stripe_account_id TEXT NOT NULL DEFAULT ''");
+  add("users", "stripe_charges_enabled", "stripe_charges_enabled INTEGER NOT NULL DEFAULT 0");
   add("users", "public_id", "public_id TEXT NOT NULL DEFAULT ''");
   add("users", "bio", "bio TEXT NOT NULL DEFAULT ''");
   database.exec(`CREATE TABLE IF NOT EXISTS twig_bills (
@@ -831,6 +836,7 @@ function mapProduct(row: Row): Product {
     interacPassword: str(row.interac_password),
     venmoUsername: str(row.venmo_username),
     paypalMe: str(row.paypal_me),
+    paypalEmail: str(row.paypal_email),
     zelleMode: row.zelle_mode === "email" ? "email" : "phone",
     zelleContact: str(row.zelle_contact),
     sellerContactMode: row.seller_contact_mode === "phone" ? "phone" : "email",
@@ -909,7 +915,7 @@ function eraseProduct(id: string) {
 }
 
 function mapPublic(row: Row): PublicProduct {
-  return { ...mapProduct(row), username: str(row.username), publicId: str(row.public_id), displayName: str(row.display_name) };
+  return { ...mapProduct(row), paypalEmail: "", username: str(row.username), publicId: str(row.public_id), displayName: str(row.display_name) };
 }
 
 function mapUser(row: Row): User {
@@ -926,6 +932,8 @@ function mapUser(row: Row): User {
     payoutInterac: str(row.payout_interac),
     payoutVenmo: str(row.payout_venmo),
     payoutZelle: str(row.payout_zelle),
+    stripeAccountId: str(row.stripe_account_id),
+    stripeChargesEnabled: num(row.stripe_charges_enabled) === 1,
     autoConfirmOrders: num(row.auto_confirm_orders) === 1,
     suspended: num(row.suspended) === 1,
     bio: str(row.bio),
@@ -1005,6 +1013,7 @@ function mapOrder(row: Row): OrderRecord {
     refundStatus: str(row.refund_status) || "none",
     disputeStatus: str(row.dispute_status) || "none",
     stripeSessionId: row.stripe_session_id ? str(row.stripe_session_id) : null,
+    stripeAccountId: str(row.stripe_account_id),
     src: str(row.src),
     fileLinks: readStoredFileLinks(str(row.file_links)),
     filePassword: str(row.file_password),
@@ -1644,6 +1653,7 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     JSON.stringify(input.fileLinks),
     input.filePassword,
   );
+  db.prepare("UPDATE products SET paypal_email = ? WHERE id = ?").run(input.paypalEmail || "", id);
 }
 
 export function updateProduct(id: string, userId: string, input: ProductInput) {
@@ -1721,6 +1731,7 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
       id,
       userId,
     );
+  if (result.changes > 0) db.prepare("UPDATE products SET paypal_email = ? WHERE id = ? AND user_id = ?").run(input.paypalEmail || "", id, userId);
   return result.changes > 0;
 }
 
@@ -2893,6 +2904,55 @@ export function markFileSent(id: string, userId: string) {
     `UPDATE orders SET file_sent_at = ?, fulfillment_state = 'sent', ready_at = COALESCE(NULLIF(ready_at, ''), ?)
      WHERE id = ? AND seller_id = ?`,
   ).run(now, now, id, userId);
+}
+
+export function setPaypalOrderId(orderId: string, paypalOrderId: string) {
+  db.prepare("UPDATE orders SET paypal_order_id = ? WHERE id = ?").run(paypalOrderId, orderId);
+}
+
+export function setStripeAccount(userId: string, accountId: string, chargesEnabled: boolean) {
+  db.prepare("UPDATE users SET stripe_account_id = ?, stripe_charges_enabled = ? WHERE id = ?").run(accountId, chargesEnabled ? 1 : 0, userId);
+}
+
+export function setOrderStripeAccount(orderId: string, accountId: string) {
+  db.prepare("UPDATE orders SET stripe_account_id = ?, payment_provider = 'stripe' WHERE id = ?").run(accountId, orderId);
+}
+
+export function recordDirectFilePayment(orderId: string, provider: "paypal" | "stripe", paymentId: string) {
+  const order = getOrder(orderId);
+  if (!order || order.fulfillment !== "digital" || order.status === "canceled") return false;
+  const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
+  if (paid) return true;
+  const paidAt = new Date().toISOString();
+  const result = db.prepare(
+    `UPDATE orders SET
+       payment_status = 'paid',
+       status = 'paid',
+       paid_at = ?,
+       review_state = 'accepted',
+       payment_provider = ?,
+       provider_payment_id = ?,
+       buyer_payment = CASE WHEN ? = 'stripe' THEN 'card' ELSE 'paypal' END,
+       payment_flow = 'seller_direct'
+     WHERE id = ? AND status != 'canceled' AND (paid_at IS NULL OR paid_at = '')`,
+  ).run(paidAt, provider, paymentId, provider, orderId);
+  return result.changes > 0;
+}
+
+export function recordSellerPaypalPayment(orderId: string, captureId: string) {
+  return recordDirectFilePayment(orderId, "paypal", captureId);
+}
+
+export function cancelUnpaidDigitalOrder(orderId: string) {
+  const order = getOrder(orderId);
+  if (!order || order.fulfillment !== "digital") return false;
+  if (order.paymentStatus === "paid" || order.status === "paid" || order.status === "canceled") return false;
+  const result = db.prepare(
+    `UPDATE orders SET status = 'canceled', review_state = 'declined'
+     WHERE id = ? AND payment_status != 'paid' AND status != 'canceled'`,
+  ).run(orderId);
+  if (result.changes > 0) releaseStock(order.productId, order.quantity);
+  return result.changes > 0;
 }
 
 export function sellerReviewOrder(

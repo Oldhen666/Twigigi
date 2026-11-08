@@ -4,12 +4,13 @@ import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 import { updateTag } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, filePaypalMe, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
+import { cardLinkProblem, digitalPayMethods, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
+import { beginDigitalPaypalCheckout, paypalCheckoutError, paypalConfigured } from "@/lib/paypal";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
@@ -18,6 +19,7 @@ import { fulfillmentDone, shipsToBuyer } from "@/lib/order-flow";
 import { parseFileLinks } from "@/lib/files";
 import { resolveUpload, uploadDirectory } from "@/lib/uploads";
 import {
+  cancelUnpaidDigitalOrder,
   claimBuyerOrders,
   createUser,
   clearDeactivatesAt,
@@ -60,6 +62,8 @@ import {
   reserveStock,
   setOrderChoices,
   setOrderPaymentSnapshot,
+  setOrderStripeAccount,
+  setStripeAccount,
   setBuyerPaymentMethod,
   recordPaymentLinkChange,
   setInteracPrompt,
@@ -133,7 +137,7 @@ import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { ensureVisitor } from "@/lib/visitor";
 import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { normalizeQuoteForm } from "@/lib/quote-form";
-import { getStripe } from "@/lib/stripe";
+import { createDigitalStripeCheckout, createStripeConnectLink, getStripe } from "@/lib/stripe";
 import { DIGITAL_FILE_CATEGORY, categoryProblem, resolveCategory } from "@/lib/categories";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
 
@@ -570,7 +574,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     if (place) errors.location = place;
   }
   const payCountry = splitLocation(cta === "file" ? "" : location).country;
-  const paymentMethods = cta === "file" ? ["paypal"] : priced ? parsePaymentMethods(text(formData, "paymentMethods"), payCountry) : [];
+  let paymentMethods = cta === "file" ? [] : priced ? parsePaymentMethods(text(formData, "paymentMethods"), payCountry) : [];
   let cardPaymentUrl = text(formData, "cardPaymentUrl").trim().slice(0, 500);
   const interacEmail = text(formData, "interacEmail").trim().slice(0, 80);
   const interacQuestion = text(formData, "interacQuestion").trim().slice(0, 120);
@@ -581,7 +585,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const paypalRaw = (cta === "file" ? text(formData, "paypalMe") || cardPaymentUrl : text(formData, "paypalMe")).trim().slice(0, 200);
   const paypalName = paypalMeName(paypalRaw);
   let paypalMe = paypalName ? `https://paypal.me/${paypalName}` : paypalRaw;
-  if (cta === "file") cardPaymentUrl = paypalMe;
+  if (cta === "file") cardPaymentUrl = "";
   const sellerContactMode = text(formData, "sellerContactMode") === "phone" ? "phone" : "email";
   const sellerContact = text(formData, "sellerContact").trim().slice(0, 80);
   if (priced && intent === "publish") {
@@ -589,8 +593,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       errors.paymentMethods = payCountry ? "Choose at least one way buyers can pay." : "Choose a country before choosing how buyers pay.";
     }
     if (cta === "file") {
-      const problem = paypalMeProblem(paypalMe);
-      if (problem) errors.paypalMe = problem;
+      const rawPaypal = text(formData, "paypalEmail").trim();
+      if (rawPaypal && !safeEmail(rawPaypal)) errors.paypalEmail = "Enter a PayPal email like name@email.com.";
     } else if (paymentMethods.includes("card")) {
       const problem = cardLinkProblem(cardPaymentUrl);
       if (problem) errors.cardPaymentUrl = problem;
@@ -603,7 +607,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       const problem = venmoUsernameProblem(venmoRaw);
       if (problem) errors.venmoUsername = problem;
     }
-    if (paymentMethods.includes("paypal")) {
+    if (cta !== "file" && paymentMethods.includes("paypal")) {
       const problem = paypalMeProblem(paypalRaw);
       if (problem) errors.paypalMe = problem;
     }
@@ -656,6 +660,13 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const owner = adminEdit && existing ? findUserById(existing.userId) : user;
   if (!owner || (id && (!existing || existing.userId !== owner.id))) {
     return { error: "That Twig was not found.", ...sessionStamp };
+  }
+  if (cta === "file") {
+    const filePaypal = safeEmail(text(formData, "paypalEmail"));
+    paymentMethods = digitalPayMethods({ paypalEmail: filePaypal, stripeReady: owner.stripeChargesEnabled });
+    if (intent === "publish" && paymentMethods.length === 0) {
+      return { fieldErrors: { paypalEmail: "Add a PayPal email or connect Stripe in Payment settings." }, ...sessionStamp };
+    }
   }
   if (existing && existing.status !== "draft" && intent === "draft") {
     return {
@@ -737,7 +748,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     interacQuestion: paymentMethods.includes("interac") ? interacQuestion : "",
     interacPassword: paymentMethods.includes("interac") ? interacPassword : "",
     venmoUsername,
-    paypalMe: paymentMethods.includes("paypal") ? paypalMe : "",
+    paypalMe: cta === "file" ? "" : paymentMethods.includes("paypal") ? paypalMe : "",
+    paypalEmail: cta === "file" ? safeEmail(text(formData, "paypalEmail")) : "",
     zelleMode: "phone",
     zelleContact: "",
     sellerContactMode: priced ? sellerContactMode : "email",
@@ -1058,10 +1070,11 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       return { fieldErrors: { address: "Enter an address for delivery or shipping." } };
     }
   }
-  const filePay = digital ? filePaypalMe(product) : "";
-  if (digital && !filePay) return { error: "This seller has not added a PayPal.Me link." };
+  const sellerUser = digital ? findUserById(product.userId) : null;
+  const digitalMethods = digital ? digitalPayMethods({ paypalEmail: product.paypalEmail, stripeReady: Boolean(sellerUser?.stripeChargesEnabled) }) : [];
+  if (digital && digitalMethods.length === 0) return { error: "This seller has not added a way to pay." };
   const payFulfillment = parsed.data.fulfillment === "delivery" || parsed.data.fulfillment === "shipping" ? parsed.data.fulfillment : "pickup";
-  const payMethods = digital ? ["paypal"] : methodsForFulfillment(product.paymentMethods, payFulfillment);
+  const payMethods = digital ? digitalMethods : methodsForFulfillment(product.paymentMethods, payFulfillment);
   if (!digital && payMethods.length === 0) return { error: "This seller has not added a way to pay." };
   const schedules = parsed.data.fulfillment === "pickup" ? [product.pickupTime] : [];
   const choice = chosenOrderDetails(formData, parsed.data.fulfillment, payMethods, schedules, true);
@@ -1109,7 +1122,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
     setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note);
     setOrderPaymentSnapshot(
       orderId,
-      paymentSnapshot([digital ? { ...product, paymentMethods: ["paypal"], paypalMe: filePay } : product], choice.payment),
+      paymentSnapshot([digital ? { ...product, paymentMethods: digitalMethods, paypalMe: "" } : product], choice.payment),
     );
     if (!digital) acceptPlacedOrder(orderId);
     if (choice.payment === "interac") setInteracPrompt(orderId, product.interacQuestion, product.interacPassword);
@@ -1139,7 +1152,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       `Email: ${parsed.data.email}`,
       parsed.data.phone ? `Phone: ${parsed.data.phone}` : null,
       `Quantity: ${parsed.data.quantity}`,
-      digital ? "Delivery: emailed after you mark the order paid" : `Fulfillment: ${parsed.data.fulfillment}`,
+      digital ? "Delivery: emailed automatically after PayPal or Stripe confirms the payment" : `Fulfillment: ${parsed.data.fulfillment}`,
       parsed.data.fulfillment === "pickup" && product.pickupNote.trim() ? `Pickup location: ${product.pickupNote.trim()}` : null,
       choice.pickupWindow ? `Pickup time: ${formatPickupChoice(choice.pickupWindow)}` : null,
       !digital && parsed.data.fulfillment !== "pickup" && parsed.data.address ? `Address: ${parsed.data.address}` : null,
@@ -1148,7 +1161,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       `Total: ${formatMoney(total, product.currency)}`,
       order?.publicRef ? `Order: ${order.publicRef}` : null,
       digital
-        ? "After the money arrives, confirm the payment, then email the file link from the order page."
+        ? "The buyer pays your PayPal or Stripe account. When the payment is confirmed, Twigigi emails the file."
         : isCashMethod(choice.payment)
           ? "The buyer pays cash at pickup. It stays unpaid until you confirm the cash. Cancel the order if you cannot fulfill it."
           : "The buyer pays you directly. Confirm the payment only after you see the money, then prepare pickup or shipping. Cancel the order if you cannot fulfill it.",
@@ -1170,7 +1183,88 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
     }
   }
 
+  if (digital) {
+    const placed = getOrder(orderId);
+    if (!placed) return { error: "Could not save this order. Try again." };
+    let approveUrl = "";
+    try {
+      if (choice.payment === "card") {
+        if (!getStripe() || !sellerUser?.stripeAccountId) {
+          cancelUnpaidDigitalOrder(orderId);
+          return { error: "Card checkout is not set up for this seller yet." };
+        }
+        setOrderStripeAccount(orderId, sellerUser.stripeAccountId);
+        const session = await createDigitalStripeCheckout({
+          orderId,
+          amountCents: placed.totalCents || placed.amountCents,
+          currency: placed.currency,
+          itemName: placed.productTitle,
+          buyerEmail: placed.email,
+          accountId: sellerUser.stripeAccountId,
+        });
+        approveUrl = session.url;
+      } else {
+        const filePayee = safeEmail(product.paypalEmail);
+        if (!filePayee || !paypalConfigured()) {
+          cancelUnpaidDigitalOrder(orderId);
+          return { error: filePayee ? "PayPal checkout is not set up on this server yet." : "This seller has not added a PayPal email." };
+        }
+        approveUrl = await beginDigitalPaypalCheckout(placed, filePayee);
+      }
+    } catch (error) {
+      cancelUnpaidDigitalOrder(orderId);
+      return { error: choice.payment === "card" ? "Stripe could not start this payment." : paypalCheckoutError(error) };
+    }
+    redirect(approveUrl);
+  }
+
   redirect(`/order/${orderId}`);
+}
+
+export async function payDigitalFile(formData: FormData) {
+  const id = text(formData, "id");
+  const method = text(formData, "method") === "card" ? "card" : "paypal";
+  const order = getOrder(id);
+  if (!order || order.fulfillment !== "digital" || order.status === "canceled") redirect("/");
+  if (order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled") redirect(`/order/${id}`);
+  const product = getProductById(order.productId);
+  const seller = product ? findUserById(product.userId) : null;
+  try {
+    if (method === "card") {
+      if (!getStripe() || !seller?.stripeChargesEnabled || !seller.stripeAccountId) redirect(`/order/${id}?paypal=setup`);
+      setOrderStripeAccount(id, seller.stripeAccountId);
+      const session = await createDigitalStripeCheckout({
+        orderId: id,
+        amountCents: order.totalCents || order.amountCents,
+        currency: order.currency,
+        itemName: order.productTitle,
+        buyerEmail: order.email,
+        accountId: seller.stripeAccountId,
+      });
+      redirect(session.url);
+    }
+    const payee = safeEmail(product?.paypalEmail ?? "");
+    if (!payee || !paypalConfigured()) redirect(`/order/${id}?paypal=setup`);
+    const approveUrl = await beginDigitalPaypalCheckout(order, payee);
+    redirect(approveUrl);
+  } catch (error) {
+    unstable_rethrow(error);
+    redirect(`/order/${id}?paypal=error`);
+  }
+}
+
+export async function startStripeConnect(formData: FormData) {
+  const user = await requireSeller();
+  const country = text(formData, "country") === "US" ? "US" : "CA";
+  try {
+    const linked = await createStripeConnectLink({ accountId: user.stripeAccountId, email: user.email, country });
+    if (!linked) redirect("/dashboard/payments?stripe=setup");
+    setStripeAccount(user.id, linked.accountId, user.stripeChargesEnabled);
+    redirect(linked.url);
+  } catch (error) {
+    unstable_rethrow(error);
+    redirect("/dashboard/payments?stripe=error");
+  }
 }
 
 export async function placeCartOrder(_prev: FormState, formData: FormData): Promise<FormState> {

@@ -26,7 +26,17 @@ export function paymentsForCountry(country: string): PayMethod[] {
 }
 
 export function paymentsForDigitalFile(): PayMethod[] {
-  return [{ id: "paypal", label: "PayPal" }];
+  return [
+    { id: "paypal", label: "PayPal" },
+    { id: "card", label: "Credit card" },
+  ];
+}
+
+export function digitalPayMethods(input: { paypalEmail: string; stripeReady: boolean }) {
+  const methods: string[] = [];
+  if (safeEmail(input.paypalEmail)) methods.push("paypal");
+  if (input.stripeReady) methods.push("card");
+  return methods;
 }
 
 const CASH_METHODS = new Set(["cash", "cash_pickup"]);

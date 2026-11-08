@@ -34,6 +34,8 @@ export type User = {
   payoutInterac: string;
   payoutVenmo: string;
   payoutZelle: string;
+  stripeAccountId: string;
+  stripeChargesEnabled: boolean;
   autoConfirmOrders: boolean;
   suspended: boolean;
   bio: string;
@@ -121,6 +123,7 @@ export type ProductInput = {
   interacPassword: string;
   venmoUsername: string;
   paypalMe: string;
+  paypalEmail: string;
   zelleMode: "phone" | "email";
   zelleContact: string;
   sellerContactMode: "phone" | "email";
@@ -225,6 +228,7 @@ export type OrderRecord = {
   refundStatus: string;
   disputeStatus: string;
   stripeSessionId: string | null;
+  stripeAccountId: string;
   src: string;
   fileLinks: string[];
   filePassword: string;

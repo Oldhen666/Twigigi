@@ -18,7 +18,7 @@ async function NewProduct({
   return (
     <main className="mx-auto w-full max-w-xl px-5 py-6">
       <h1 className="font-serif text-4xl">{title}</h1>
-      <ProductForm action={saveProduct} defaultEmail={user.email} sellerName={user.displayName} cta={cta} />
+      <ProductForm action={saveProduct} defaultEmail={user.email} sellerName={user.displayName} cta={cta} stripeReady={user.stripeChargesEnabled} />
     </main>
   );
 }

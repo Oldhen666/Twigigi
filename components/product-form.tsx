@@ -15,7 +15,7 @@ import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui
 import { categoryProblem } from "@/lib/categories";
 import { parseFileLinks } from "@/lib/files";
 import { PROVINCES, joinLocation, lookupCurrentPlace, placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, paypalMeProblem, sellerContactProblem, venmoUsernameProblem } from "@/lib/payments";
+import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameProblem } from "@/lib/payments";
 
 type Action = (state: FormState, formData: FormData) => Promise<FormState>;
 
@@ -39,6 +39,7 @@ export function ProductForm({
   cta,
   sellerName,
   guest = false,
+  stripeReady = false,
 }: {
   action: Action;
   product?: Product;
@@ -46,6 +47,7 @@ export function ProductForm({
   cta: Cta;
   sellerName: string;
   guest?: boolean;
+  stripeReady?: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const refreshRef = useRef<(form: HTMLFormElement) => void>(() => {});
@@ -351,8 +353,12 @@ export function ProductForm({
       if (!methods.includes("venmo")) return null;
       return venmoUsernameProblem(value);
     }
+    if (name === "paypalEmail") {
+      if (cta !== "file") return null;
+      if (!value.trim()) return null;
+      return safeEmail(value) ? null : "Enter a PayPal email like name@email.com.";
+    }
     if (name === "paypalMe") {
-      if (cta === "file") return paypalMeProblem(value);
       if (cta !== "buy") return null;
       const methods = parsePaymentMethods(fieldValue(form, "paymentMethods") || "[]", splitLocation(fieldValue(form, "location")).country);
       if (!methods.includes("paypal")) return null;
@@ -550,7 +556,7 @@ export function ProductForm({
     const form = formRef.current;
     if (!form || (cta !== "buy" && cta !== "file")) return false;
     const problems: Record<string, string> = {};
-    for (const key of ["paymentMethods", "cardPaymentUrl", "interacEmail", "venmoUsername", "paypalMe", "sellerContact", "shippingNote"]) {
+    for (const key of ["paymentMethods", "cardPaymentUrl", "interacEmail", "venmoUsername", "paypalMe", "paypalEmail", "sellerContact", "shippingNote"]) {
       const problem = activeProblem(form, key);
       if (problem) problems[key] = problem;
     }
@@ -970,7 +976,7 @@ export function ProductForm({
 
       {priced ? (
         <div className={step !== 2 ? "hidden" : undefined}>
-          <BuyOfferFields product={product} errors={visibleErrors} seed={fresh ? draft : null} onChange={fresh ? remember : undefined} digital={file} />
+          <BuyOfferFields product={product} errors={visibleErrors} seed={fresh ? draft : null} onChange={fresh ? remember : undefined} digital={file} stripeReady={stripeReady} />
           <Section title="Order email">
             <Field label="Email for new orders" error={visibleErrors.contactEmail}>
               <input name="contactEmail" type="email" defaultValue={emailValue(draft, product, defaultEmail)} placeholder="name@email.com (email)" className={inputClass} />

@@ -16,7 +16,8 @@ import { ReportListing } from "@/components/report-listing";
 import { Stars } from "@/components/stars";
 import { toggleLikeAction, toggleSaved } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
-import { isFavorite, isGuestLiked, isLiked, likeCount, listProductReviews, sellerReviewSummary, soldCount } from "@/lib/db";
+import { findUserById, getProductById, isFavorite, isGuestLiked, isLiked, likeCount, listProductReviews, sellerReviewSummary, soldCount } from "@/lib/db";
+import { digitalPayMethods } from "@/lib/payments";
 import { readVisitor } from "@/lib/visitor";
 import { categoryHref, categoryLabel, resolveCategory } from "@/lib/categories";
 import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
@@ -43,6 +44,8 @@ export async function ProductView({
   const reviews = listProductReviews(product.id);
   const rating = sellerReviewSummary(product.userId);
   const reviewAverage = reviews.length ? reviews.reduce((sum, review) => sum + review.overall, 0) / reviews.length : null;
+  const fileSeller = product.cta === "file" ? findUserById(product.userId) : null;
+  const fileMethods = product.cta === "file" ? digitalPayMethods({ paypalEmail: getProductById(product.id)?.paypalEmail ?? "", stripeReady: Boolean(fileSeller?.stripeChargesEnabled) }) : [];
   const ownTwig = account?.publicId === product.publicId;
 
   const canonical = productUrl(product.publicId, product.slug);
@@ -170,7 +173,7 @@ export async function ProductView({
               ) : null}
               <SellerCredit username={product.publicId} name={product.displayName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
               <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} sold={sold} />
-              {product.cta === "file" ? <PayMethods methods={["paypal"]} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
+              {product.cta === "file" ? <PayMethods methods={fileMethods} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </BuyPicker>
           ) : (
             <>
@@ -178,7 +181,7 @@ export async function ProductView({
                 {product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}
               </p>
               {product.cta === "file" ? (
-                <p className="mt-2 text-sm text-muted">Pay the seller with PayPal. They email the file link and password after confirming payment.</p>
+                <p className="mt-2 text-sm text-muted">Pay the seller with PayPal or a card. The file is emailed as soon as the payment is confirmed.</p>
               ) : null}
               {options.length > 0 ? (
                 <ul className="mt-3 flex flex-wrap gap-2">
@@ -191,7 +194,7 @@ export async function ProductView({
               ) : null}
               <SellerCredit username={product.publicId} name={product.displayName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
               <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} sold={sold} />
-              {product.cta === "file" ? <PayMethods methods={["paypal"]} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
+              {product.cta === "file" ? <PayMethods methods={fileMethods} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </>
           )}
         </div>

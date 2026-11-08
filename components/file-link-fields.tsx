@@ -23,7 +23,7 @@ export function FileLinkFields({
         <span className="text-base text-danger"> *</span>
       </h2>
       <p className="mt-2 text-sm text-muted">
-        Paste one or more https links, such as Google Drive, Dropbox, or OneDrive. Set each share to anyone with the link. After you confirm payment, click Email file link on the order to send these links and the password.
+        Paste one or more https links, such as Google Drive, Dropbox, or OneDrive. Set each share to anyone with the link. When the payment is confirmed, Twigigi emails these links and the password. You can send them again from the order.
       </p>
       {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
       <div className="mt-4 space-y-3">

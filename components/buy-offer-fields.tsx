@@ -42,12 +42,14 @@ export function BuyOfferFields({
   seed = null,
   onChange,
   digital = false,
+  stripeReady = false,
 }: {
   product?: Product;
   errors?: Record<string, string>;
   seed?: NewPageDraft | null;
   onChange?: () => void;
   digital?: boolean;
+  stripeReady?: boolean;
 }) {
   const seededOptions = readOptions(seed, product);
   const [price, setPrice] = useState(seed?.fields.price ?? centsToInput(product?.priceCents ?? null));
@@ -71,6 +73,7 @@ export function BuyOfferFields({
   const [interacQuestion, setInteracQuestion] = useState(seed?.fields.interacQuestion ?? product?.interacQuestion ?? "");
   const [interacPassword, setInteracPassword] = useState(seed?.fields.interacPassword ?? product?.interacPassword ?? "");
   const [venmoUsername, setVenmoUsername] = useState(seed?.fields.venmoUsername ?? product?.venmoUsername ?? "");
+  const [paypalEmail, setPaypalEmail] = useState(seed?.fields.paypalEmail ?? product?.paypalEmail ?? "");
   const [paypalMe, setPaypalMe] = useState(() => {
     const saved = seed?.fields.paypalMe ?? product?.paypalMe ?? "";
     if (paypalMeName(saved)) return saved;
@@ -104,7 +107,7 @@ export function BuyOfferFields({
       return;
     }
     notify.current?.();
-  }, [price, unlimited, samePrice, options, variants, enabled, variable, pickup, ship, methods, cardUrl, interacEmail, interacQuestion, interacPassword, venmoUsername, paypalMe, deliveryArea, sellerContact, sellerMode]);
+  }, [price, unlimited, samePrice, options, variants, enabled, variable, pickup, ship, methods, cardUrl, interacEmail, interacQuestion, interacPassword, venmoUsername, paypalMe, paypalEmail, deliveryArea, sellerContact, sellerMode]);
   useEffect(() => {
     const allowed = new Set((digital ? paymentsForDigitalFile() : paymentsForCountry(payCountry)).map((method) => method.id));
     setMethods((current) => {
@@ -214,7 +217,7 @@ export function BuyOfferFields({
             <input type="hidden" name="samePrice" value="1" />
             <input type="hidden" name="optionsJson" value="[]" />
             <input type="hidden" name="variantsJson" value="[]" />
-            <p className="text-sm text-muted">There is no pickup or shipping. After you confirm payment, email the file link and password from the order.</p>
+            <p className="text-sm text-muted">There is no pickup or shipping. Twigigi emails the file link and password after the payment is confirmed.</p>
           </>
         ) : (
         <div>
@@ -379,7 +382,7 @@ export function BuyOfferFields({
         <Check name="requirePhone" defaultChecked={seed ? seed.checks.requirePhone !== false : (product?.requirePhone ?? true)} label="Phone" />
         <p className="text-sm text-muted">
           {digital
-            ? "Email is required. You email the file link and password there after you confirm payment."
+            ? "Email is required. Twigigi emails the file link and password there after the payment is confirmed."
             : needsAddress
               ? "Address is required when Delivery/Shipping is turned on."
               : "Address is asked only when the buyer chooses Delivery/Shipping."}
@@ -434,6 +437,7 @@ export function BuyOfferFields({
           interacPassword={interacPassword}
           venmoUsername={venmoUsername}
           paypalMe={paypalMe}
+          paypalEmail={paypalEmail}
           methodsRef={methodsRef}
           cardRef={cardRef}
           interacRef={interacRef}
@@ -443,7 +447,8 @@ export function BuyOfferFields({
           cardError={errors?.cardPaymentUrl}
           interacError={errors?.interacEmail}
           venmoError={errors?.venmoUsername}
-          paypalError={errors?.paypalMe}
+          paypalError={digital ? errors?.paypalEmail : errors?.paypalMe}
+          stripeReady={stripeReady}
           onToggle={toggleMethod}
           onCardUrl={setCardUrl}
           onInteracEmail={setInteracEmail}
@@ -451,6 +456,7 @@ export function BuyOfferFields({
           onInteracPassword={setInteracPassword}
           onVenmoUsername={setVenmoUsername}
           onPaypalMe={setPaypalMe}
+          onPaypalEmail={setPaypalEmail}
         />
       </div>
 
@@ -468,6 +474,7 @@ function PaymentChoices({
   interacPassword,
   venmoUsername,
   paypalMe,
+  paypalEmail,
   methodsRef,
   cardRef,
   interacRef,
@@ -478,6 +485,7 @@ function PaymentChoices({
   interacError,
   venmoError,
   paypalError,
+  stripeReady = false,
   onToggle,
   onCardUrl,
   onInteracEmail,
@@ -485,6 +493,7 @@ function PaymentChoices({
   onInteracPassword,
   onVenmoUsername,
   onPaypalMe,
+  onPaypalEmail,
 }: {
   country: string;
   digital?: boolean;
@@ -495,6 +504,7 @@ function PaymentChoices({
   interacPassword: string;
   venmoUsername: string;
   paypalMe: string;
+  paypalEmail: string;
   methodsRef: RefObject<HTMLInputElement | null>;
   cardRef: RefObject<HTMLInputElement | null>;
   interacRef: RefObject<HTMLInputElement | null>;
@@ -505,6 +515,7 @@ function PaymentChoices({
   interacError?: string;
   venmoError?: string;
   paypalError?: string;
+  stripeReady?: boolean;
   onToggle: (id: string) => void;
   onCardUrl: (value: string) => void;
   onInteracEmail: (value: string) => void;
@@ -512,38 +523,35 @@ function PaymentChoices({
   onInteracPassword: (value: string) => void;
   onVenmoUsername: (value: string) => void;
   onPaypalMe: (value: string) => void;
+  onPaypalEmail: (value: string) => void;
 }) {
   const choices = paymentsForCountry(country);
   if (digital) {
-    const paypalTest = paypalMeName(paypalMe) ? `https://paypal.me/${paypalMeName(paypalMe)}` : "";
     return (
       <div className="mt-4 space-y-3">
         <input type="hidden" name="paymentMethods" value='["paypal"]' />
         <input type="hidden" name="cardPaymentUrl" value="" />
-        <Field label="PayPal.Me link" required error={paypalError}>
+        <Field label="PayPal email" required error={paypalError}>
           <input
             ref={paypalRef}
-            name="paypalMe"
-            value={paypalMe}
-            onChange={(event) => onPaypalMe(event.target.value)}
-            placeholder="https://paypal.me/yourname"
-            inputMode="url"
+            name="paypalEmail"
+            type="email"
+            value={paypalEmail}
+            onChange={(event) => onPaypalEmail(event.target.value)}
+            placeholder="name@email.com"
             autoComplete="off"
             className={inputClass}
           />
           <span className="mt-1 block text-sm text-muted">
-            Create yours at{" "}
-            <a href="https://www.paypal.com/paypalme/" target="_blank" rel="noreferrer" className="text-forest">
-              https://www.paypal.com/paypalme/
-            </a>
-            , then paste it here. Example: https://paypal.me/yourname. Do not add an amount or a currency. Twigigi fills in this file's price when a buyer pays.
+            Buyers pay this PayPal account. When the payment is confirmed, Twigigi emails the file. Twigigi does not take a fee. Leave this blank if buyers will pay by card instead.
           </span>
-          {paypalTest ? (
-            <a href={paypalTest} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-forest">
-              Test payment link
-            </a>
-          ) : null}
         </Field>
+        <p className="text-sm text-muted">
+          {stripeReady
+            ? "Stripe is connected. Buyers can pay by card, and the money goes to your Stripe account."
+            : "Card payments need a connected Stripe account. Connect it in Payment settings, then publish."}{" "}
+          <a href="/dashboard/payments" className="text-forest">Payment settings</a>
+        </p>
       </div>
     );
   }

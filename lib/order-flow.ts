@@ -334,14 +334,10 @@ export function buyerOrderCopy(order: StageOrder & { displayName: string; shipCa
   if (order.reviewState !== "accepted") {
     if (digital) {
       return {
-        title: "Order request sent!",
-        badge: "Awaiting seller",
-        intro: `Your request has been sent to ${order.displayName}. The file is emailed after they confirm your payment.`,
-        next: [
-          "Seller reviews and confirms your order.",
-          "Pay the seller with PayPal.Me.",
-          "The file is emailed after they confirm the payment.",
-        ],
+        title: "Pay for the file",
+        badge: "Pay the seller",
+        intro: `Pay ${order.displayName} with PayPal or a card. The file is emailed as soon as the payment is confirmed.`,
+        next: ["Finish the payment.", "The file link arrives by email after the payment is confirmed."],
       };
     }
     return {
@@ -395,7 +391,7 @@ export function buyerOrderCopy(order: StageOrder & { displayName: string; shipCa
       badge: "Pay the seller",
       intro: `${order.displayName} confirmed the order. Choose a way to pay on this page, then mark it paid.`,
       next: [
-        digital ? "Pay the seller with PayPal.Me." : "Pay the seller with one of the methods below.",
+        digital ? "PayPal or Stripe confirms the payment, then Twigigi emails the file." : "Pay the seller with one of the methods below.",
         "Mark it paid so they can prepare the order.",
         digital ? "They email the file after that." : shipsToBuyer(order.fulfillment) ? "They add a carrier and tracking number when it ships." : "They mark it ready for pickup.",
       ],

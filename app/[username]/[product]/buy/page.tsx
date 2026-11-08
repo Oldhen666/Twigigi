@@ -4,11 +4,12 @@ import { Suspense } from "react";
 import { placeOrder } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { getPublicProduct, requireLiveTwig, staticProductParams } from "@/lib/catalog";
+import { findUserById, getProductById } from "@/lib/db";
+import { digitalPayMethods } from "@/lib/payments";
 import { sellerPath } from "@/lib/seller-route";
 import { CheckoutForm } from "@/components/checkout-form";
 import { ProductFallback, Stage } from "@/components/stage";
 import { formatMoney, fulfillmentOptions } from "@/lib/format";
-import { filePaypalMe } from "@/lib/payments";
 import { resolveSelection } from "@/lib/variants";
 
 export function generateStaticParams() {
@@ -54,6 +55,10 @@ async function BuyDetails({
   const cap = product.quantityAvailable == null ? 20 : Math.min(20, product.quantityAvailable);
   const initialQuantity = Number.isInteger(requested) ? Math.min(Math.max(requested, 1), Math.max(cap, 1)) : 1;
   const account = await getCurrentUser();
+  const fileSeller = product.cta === "file" ? findUserById(product.userId) : null;
+  const fileMethods = product.cta === "file"
+    ? digitalPayMethods({ paypalEmail: getProductById(product.id)?.paypalEmail ?? "", stripeReady: Boolean(fileSeller?.stripeChargesEnabled) })
+    : product.paymentMethods;
   return (
     <Stage>
       <div className="bg-card px-5 py-6 sm:rounded-[28px] sm:shadow-[0_24px_80px_rgba(70,48,16,0.08)]">
@@ -90,13 +95,13 @@ async function BuyDetails({
               defaultName={account?.displayName ?? ""}
               defaultEmail={account?.email ?? ""}
               payments={{
-                methods: product.cta === "file" ? ["paypal"] : product.paymentMethods,
+                methods: fileMethods,
                 cardPaymentUrl: product.cta === "file" ? "" : product.cardPaymentUrl,
                 interacEmail: product.interacEmail,
                 interacQuestion: product.interacQuestion,
                 interacPassword: product.interacPassword,
                 venmoUsername: product.venmoUsername,
-                paypalMe: product.cta === "file" ? filePaypalMe(product) : product.paypalMe,
+                paypalMe: product.cta === "file" ? "" : product.paypalMe,
               }}
             />
           </div>
