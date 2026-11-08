@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { CopyText } from "@/components/copy-text";
+import { QuoteContact } from "@/components/quote-contact";
 import { SellerQuoteActions } from "@/components/seller-quote-actions";
 import { requireSeller } from "@/lib/auth";
 import { getInteractionBySource, getProductById, getQuote } from "@/lib/db";
@@ -28,7 +28,7 @@ async function QuoteScreen({
   const details = detailCards(quote.projectDetails);
   const currency = product.currency || "CAD";
   const offer = quote.offerSentAt && quote.offerKind
-    ? { kind: quote.offerKind, cents: quote.offerCents, scope: quote.offerScope, validDays: quote.offerValidDays }
+    ? { kind: quote.offerKind, cents: quote.offerCents, scope: quote.offerScope, timeline: quote.offerTimeline, validDays: quote.offerValidDays }
     : null;
 
   return (
@@ -54,23 +54,7 @@ async function QuoteScreen({
         </div>
 
         <h3 className="mt-6 text-sm font-medium">Contact buyer</h3>
-        <div className={`mt-3 grid gap-2 ${phone ? "grid-cols-3" : "grid-cols-2"}`}>
-          {phone ? <ContactLink href={`tel:${phone.replace(/[^\d+]/g, "")}`} label="Call" icon="phone" /> : null}
-          <ContactLink href={`mailto:${quote.email}?subject=${encodeURIComponent(`Quote request: ${quote.productTitle}`)}`} label="Email" icon="mail" />
-          <CopyText value={contact} label="Copy contact" className="inline-flex h-auto w-full flex-col items-center gap-2 rounded-2xl border border-line bg-white px-2 py-3 text-sm text-ink" />
-        </div>
-        <dl className="mt-4 space-y-2 text-sm">
-          <div className="flex items-start justify-between gap-4">
-            <dt className="text-muted">Email</dt>
-            <dd className="text-right">{quote.email}</dd>
-          </div>
-          {phone ? (
-            <div className="flex items-start justify-between gap-4">
-              <dt className="text-muted">Phone</dt>
-              <dd className="text-right">{phone}</dd>
-            </div>
-          ) : null}
-        </dl>
+        <QuoteContact email={quote.email} phone={phone} contact={contact} />
 
         <h3 className="mt-6 border-t border-line pt-5 text-sm font-medium">Project details</h3>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -94,7 +78,7 @@ async function QuoteScreen({
           <div className="mt-6 rounded-2xl bg-white px-4 py-4">
             <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Quote sent</p>
             <p className="mt-1 font-serif text-3xl">{formatMoney(offer.cents, currency)}</p>
-            <p className="mt-1 text-sm text-muted">{offer.kind === "fixed" ? "Fixed price" : "Estimated price"} · Valid for {offer.validDays} days · Sent {formatDate(quote.offerSentAt)}</p>
+            <p className="mt-1 text-sm text-muted">{offer.kind === "fixed" ? "Fixed price" : "Estimated price"} · Valid for {offer.validDays} days{offer.timeline ? ` · ${offer.timeline}` : ""} · Sent {formatDate(quote.offerSentAt)}</p>
             <p className="mt-3 text-sm">{offer.scope}</p>
           </div>
         ) : null}
@@ -102,24 +86,6 @@ async function QuoteScreen({
         <SellerQuoteActions quoteId={quote.id} status={quote.status} currency={currency} offer={offer} />
       </section>
     </main>
-  );
-}
-
-function ContactLink({ href, label, icon }: { href: string; label: string; icon: "phone" | "mail" }) {
-  return (
-    <a href={href} className="inline-flex flex-col items-center gap-2 rounded-2xl border border-line bg-white px-2 py-3 text-sm text-ink">
-      {icon === "phone" ? (
-        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <path d="M3.2 2.6h2.1l1 2.4-1.3 1.1a8.4 8.4 0 0 0 3.9 3.9l1.1-1.3 2.4 1v2.1c0 .6-.5 1.1-1.1 1.1A10.3 10.3 0 0 1 2.1 3.7c0-.6.5-1.1 1.1-1.1Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-        </svg>
-      ) : (
-        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <rect x="1.8" y="3.2" width="12.4" height="9.6" rx="1.4" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M2.2 4.1 8 8.4l5.8-4.3" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-        </svg>
-      )}
-      {label}
-    </a>
   );
 }
 

@@ -15,13 +15,14 @@ export function SellerQuoteActions({
   quoteId: string;
   status: "new" | "contacted" | "closed";
   currency: string;
-  offer: { kind: "fixed" | "estimate"; cents: number; scope: string; validDays: number } | null;
+  offer: { kind: "fixed" | "estimate"; cents: number; scope: string; timeline: string; validDays: number } | null;
 }) {
   const [open, setOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [kind, setKind] = useState<"fixed" | "estimate">(offer?.kind ?? "fixed");
   const [amount, setAmount] = useState(offer ? (offer.cents / 100).toFixed(2) : "");
   const [scope, setScope] = useState(offer?.scope ?? "");
+  const [timeline, setTimeline] = useState(offer?.timeline ?? "");
   const [days, setDays] = useState(offer?.validDays || 30);
   const [state, send, sending] = useActionState(sendSellerQuote, {} as FormState);
   const [contactState, markContacted, marking] = useActionState(markQuoteContacted, {} as FormState);
@@ -61,6 +62,10 @@ export function SellerQuoteActions({
             <textarea name="scope" value={scope} onChange={(event) => setScope(event.target.value)} rows={4} maxLength={2000} className={`${inputClass} h-auto py-3`} placeholder="What this price includes." />
             {state.fieldErrors?.scope ? <p className="mt-1 text-sm text-danger">{state.fieldErrors.scope}</p> : null}
           </label>
+          <label className="block">
+            <span className={labelClass}>Time to complete <span className="font-normal text-muted">optional</span></span>
+            <input name="timeline" value={timeline} onChange={(event) => setTimeline(event.target.value)} maxLength={80} className={inputClass} placeholder="3 days, 1 week" />
+          </label>
           <fieldset className="space-y-2">
             <legend className={labelClass}>Quote valid for</legend>
             {[7, 14, 30].map((option) => (
@@ -74,7 +79,7 @@ export function SellerQuoteActions({
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Quote preview</p>
             <p className="mt-1 font-serif text-3xl">{preview ?? `${currency} —`}</p>
-            <p className="mt-1 text-sm text-muted">{kind === "fixed" ? "Fixed price" : "Estimated price"} · Valid for {days} days</p>
+            <p className="mt-1 text-sm text-muted">{kind === "fixed" ? "Fixed price" : "Estimated price"} · Valid for {days} days{timeline.trim() ? ` · ${timeline.trim()}` : ""}</p>
           </div>
           {state.error ? <p className="text-sm text-danger">{state.error}</p> : null}
           <button disabled={sending} className={`${buttonClass} w-full`}>{sending ? "Sending…" : "Send quote"}</button>

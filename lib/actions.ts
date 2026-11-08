@@ -2254,6 +2254,7 @@ export async function sendSellerQuote(_prev: FormState, formData: FormData): Pro
   const kind = text(formData, "quoteKind");
   const days = Number(text(formData, "validDays"));
   const scope = text(formData, "scope").trim().slice(0, 2000);
+  const timeline = text(formData, "timeline").trim().replace(/\s+/g, " ").slice(0, 80);
   const amount = text(formData, "amount").trim();
   const fieldErrors: Record<string, string> = {};
   if (kind !== "fixed" && kind !== "estimate") fieldErrors.quoteKind = "Choose a quote type.";
@@ -2267,6 +2268,7 @@ export async function sendSellerQuote(_prev: FormState, formData: FormData): Pro
     kind: kind as "fixed" | "estimate",
     cents,
     scope,
+    timeline,
     validDays: days,
   });
   if (!saved) return { error: "That quote is not yours." };
@@ -2282,12 +2284,13 @@ export async function sendSellerQuote(_prev: FormState, formData: FormData): Pro
       "",
       `${label}: ${price}`,
       `Valid for ${days} days.`,
+      timeline ? `Time to complete: ${timeline}` : null,
       "",
       "Scope of work",
       scope,
       "",
       "Reply to this email to reach the seller.",
-    ].join("\n"),
+    ].filter((line): line is string => line !== null).join("\n"),
   });
   return { next: `/dashboard/quotes/${owned.quote.id}?notice=${mailed ? "sent" : "saved"}` };
 }

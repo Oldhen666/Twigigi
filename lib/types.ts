@@ -265,6 +265,7 @@ export type QuoteRecord = {
   offerKind: "" | "fixed" | "estimate";
   offerCents: number;
   offerScope: string;
+  offerTimeline: string;
   offerValidDays: number;
   offerSentAt: string | null;
 };
