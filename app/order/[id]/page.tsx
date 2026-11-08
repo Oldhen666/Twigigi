@@ -69,7 +69,7 @@ async function OrderView({
     ? "/orders"
     : `/signup?email=${encodeURIComponent(order.email)}&next=${encodeURIComponent("/orders")}`;
   const contact = sellerContact(product, seller?.email ?? "", digital);
-  const placement = !digital && !canceled && order.reviewState !== "changes" && order.buyerPayment ? buyerPlacement(order) : null;
+  const placement = !canceled && order.reviewState !== "changes" && (digital || order.buyerPayment) ? buyerPlacement(order) : null;
   const showPlaced = Boolean(placement);
   const title = placement?.title ?? copy.title;
   const badge = placement?.badge ?? copy.badge;
@@ -191,6 +191,33 @@ async function OrderView({
               ) : null}
             </section>
 
+            {digital && !paid ? (
+              <section className="mt-4 rounded-3xl border border-line bg-white px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="font-semibold">Pay the seller</h2>
+                  <p className="text-sm text-muted">{fileMethods.includes("card") && fileMethods.includes("paypal") ? "PayPal or card" : fileMethods.includes("card") ? "Card" : "PayPal"}</p>
+                </div>
+                {query.canceled === "1" ? <p className="mt-3 text-sm text-clay">Payment canceled. You can try again.</p> : null}
+                {query.paypal === "setup" ? <p className="mt-3 text-sm text-clay">This payment is not set up yet.</p> : null}
+                {query.paypal === "error" ? <p className="mt-3 text-sm text-clay">The payment could not be confirmed.</p> : null}
+                <div className="mt-4 space-y-2">
+                  {fileMethods.includes("paypal") ? (
+                    <form action={payDigitalFile}>
+                      <input type="hidden" name="id" value={order.id} />
+                      <input type="hidden" name="method" value="paypal" />
+                      <button className={`${buttonClass} w-full`}>Pay with PayPal</button>
+                    </form>
+                  ) : null}
+                  {fileMethods.includes("card") ? (
+                    <form action={payDigitalFile}>
+                      <input type="hidden" name="id" value={order.id} />
+                      <input type="hidden" name="method" value="card" />
+                      <button className={`${buttonClass} w-full`}>Pay by card</button>
+                    </form>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
             {choosingPayment ? (
               <form action={changeOrderPayment} className="mt-4 rounded-3xl border border-line bg-white px-4 py-4">
                 <h2 className="font-semibold">How will you pay?</h2>
@@ -247,9 +274,11 @@ async function OrderView({
               <p className="mt-4 flex gap-2 text-sm leading-6 text-muted">
                 <AlertIcon />
                 <span>
-                  {isCashMethod(order.buyerPayment)
-                    ? "Cash payments are made directly to the seller, not through Twigigi."
-                    : "You pay the seller directly. Twigigi does not hold or guarantee payments. Be cautious when paying before receiving an item."}
+                  {digital
+                    ? "You pay the seller directly. Twigigi emails the file when the payment is confirmed."
+                    : isCashMethod(order.buyerPayment)
+                      ? "Cash payments are made directly to the seller, not through Twigigi."
+                      : "You pay the seller directly. Twigigi does not hold or guarantee payments. Be cautious when paying before receiving an item."}
                 </span>
               </p>
             ) : null}
@@ -270,28 +299,6 @@ async function OrderView({
           {title}
         </p>
         <p className="mt-4 text-sm leading-6 text-ink">{intro}</p>
-        {digital && !paid && !canceled ? (
-          <div className="mt-4 space-y-3">
-            {query.canceled === "1" ? <p className="text-sm text-clay">Payment canceled. You can try again.</p> : null}
-            {query.paypal === "setup" ? <p className="text-sm text-clay">This payment is not set up yet.</p> : null}
-            {query.paypal === "error" ? <p className="text-sm text-clay">The payment could not be confirmed.</p> : null}
-            {fileMethods.includes("paypal") ? (
-              <form action={payDigitalFile}>
-                <input type="hidden" name="id" value={order.id} />
-                <input type="hidden" name="method" value="paypal" />
-                <button className={`${buttonClass} w-full`}>Pay with PayPal</button>
-              </form>
-            ) : null}
-            {fileMethods.includes("card") ? (
-              <form action={payDigitalFile}>
-                <input type="hidden" name="id" value={order.id} />
-                <input type="hidden" name="method" value="card" />
-                <button className={`${buttonClass} w-full`}>Pay by card</button>
-              </form>
-            ) : null}
-          </div>
-        ) : null}
-
         <section className="mt-4 rounded-2xl bg-ink px-4 py-4 text-card">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-medium uppercase tracking-[0.14em] text-card/70">{orderNumber ? `Order #${orderNumber}` : "Order"}</p>
@@ -504,6 +511,7 @@ function shortStep(title: string) {
     Complete: "Complete",
     Fulfillment: "Delivery",
     Delivered: "Delivered",
+    "File emailed": "Emailed",
   };
   return labels[title] ?? title;
 }

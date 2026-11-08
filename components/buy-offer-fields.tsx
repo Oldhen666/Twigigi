@@ -531,7 +531,7 @@ function PaymentChoices({
       <div className="mt-4 space-y-3">
         <input type="hidden" name="paymentMethods" value='["paypal"]' />
         <input type="hidden" name="cardPaymentUrl" value="" />
-        <Field label="PayPal email" required error={paypalError}>
+        <Field label="PayPal email" required={!stripeReady} optional={stripeReady} error={paypalError}>
           <input
             ref={paypalRef}
             name="paypalEmail"
@@ -543,15 +543,22 @@ function PaymentChoices({
             className={inputClass}
           />
           <span className="mt-1 block text-sm text-muted">
-            Buyers pay this PayPal account. When the payment is confirmed, Twigigi emails the file. Twigigi does not take a fee. Leave this blank if buyers will pay by card instead.
+            {stripeReady
+              ? "Add this to also accept PayPal. Leave it blank and buyers pay by card only."
+              : "Buyers pay this PayPal account. Twigigi emails the file when PayPal confirms the payment."}
           </span>
         </Field>
-        <p className="text-sm text-muted">
-          {stripeReady
-            ? "Stripe is connected. Buyers can pay by card, and the money goes to your Stripe account."
-            : "Card payments need a connected Stripe account. Connect it in Payment settings, then publish."}{" "}
-          <a href="/dashboard/payments" className="text-forest">Payment settings</a>
-        </p>
+        <div className="rounded-2xl border border-line bg-white px-4 py-3 text-sm">
+          <p className="font-medium text-ink">Pay by card</p>
+          {stripeReady ? (
+            <p className="mt-1 text-muted">Stripe is connected. Buyers can pay by card, and the money goes to your Stripe account. Twigigi does not take a fee.</p>
+          ) : (
+            <p className="mt-1 text-muted">
+              Connect Stripe once if you want buyers to pay by card.{" "}
+              <a href="/dashboard/payments" target="_blank" rel="noreferrer" className="font-medium text-forest">Connect Stripe</a>
+            </p>
+          )}
+        </div>
       </div>
     );
   }

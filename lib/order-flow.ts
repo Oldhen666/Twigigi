@@ -187,6 +187,43 @@ export function buyerPlacement(order: StageOrder & { displayName: string; pickup
   const verifying = order.paymentStatus === "verifying";
   const handed = fulfillmentDone(order.fulfillmentState) || order.status === "fulfilled";
   const step = (title: string, detail: string, state: PlacementStep["state"]): PlacementStep => ({ title, detail, state });
+  if (order.fulfillment === "digital") {
+    const emailed = Boolean(order.fileSentAt) || handed;
+    if (paid && emailed) {
+      return {
+        title: "Order completed",
+        badge: "Completed",
+        intro: "The payment is confirmed and the file was emailed.",
+        steps: [
+          step("Order placed", "Twigigi created this order right away.", "done"),
+          step("Payment confirmed", "The payment is confirmed.", "done"),
+          step("File emailed", "The file link was emailed.", "done"),
+        ],
+      };
+    }
+    if (paid) {
+      return {
+        title: "Payment confirmed",
+        badge: "Payment Confirmed",
+        intro: "The payment is confirmed. Twigigi emails the file link.",
+        steps: [
+          step("Order placed", "Twigigi created this order right away.", "done"),
+          step("Payment confirmed", "The payment is confirmed.", "done"),
+          step("File emailed", "Twigigi emails the file link.", "current"),
+        ],
+      };
+    }
+    return {
+      title: "Awaiting payment",
+      badge: "Awaiting payment",
+      intro: "Pay the seller directly. The file is emailed when the payment is confirmed.",
+      steps: [
+        step("Order placed", "Twigigi created this order right away.", "done"),
+        step("Pay the seller", "Finish the payment. The file is emailed when it is confirmed.", "current"),
+        step("File emailed", "The file link arrives by email.", "upcoming"),
+      ],
+    };
+  }
   if (cash && order.fulfillment === "pickup") {
     const delivered = order.fulfillmentState === "handed" || order.status === "fulfilled";
     const ready = delivered || order.fulfillmentState === "ready";
