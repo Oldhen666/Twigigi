@@ -1,18 +1,55 @@
+import { AdminListTools } from "@/components/admin-list-tools";
 import { adminRemoveReview, adminSaveReview } from "@/lib/actions";
+import { emptyListMessage, includesText, pick, queryValue, sortRows } from "@/lib/admin-list";
 import { requireAdmin } from "@/lib/auth";
 import { listAllReviews } from "@/lib/db";
+
+const SCORES = ["", "5", "4", "3", "2", "1"] as const;
+const KINDS = ["", "order", "quote"] as const;
+const SORTS = ["newest", "oldest", "score-desc", "score-asc"] as const;
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requireAdmin();
   const query = await searchParams;
   const error = typeof query.error === "string" ? query.error : "";
-  const reviews = listAllReviews();
+  const q = queryValue(query.q);
+  const score = pick(queryValue(query.score), SCORES);
+  const kind = pick(queryValue(query.kind), KINDS);
+  const sort = pick(queryValue(query.sort), SORTS, "newest");
+  const all = listAllReviews();
+  const reviews = sortRows(
+    all.filter((review) => {
+      if (score && review.overall !== Number(score)) return false;
+      if (kind && review.kind !== kind) return false;
+      return includesText(q, [review.displayName, review.productTitle, review.publicRef, review.body]);
+    }),
+    (review) => (sort.startsWith("score") ? review.overall : review.createdAt),
+    sort === "oldest" || sort === "score-asc" ? "asc" : "desc",
+  );
+  const empty = emptyListMessage(reviews.length, all.length, "No reviews yet.");
   return (
     <main className="mx-auto w-full max-w-5xl px-5 pb-16">
       <h1 className="font-serif text-4xl">Reviews</h1>
       <p className="mt-2 text-sm text-muted">Edit the scores and text, or remove a review.</p>
       {error ? <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
-      {reviews.length === 0 ? <p className="mt-8 text-sm text-muted">No reviews yet.</p> : null}
+      <AdminListTools
+        path="/admin/reviews"
+        q={q}
+        shown={reviews.length}
+        total={all.length}
+        sort={sort}
+        sorts={[
+          { value: "newest", label: "Newest" },
+          { value: "oldest", label: "Oldest" },
+          { value: "score-desc", label: "Highest score" },
+          { value: "score-asc", label: "Lowest score" },
+        ]}
+        filters={[
+          { name: "score", label: "Overall", value: score, options: [{ value: "", label: "Any score" }, { value: "5", label: "5" }, { value: "4", label: "4" }, { value: "3", label: "3" }, { value: "2", label: "2" }, { value: "1", label: "1" }] },
+          { name: "kind", label: "Type", value: kind, options: [{ value: "", label: "Orders and quotes" }, { value: "order", label: "Orders" }, { value: "quote", label: "Quotes" }] },
+        ]}
+      />
+      {empty ? <p className="mt-6 text-sm text-muted">{empty}</p> : (
       <ul className="mt-6 space-y-4">
         {reviews.map((review) => (
           <li key={review.id} className="rounded-2xl border border-line bg-card p-4">
@@ -38,6 +75,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           </li>
         ))}
       </ul>
+      )}
     </main>
   );
 }

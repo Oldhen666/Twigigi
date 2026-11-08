@@ -1,13 +1,39 @@
-import Link from "next/link";
+import { AdminListTools } from "@/components/admin-list-tools";
+import { emptyListMessage, includesText, pick, queryValue, sortRows } from "@/lib/admin-list";
 import { requireAdmin } from "@/lib/auth";
 import { listSellerSales, marketplaceGmv, platformRevenue } from "@/lib/db";
 import { formatMoney } from "@/lib/format";
 
-export default async function Page() {
+const ACTIVITY = ["", "sales", "awaiting"] as const;
+const SORTS = ["name", "sales", "paid", "awaiting"] as const;
+
+export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requireAdmin();
+  const query = await searchParams;
+  const q = queryValue(query.q);
+  const activity = pick(queryValue(query.activity), ACTIVITY);
+  const sort = pick(queryValue(query.sort), SORTS, "name");
   const gmv = marketplaceGmv();
   const revenue = platformRevenue();
-  const sellers = listSellerSales();
+  const all = listSellerSales();
+  const currencies = [...new Set(all.map((seller) => seller.currency))].sort();
+  const currency = pick(queryValue(query.currency).toUpperCase(), currencies);
+  const sellers = sortRows(
+    all.filter((seller) => {
+      if (currency && seller.currency !== currency) return false;
+      if (activity === "sales" && seller.salesCents <= 0) return false;
+      if (activity === "awaiting" && seller.awaitingCents <= 0) return false;
+      return includesText(q, [seller.displayName, seller.email]);
+    }),
+    (seller) => {
+      if (sort === "sales") return seller.salesCents;
+      if (sort === "paid") return seller.paidCents;
+      if (sort === "awaiting") return seller.awaitingCents;
+      return seller.displayName;
+    },
+    sort === "name" ? "asc" : "desc",
+  );
+  const empty = emptyListMessage(sellers.length, all.length, "No sellers yet.");
   return (
     <main className="mx-auto w-full max-w-5xl px-5 pb-16">
       <h1 className="font-serif text-4xl">Sellers</h1>
@@ -43,7 +69,26 @@ export default async function Page() {
           ))
         )}
       </section>
-      <div className="mt-8 overflow-x-auto rounded-3xl border border-line bg-card">
+      <AdminListTools
+        path="/admin/sellers"
+        q={q}
+        shown={sellers.length}
+        total={all.length}
+        sort={sort}
+        sorts={[
+          { value: "name", label: "Name" },
+          { value: "sales", label: "Highest sales" },
+          { value: "paid", label: "Highest paid" },
+          { value: "awaiting", label: "Most awaiting" },
+        ]}
+        filters={[
+          { name: "activity", label: "Activity", value: activity, options: [{ value: "", label: "All sellers" }, { value: "sales", label: "Has sales" }, { value: "awaiting", label: "Awaiting payment" }] },
+          { name: "currency", label: "Currency", value: currency, options: [{ value: "", label: "Any currency" }, ...currencies.map((item) => ({ value: item, label: item }))] },
+        ]}
+      />
+      {empty ? <p className="mt-6 text-sm text-muted">{empty}</p> : null}
+      {sellers.length === 0 ? null : (
+      <div className="mt-4 overflow-x-auto rounded-3xl border border-line bg-card">
         <table className="w-full min-w-[680px] text-left text-sm">
           <thead className="text-xs uppercase tracking-wide text-muted">
             <tr>
@@ -68,6 +113,7 @@ export default async function Page() {
           </tbody>
         </table>
       </div>
+      )}
     </main>
   );
 }

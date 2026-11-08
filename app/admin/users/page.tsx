@@ -1,19 +1,65 @@
 import Link from "next/link";
+import { AdminListTools } from "@/components/admin-list-tools";
 import { adminRenameUser, adminSuspendAccount, enterSellerAccount, setUserRole } from "@/lib/actions";
+import { emptyListMessage, includesText, pick, queryValue, sortRows } from "@/lib/admin-list";
 import { requireAdmin } from "@/lib/auth";
 import { listUsers } from "@/lib/db";
 import { formatDate } from "@/lib/format";
+
+const ROLES = ["", "admin", "user"] as const;
+const STATES = ["", "active", "suspended"] as const;
+const SORTS = ["joined-desc", "joined-asc", "name", "twigs", "orders"] as const;
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const admin = await requireAdmin();
   const query = await searchParams;
   const error = typeof query.error === "string" ? query.error : "";
-  const users = listUsers();
+  const q = queryValue(query.q);
+  const role = pick(queryValue(query.role), ROLES);
+  const state = pick(queryValue(query.state), STATES);
+  const sort = pick(queryValue(query.sort), SORTS, "joined-desc");
+  const all = listUsers();
+  const users = sortRows(
+    all.filter((user) => {
+      if (role && user.role !== role) return false;
+      if (state === "active" && user.suspended) return false;
+      if (state === "suspended" && !user.suspended) return false;
+      return includesText(q, [user.displayName, user.email, user.username, user.publicId]);
+    }),
+    (user) => {
+      if (sort === "name") return user.displayName;
+      if (sort === "twigs") return user.productCount;
+      if (sort === "orders") return user.orderCount;
+      return user.createdAt;
+    },
+    sort === "joined-asc" || sort === "name" ? "asc" : "desc",
+  );
+  const empty = emptyListMessage(users.length, all.length, "No accounts yet.");
   return (
     <main className="mx-auto w-full max-w-5xl px-5 pb-16">
       <h1 className="font-serif text-4xl">Users</h1>
       <p className="mt-2 max-w-2xl text-sm text-muted">Everyone has the same account. Admin only opens this area.</p>
       {error ? <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
+      <AdminListTools
+        path="/admin/users"
+        q={q}
+        shown={users.length}
+        total={all.length}
+        sort={sort}
+        sorts={[
+          { value: "joined-desc", label: "Newest" },
+          { value: "joined-asc", label: "Oldest" },
+          { value: "name", label: "Name" },
+          { value: "twigs", label: "Most Twigs" },
+          { value: "orders", label: "Most orders" },
+        ]}
+        filters={[
+          { name: "role", label: "Role", value: role, options: [{ value: "", label: "All roles" }, { value: "admin", label: "Admin" }, { value: "user", label: "User" }] },
+          { name: "state", label: "Status", value: state, options: [{ value: "", label: "Any status" }, { value: "active", label: "Active" }, { value: "suspended", label: "Suspended" }] },
+        ]}
+      />
+      {empty ? <p className="mt-6 text-sm text-muted">{empty}</p> : null}
+      {users.length === 0 ? null : (
       <div className="mt-6 overflow-x-auto rounded-3xl border border-line bg-card">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="text-xs uppercase tracking-wide text-muted">
@@ -79,6 +125,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           </tbody>
         </table>
       </div>
+      )}
     </main>
   );
 }
