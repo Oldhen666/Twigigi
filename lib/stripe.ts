@@ -16,8 +16,37 @@ export function paymentsReady() {
 export async function refreshStripeConnect(accountId: string) {
   const stripe = getStripe();
   if (!stripe || !accountId) return null;
-  const account = await stripe.accounts.retrieve(accountId);
-  return { id: account.id, chargesEnabled: Boolean(account.charges_enabled) };
+  let id = accountId;
+  let chargesEnabled = false;
+  let sawAccount = false;
+  try {
+    const account = await stripe.accounts.retrieve(accountId);
+    id = account.id;
+    chargesEnabled = Boolean(account.charges_enabled);
+    sawAccount = true;
+  } catch (error) {
+    console.error("Stripe account retrieve failed.", error instanceof Error ? error.message : "");
+  }
+  if (!chargesEnabled) {
+    try {
+      const account = await stripe.v2.core.accounts.retrieve(accountId, { include: ["configuration.merchant"] });
+      id = account.id;
+      chargesEnabled = account.configuration?.merchant?.capabilities?.card_payments?.status === "active";
+      sawAccount = true;
+    } catch (error) {
+      console.error("Stripe v2 account retrieve failed.", error instanceof Error ? error.message : "");
+    }
+  }
+  if (!sawAccount) return null;
+  return { id, chargesEnabled };
+}
+
+function connectFailureMessage(raw: string) {
+  const text = raw.replace(/\s+/g, " ").trim();
+  if (/permission denied|required permissions|accounts write|signed up for connect|dashboard\.stripe\.com|accounts v1|losses_collector|\brk_|\bsk_|\bacct_/i.test(text)) {
+    return "Stripe could not open the connection page yet.";
+  }
+  return text.slice(0, 180) || "Stripe could not open the connection page.";
 }
 
 export async function createStripeConnectLink(input: { accountId: string; email: string; country: "CA" | "US" }) {
@@ -26,29 +55,40 @@ export async function createStripeConnectLink(input: { accountId: string; email:
   let accountId = input.accountId;
   try {
     if (!accountId) {
-      const account = await stripe.accounts.create({
-        type: "express",
-        country: input.country,
-        email: input.email,
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
+      const account = await stripe.v2.core.accounts.create({
+        contact_email: input.email,
+        dashboard: "express",
+        identity: { country: input.country.toLowerCase() },
+        defaults: {
+          responsibilities: {
+            fees_collector: "stripe",
+            losses_collector: "application",
+          },
+        },
+        configuration: {
+          merchant: {
+            capabilities: { card_payments: { requested: true } },
+          },
         },
       });
       accountId = account.id;
     }
-    const link = await stripe.accountLinks.create({
+    const link = await stripe.v2.core.accountLinks.create({
       account: accountId,
-      type: "account_onboarding",
-      refresh_url: `${appUrl()}/dashboard/payments?stripe=refresh`,
-      return_url: `${appUrl()}/dashboard/payments?stripe=return`,
+      use_case: {
+        type: "account_onboarding",
+        account_onboarding: {
+          refresh_url: `${appUrl()}/dashboard/payments?stripe=refresh`,
+          return_url: `${appUrl()}/dashboard/payments?stripe=return`,
+        },
+      },
     });
     if (!link.url) return { accountId, url: "", message: "Stripe did not return a connection page." };
     return { accountId, url: link.url, message: "" };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Stripe could not open the connection page.";
     console.error("Stripe Connect link failed.", message);
-    return { accountId, url: "", message: message.slice(0, 180) };
+    return { accountId, url: "", message: connectFailureMessage(message) };
   }
 }
 
