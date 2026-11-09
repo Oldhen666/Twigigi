@@ -124,7 +124,7 @@ export default async function Page({
   return (
     <main className="page-frame pb-16">
       <h1 className="mt-6 font-serif text-4xl">Payment settings</h1>
-      <p className="mt-2 text-sm text-muted">Manage how you receive payments from buyers and pay Twigigi fees.</p>
+      <p className="mt-2 text-sm text-muted">From buyers is money buyers pay you. Fees to Twigigi is the card or PayPal you use to pay listing and quote fees.</p>
       <PaymentSettingsTabs
         initial={initial}
         receiving={
@@ -146,7 +146,7 @@ export default async function Page({
                 <h2 className="font-serif text-2xl">Billing overview</h2>
                 <span className="rounded-full bg-paper-deep px-2.5 py-1 text-xs font-medium">{periodName(periodStart())}</span>
               </div>
-              <p className="mt-2 text-sm leading-6 text-muted">What you owe Twigigi, when it is charged, and which method can be charged.</p>
+              <p className="mt-2 text-sm leading-6 text-muted">Listing fees and quote fees you owe Twigigi. This is separate from money buyers pay you.</p>
               <div className="mt-4 grid gap-4 sm:grid-cols-3">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-muted">On the next bill</p>
@@ -157,7 +157,7 @@ export default async function Page({
                   <p className="mt-1 font-serif text-3xl">{nextCharge}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-muted">Payment method</p>
+                  <p className="text-xs uppercase tracking-wide text-muted">Charged from</p>
                   <p className="mt-1 font-serif text-3xl">{billingReady ? (billingMethod === "paypal" ? "PayPal" : "Card") : "Not connected"}</p>
                 </div>
               </div>

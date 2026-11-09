@@ -19,10 +19,10 @@ export function PaymentSettingsTabs({
     <div className="mt-8">
       <div role="tablist" className="flex flex-wrap gap-2">
         <button type="button" role="tab" aria-selected={tab === "receiving"} className={tabClass(tab === "receiving")} onClick={() => setTab("receiving")}>
-          Receive payments
+          From buyers
         </button>
         <button type="button" role="tab" aria-selected={tab === "receipts"} className={tabClass(tab === "receipts")} onClick={() => setTab("receipts")}>
-          Billing and receipts
+          Fees to Twigigi
         </button>
       </div>
       <div className="mt-4">{tab === "receiving" ? receiving : receipts}</div>

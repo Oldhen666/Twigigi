@@ -10,7 +10,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, digitalPayMethods, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
-import { beginDigitalPaypalCheckout, beginPaypalBillingAgreement, paypalCheckoutError, paypalConfigured } from "@/lib/paypal";
+import { beginDigitalPaypalCheckout, beginPaypalBillingAgreement, paypalBillingMessage, paypalCheckoutError, paypalConfigured } from "@/lib/paypal";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
@@ -1287,9 +1287,7 @@ export async function beginBillingSetup(formData: FormData) {
   } catch (error) {
     unstable_rethrow(error);
     const raw = error instanceof Error ? error.message : "";
-    const reason = raw === "PAYPAL_AUTH" || raw === "PAYPAL_BILLING" || raw === "PERMISSION_DENIED"
-      ? "PayPal has not enabled billing agreements for Twigigi yet. This method is not connected."
-      : raw.slice(0, 180);
+    const reason = method === "paypal" ? paypalBillingMessage(raw) : raw.replace(/\s+/g, " ").trim().slice(0, 180);
     const code = method === "paypal" ? "paypal" : "error";
     redirect(`/dashboard/payments?tab=receipts&billing=${code}${reason ? `&reason=${encodeURIComponent(reason)}` : ""}`);
   }

@@ -20,10 +20,10 @@ export function BillingMethodForm({
   return (
     <section className="rounded-3xl border border-line bg-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h2 className="font-serif text-2xl">Payment method</h2>
+        <h2 className="font-serif text-2xl">How you pay Twigigi</h2>
         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${ready ? "bg-forest text-card" : "bg-[#f4e7d4] text-[#8a5a2b]"}`}>{status}</span>
       </div>
-      <p className="mt-2 text-sm leading-6 text-muted">Choose how you pay Twigigi fees. A choice is not a connection. Billing stays off until Stripe or PayPal finishes the authorization.</p>
+      <p className="mt-2 text-sm leading-6 text-muted">This card or PayPal pays your listing fee and quote fees. Buyers never pay it, and it does not receive their payments. Choosing one here does not connect it.</p>
       {chosen ? <p className="mt-3 text-sm font-medium">{chosen} · {status}</p> : null}
       {notice ? <p className="mt-3 text-sm text-clay">{notice}</p> : null}
       <form action={beginBillingSetup} className="mt-4 grid gap-3">
@@ -41,8 +41,8 @@ export function BillingMethodForm({
             <span className="mt-0.5 block text-sm text-muted">Pay from your PayPal account after PayPal approves the billing agreement.</span>
           </span>
         </label>
-        <button className={`${buttonClass} w-full sm:w-fit`}>{method === "paypal" ? "Set up PayPal billing" : "Set up card billing"}</button>
-        <p className="text-sm text-muted">Automatic billing stays off until this setup is finished.</p>
+        <button className={`${buttonClass} w-full sm:w-fit`}>{method === "paypal" ? "Authorize PayPal for Twigigi fees" : "Authorize a card for Twigigi fees"}</button>
+        <p className="text-sm text-muted">Twigigi cannot charge the bill above until this authorization is finished.</p>
       </form>
     </section>
   );

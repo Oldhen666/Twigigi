@@ -46,9 +46,9 @@ export function ReceivePayments({
       </section>
 
       <section className="rounded-3xl border border-line bg-card p-5">
-        <h2 className="font-serif text-2xl">Card payments</h2>
+        <h2 className="font-serif text-2xl">Cards from buyers</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
-          Accept card payments for digital file orders through Stripe. The money goes to your connected Stripe account.
+          Digital files only. A buyer pays your Stripe account by card. Twigigi does not take this payment, and this is not the card that pays your listing or quote fees.
         </p>
         <p className="mt-3 flex items-center gap-2 text-sm text-muted">
           <span className={`size-2 rounded-full ${stripeReady ? "bg-forest" : "bg-clay"}`} aria-hidden />
@@ -63,14 +63,14 @@ export function ReceivePayments({
           </form>
         )}
         <p className="mt-3 text-sm leading-6 text-muted">
-          Stripe processing fees apply. Twigigi does not charge an additional transaction fee for this payment method.
+          Stripe deducts its processing fee from the buyer's payment. Twigigi does not add a fee.
         </p>
       </section>
 
       <section className="rounded-3xl border border-line bg-card p-5">
-        <h2 className="font-serif text-2xl">Direct payments</h2>
+        <h2 className="font-serif text-2xl">Other ways buyers pay you</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
-          Buyers pay you with these details, and you confirm the money yourself. These are not used for digital file card payments.
+          Buy now orders. Buyers pay you with these details, and you confirm the money. This is not used for digital-file cards, and Twigigi does not charge it for fees.
         </p>
         <form action={savePayoutDetails} className="mt-4 grid gap-4" noValidate>
           {canada ? (

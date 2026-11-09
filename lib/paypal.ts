@@ -60,7 +60,9 @@ async function paypalFetch(path: string, init: { method: string; body?: unknown 
     message?: string;
   } | null;
   if (!response.ok) {
-    throw new PaypalCheckoutError(body?.details?.[0]?.issue || body?.name || "PAYPAL_REQUEST");
+    const issue = body?.details?.[0]?.issue || body?.name || "PAYPAL_REQUEST";
+    console.error("PayPal request failed.", response.status, path, issue, body?.message || "");
+    throw new PaypalCheckoutError(issue);
   }
   return body as Record<string, unknown> | null;
 }
@@ -228,6 +230,21 @@ export async function paypalWebhookVerified(requestHeaders: Headers, event: unkn
   if (!response.ok) return false;
   const body = (await response.json()) as { verification_status?: string };
   return body.verification_status === "SUCCESS";
+}
+
+export function paypalBillingMessage(issue: string) {
+  if (
+    issue === "PAYPAL_AUTH" ||
+    issue === "PAYPAL_BILLING" ||
+    issue === "PERMISSION_DENIED" ||
+    issue === "AUTHORIZATION_ERROR" ||
+    issue === "NOT_AUTHORIZED" ||
+    issue === "NOT_ENABLED"
+  ) {
+    return "PayPal has not enabled billing agreements for Twigigi yet. This method is not connected.";
+  }
+  if (/^[A-Z0-9_]+$/.test(issue)) return "PayPal could not start billing setup. This method is not connected.";
+  return issue.replace(/\s+/g, " ").trim().slice(0, 180);
 }
 
 export function paypalCheckoutError(error: unknown) {
