@@ -61,7 +61,7 @@ export async function createStripeConnectLink(input: { accountId: string; email:
         identity: { country: input.country.toLowerCase() },
         defaults: {
           responsibilities: {
-            fees_collector: "stripe",
+            fees_collector: "application",
             losses_collector: "application",
           },
         },
