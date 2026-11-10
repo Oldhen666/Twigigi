@@ -41,12 +41,19 @@ export async function refreshStripeConnect(accountId: string) {
   return { id, chargesEnabled };
 }
 
+const CONNECT_API_VERSION = "2026-10-28.preview";
+
 function connectFailureMessage(raw: string) {
-  const text = raw.replace(/\s+/g, " ").trim();
-  if (/permission denied|required permissions|accounts write|signed up for connect|dashboard\.stripe\.com|accounts v1|losses_collector|\brk_|\bsk_|\bacct_/i.test(text)) {
-    return "Stripe could not open the connection page yet.";
+  const text = raw
+    .replace(/\brk_(?:live|test)_[A-Za-z0-9]+/g, "the Stripe key")
+    .replace(/\bsk_(?:live|test)_[A-Za-z0-9]+/g, "the Stripe key")
+    .replace(/\bacct_[A-Za-z0-9]+/g, "the Stripe account")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (/v2_account_storer_write|required permissions|permission denied/i.test(text)) {
+    return "The Stripe key needs permission to create connected accounts.";
   }
-  return text.slice(0, 180) || "Stripe could not open the connection page.";
+  return text.slice(0, 240) || "Stripe could not open the connection page.";
 }
 
 export async function createStripeConnectLink(input: { accountId: string; email: string; country: "CA" | "US" }) {
@@ -58,11 +65,11 @@ export async function createStripeConnectLink(input: { accountId: string; email:
       const account = await stripe.v2.core.accounts.create({
         contact_email: input.email,
         dashboard: "express",
-        identity: { country: input.country.toLowerCase() },
+        identity: { country: input.country },
         defaults: {
           responsibilities: {
-            fees_collector: "application",
-            losses_collector: "application",
+            fees_collector: "stripe",
+            losses_collector: "stripe",
           },
         },
         configuration: {
@@ -70,7 +77,7 @@ export async function createStripeConnectLink(input: { accountId: string; email:
             capabilities: { card_payments: { requested: true } },
           },
         },
-      });
+      }, { apiVersion: CONNECT_API_VERSION });
       accountId = account.id;
     }
     const link = await stripe.v2.core.accountLinks.create({
@@ -82,7 +89,7 @@ export async function createStripeConnectLink(input: { accountId: string; email:
           return_url: `${appUrl()}/dashboard/payments?stripe=return`,
         },
       },
-    });
+    }, { apiVersion: CONNECT_API_VERSION });
     if (!link.url) return { accountId, url: "", message: "Stripe did not return a connection page." };
     return { accountId, url: link.url, message: "" };
   } catch (error) {
