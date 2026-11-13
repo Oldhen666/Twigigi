@@ -82,10 +82,12 @@ export function withSrc(url: string, src: string) {
 }
 
 export function formatMoney(cents: number, currency = "CAD") {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency,
+  const code = currency.trim().toUpperCase() === "USD" ? "USD" : "CAD";
+  const amount = new Intl.NumberFormat("en-CA", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(cents / 100);
+  return `$${amount} ${code}`;
 }
 
 export function formatSignedMoney(cents: number, currency = "CAD") {

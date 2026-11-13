@@ -25,6 +25,8 @@ async function QuoteView({ params }: { params: Promise<{ id: string }> }) {
   const product = getProductById(quote.productId);
   const seller = product ? findUserById(product.userId) : null;
   const replied = Boolean(quote.offerSentAt && quote.offerKind && product);
+  const sentAt = quote.offerSentAt ? Date.parse(quote.offerSentAt) : Number.NaN;
+  const expired = replied && Number.isFinite(sentAt) && quote.offerValidDays > 0 && Date.now() > sentAt + quote.offerValidDays * 24 * 60 * 60 * 1000;
   const listing = `/${quote.publicId}/${quote.productSlug}`;
   const signup = `/signup?email=${encodeURIComponent(quote.email)}&next=${encodeURIComponent("/orders")}`;
   return (
@@ -36,7 +38,7 @@ async function QuoteView({ params }: { params: Promise<{ id: string }> }) {
               <path d="M2.5 6.2 4.8 8.5 9.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </span>
-          {replied ? "Quote from the seller" : "Quote request sent"}
+          {expired ? "Price expired" : replied ? "Quote from the seller" : "Quote request sent"}
         </p>
         <h1 className="mt-3 font-serif text-4xl leading-tight">{quote.productTitle}</h1>
         {replied && quote.offerSentAt && product ? (
@@ -61,8 +63,25 @@ async function QuoteView({ params }: { params: Promise<{ id: string }> }) {
 
         <section className="mt-5 rounded-2xl bg-paper-deep px-4 py-4">
           <h2 className="font-serif text-xl">What happens next?</h2>
-          <p className="mt-2 text-sm leading-6">The seller will review your request and contact you at:</p>
-          <p className="mt-2 break-all font-medium">{quote.email}</p>
+          {replied && quote.offerSentAt ? (
+            expired ? (
+              <>
+                <p className="mt-2 text-sm leading-6">This price is past its valid date. Contact the seller if you still want the work.</p>
+                <Link href={listing} className="mt-3 inline-flex text-sm font-medium text-forest">Contact the seller</Link>
+              </>
+            ) : (
+              <>
+                <p className="mt-2 text-sm leading-6">The seller replied. Review the price above, then contact them to continue.</p>
+                <p className="mt-2 text-sm">A reply was sent to {quote.email}.</p>
+                <Link href={listing} className="mt-3 inline-flex text-sm font-medium text-forest">Contact the seller</Link>
+              </>
+            )
+          ) : (
+            <>
+              <p className="mt-2 text-sm leading-6">Your request is submitted. The seller will review it and reply to:</p>
+              <p className="mt-2 break-all font-medium">{quote.email}</p>
+            </>
+          )}
         </section>
 
         {interaction ? <p className="mt-4 text-sm text-muted">Request #{interaction.publicRef}</p> : null}

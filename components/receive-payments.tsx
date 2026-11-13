@@ -47,9 +47,7 @@ export function ReceivePayments({
 
       <section className="rounded-3xl border border-line bg-card p-5">
         <h2 className="font-serif text-2xl">Cards from buyers</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">
-          Digital files only. A buyer pays your Stripe account by card. Twigigi does not take this payment, and this is not the card that pays your listing or quote fees.
-        </p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Digital files only. Buyers pay your Stripe account. Twigigi does not take this money, and it is optional until you sell a file.</p>
         <p className="mt-3 flex items-center gap-2 text-sm text-muted">
           <span className={`size-2 rounded-full ${stripeReady ? "bg-forest" : "bg-clay"}`} aria-hidden />
           {stripeStatus}
@@ -59,19 +57,15 @@ export function ReceivePayments({
         {stripeReady ? null : (
           <form action={startStripeConnect} className="mt-4">
             <input type="hidden" name="country" value={country} />
-            <button className={`${buttonClass} w-full`}>{stripeStarted ? "Continue Stripe setup" : "Connect Stripe"}</button>
+            <button className={`${buttonClass} w-full sm:w-fit`}>{stripeStarted ? "Continue Stripe setup" : "Connect Stripe"}</button>
           </form>
         )}
-        <p className="mt-3 text-sm leading-6 text-muted">
-          Stripe deducts its processing fee from the buyer's payment. Twigigi does not add a fee.
-        </p>
+          <p className="mt-3 text-sm leading-6 text-muted">Stripe takes its processing fee from the buyer's payment. Twigigi adds none.</p>
       </section>
 
       <section className="rounded-3xl border border-line bg-card p-5">
         <h2 className="font-serif text-2xl">Other ways buyers pay you</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">
-          Buy now orders. Buyers pay you with these details, and you confirm the money. This is not used for digital-file cards, and Twigigi does not charge it for fees.
-        </p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">For buy-now orders. Buyers pay you, and you confirm the money. Not used for digital-file cards.</p>
         <form action={savePayoutDetails} className="mt-4 grid gap-4" noValidate>
           {canada ? (
             <label>
@@ -86,7 +80,7 @@ export function ReceivePayments({
           )}
           {canada ? <input type="hidden" name="venmo" value={venmo} /> : <input type="hidden" name="interac" value={interac} />}
           <details className="rounded-2xl border border-line px-4 py-3">
-            <summary className="cursor-pointer text-sm font-medium">Other payment methods</summary>
+            <summary className="cursor-pointer text-sm font-medium">{canada ? "Cash and file PayPal" : "Zelle"}</summary>
             <div className="mt-3">
               {canada ? (
                 <>
@@ -101,7 +95,7 @@ export function ReceivePayments({
               )}
             </div>
           </details>
-          <button className={`${buttonClass} w-full`}>Save payment details</button>
+          <button className={`${buttonClass} w-full sm:w-fit`}>Save payment details</button>
         </form>
       </section>
 

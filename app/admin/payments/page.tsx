@@ -79,7 +79,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                       <Link href={`/admin/payments/${order.id}`} className="font-medium text-forest">{order.publicRef}</Link>
                       <p className="text-muted">{order.buyerName}</p>
                     </td>
-                    <td className="px-4 py-3">{formatMoney(total, order.currency)} {order.currency}</td>
+                    <td className="px-4 py-3">{formatMoney(total, order.currency)}</td>
                     <td className="px-4 py-3">{order.status === "canceled" ? "Canceled" : paid ? "Paid" : "Unpaid"}</td>
                     <td className="px-4 py-3">{order.paymentFlow === "seller_direct" ? "Seller directly" : "Twigigi Checkout"}</td>
                     <td className="px-4 py-3">{paymentConfirmationLabel(order.paymentFlow, paid && order.status !== "canceled")}</td>

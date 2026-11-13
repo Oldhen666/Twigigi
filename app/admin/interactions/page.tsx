@@ -1,4 +1,5 @@
 import { AdminListTools } from "@/components/admin-list-tools";
+import Link from "next/link";
 import { adminConfirmInteraction } from "@/lib/actions";
 import { emptyListMessage, includesText, pick, queryValue, sortRows } from "@/lib/admin-list";
 import { requireAdmin } from "@/lib/auth";
@@ -58,6 +59,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <li key={item.id} className="rounded-2xl border border-line bg-card p-4 text-sm">
             <p className="font-medium">{item.publicRef} · {item.productTitle}</p>
             <p className="text-muted">{item.kind} · {item.sellerName} · {item.buyerEmail} · {interactionLabel(item)}</p>
+            <p className="mt-2">
+              <Link href={item.kind === "order" ? `/order/${item.sourceId}` : `/quote/${item.sourceId}`} className="font-medium text-forest">
+                {item.kind === "order" ? "View order" : "View quote"}
+              </Link>
+            </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <ConfirmButton id={item.id} side="buyer" on={!item.buyerConfirmedAt} label={item.buyerConfirmedAt ? "Clear buyer" : "Buyer confirmed"} />
               <ConfirmButton id={item.id} side="seller" on={!item.sellerConfirmedAt} label={item.sellerConfirmedAt ? "Clear seller" : "Seller confirmed"} />

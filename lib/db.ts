@@ -23,6 +23,7 @@ import { fulfillmentDone, orderCanComplete, paymentNeedsConfirm } from "@/lib/or
 import { readStoredFileLinks } from "@/lib/files";
 import { parseQuoteForm } from "@/lib/quote-form";
 import { DEACTIVATION_GRACE_DAYS, RESERVED_USERNAMES, addDays, isPrivateUsername, slugify } from "@/lib/format";
+import { saleCurrency } from "@/lib/billing";
 import { BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
 import { graceDeadline, paidUntilAfterPayment } from "@/lib/listing-cycle";
 import { applyPaymentResult, claimCollectionCharge, claimCollectionCheckout, collectionOwner, ensurePaymentLedger, noteCollectionHold, readCollection, releaseCollectionClaim, saveCollectionCheckout, saveCollectionPaymentId, stageFeeCollection, type PaymentNotice } from "@/lib/payment-ledger";
@@ -891,7 +892,7 @@ function mapProduct(row: Row): Product {
     category: str(row.category),
     description: str(row.description),
     priceCents,
-    currency: str(row.currency || "CAD"),
+    currency: saleCurrency({ cta, location: str(row.location) }),
     location: str(row.location),
     videoUrl: row.video_url ? str(row.video_url) : null,
     pickupEnabled: num(row.pickup_enabled) === 1,
@@ -1704,7 +1705,7 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
       interac_question, interac_password,
       venmo_username, paypal_me, zelle_mode, zelle_contact, seller_contact_mode, seller_contact,
       category_kind, category_group, category, file_links, file_password
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     userId,
@@ -1713,6 +1714,7 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     input.brand,
     input.description,
     input.priceCents,
+    saleCurrency(input),
     input.location,
     input.videoUrl,
     input.pickupEnabled ? 1 : 0,
@@ -1770,7 +1772,7 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
   const result = db
     .prepare(
       `UPDATE products SET
-        slug = ?, title = ?, brand = ?, description = ?, price_cents = ?, location = ?, video_url = ?,
+        slug = ?, title = ?, brand = ?, description = ?, price_cents = ?, currency = ?, location = ?, video_url = ?,
         pickup_enabled = ?, pickup_note = ?, pickup_time = ?, delivery_enabled = ?, delivery_radius_km = ?, delivery_fee_cents = ?,
         shipping_enabled = ?, shipping_fee_cents = ?, free_shipping_over_cents = ?, shipping_note = ?,
         onsite_enabled = ?, remote_enabled = ?, at_location_enabled = ?, quote_form_json = ?,
@@ -1791,6 +1793,7 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
       input.brand,
       input.description,
       input.priceCents,
+      saleCurrency(input),
       input.location,
       input.videoUrl,
       input.pickupEnabled ? 1 : 0,

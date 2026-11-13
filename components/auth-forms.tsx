@@ -43,6 +43,24 @@ export function LoginHelp() {
   );
 }
 
+function PasswordField({ autoComplete }: { autoComplete: "current-password" | "new-password" }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input name="password" type={visible ? "text" : "password"} autoComplete={autoComplete} aria-label="Password" className={`${inputClass} pr-16`} />
+      <button
+        type="button"
+        onClick={() => setVisible((current) => !current)}
+        aria-pressed={visible}
+        aria-label={visible ? "Hide password" : "Show password"}
+        className="absolute top-2 right-2 h-8 rounded-full px-2 text-sm font-medium text-forest"
+      >
+        {visible ? "Hide" : "Show"}
+      </button>
+    </div>
+  );
+}
+
 export function LoginForm({ nextPath }: { nextPath: string }) {
   const [state, action, pending] = useActionState(signIn, {} as FormState);
   useContinue(state.next);
@@ -54,10 +72,10 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
         <span className={labelClass}>Email</span>
         <input name="email" type="email" autoComplete="email" className={inputClass} />
       </label>
-      <label className="block">
+      <div className="block">
         <span className={labelClass}>Password</span>
-        <input name="password" type="password" autoComplete="current-password" className={inputClass} />
-      </label>
+        <PasswordField autoComplete="current-password" />
+      </div>
       <button disabled={pending} className={`${buttonClass} w-full`}>
         {pending ? "Signing in…" : "Log in"}
       </button>

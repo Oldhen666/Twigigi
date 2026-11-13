@@ -86,7 +86,7 @@ export function DigitalFileAccess({
       {primary ? (
         <section className="rounded-3xl border border-line bg-white px-4 py-4">
           <h2 className="font-semibold">Was everything okay with your file?</h2>
-          <p className="mt-1 text-sm text-muted">Let the seller know whether you could open it. The order stays complete either way.</p>
+          <p className="mt-1 text-sm text-muted">Let the seller know whether you could open it. Confirming file access does not mark the order complete.</p>
           {accessConfirmed ? (
             <p className="mt-3 text-sm text-forest">You confirmed that the file opened.</p>
           ) : issue || helpSent ? (
@@ -106,7 +106,7 @@ export function DigitalFileAccess({
             <div className="mt-4 grid grid-cols-2 gap-2">
               <form action={confirmReceipt}>
                 <input type="hidden" name="id" value={orderId} />
-                <button className={`${ghostClass} w-full`}>Yes, all good</button>
+                <button className={`${ghostClass} w-full`}>Confirm file access</button>
               </form>
               <button type="button" onClick={() => setHelp(true)} className={`${ghostClass} w-full`}>
                 I need help

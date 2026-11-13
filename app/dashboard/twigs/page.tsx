@@ -29,7 +29,11 @@ async function TwigsScreen() {
         <Link href="/start" className="inline-flex h-11 items-center rounded-full bg-forest px-5 text-sm font-medium text-card">+ New Twig</Link>
       </div>
       {products.length === 0 ? (
-        <p className="mt-8 text-sm text-muted">No Twigs yet.</p>
+        <div className="mt-6 max-w-xl rounded-3xl border border-dashed border-line bg-card p-6">
+          <h2 className="font-serif text-2xl">No Twigs yet</h2>
+          <p className="mt-2 max-w-prose text-sm leading-6 text-muted">A Twig is the page buyers open to buy, request a quote, or get a file.</p>
+          <Link href="/start" className="mt-4 inline-flex h-12 items-center rounded-full bg-forest px-5 text-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">Create a Twig</Link>
+        </div>
       ) : (
         <TwigSelectionProvider items={picks}>
           <div className="mt-6 flex items-center gap-3">

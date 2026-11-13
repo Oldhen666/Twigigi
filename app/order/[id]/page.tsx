@@ -122,7 +122,7 @@ async function OrderView({
     { label: "Status", value: badge },
     ...summaryLines.map((line) => ({
       label: "Item",
-      value: `${line.title} · Qty ${line.quantity} · ${line.amount} ${order.currency}`,
+      value: `${line.title} · Qty ${line.quantity} · ${line.amount}`,
     })),
     { label: "Fulfillment", value: fulfillmentLabel },
     { label: "Payment", value: methodLabel(order.buyerPayment) },
@@ -142,7 +142,8 @@ async function OrderView({
             <h1 className="sr-only">{title}</h1>
             <section className="rounded-3xl border border-line bg-white px-4 py-4">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted">{orderNumber ? `Order #${orderNumber}` : "Order"}</p>
+                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted">{order.publicRef ? `Order #${order.publicRef}` : "Order"}</p>
+                {interaction && interaction.publicRef !== order.publicRef ? <p className="text-[11px] text-muted">Confirmation {interaction.publicRef}</p> : null}
                 <span className="shrink-0 rounded-full bg-[#f4e7d4] px-2.5 py-1 text-xs font-medium text-[#8a5a2b]">{badge}</span>
               </div>
               <div className="mt-4 space-y-4">
@@ -156,7 +157,7 @@ async function OrderView({
                     <div className="min-w-0">
                       <p className="font-medium leading-5">{line.title}</p>
                       <p className="mt-1 text-sm text-muted">Qty {line.quantity} · {fulfillmentLabel}</p>
-                      <p className="mt-1 text-lg font-semibold">{line.amount} {order.currency}</p>
+                      <p className="mt-1 text-lg font-semibold">{line.amount}</p>
                     </div>
                   </div>
                 ))}

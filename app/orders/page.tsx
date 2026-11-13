@@ -58,14 +58,18 @@ async function OrdersScreen() {
                 <p className="text-sm text-muted">{orderHeading(order)} · {order.quantity} · {order.fulfillment}</p>
                 <p className="mt-1">{formatMoney(order.amountCents, order.currency)}</p>
                 <p className="text-sm text-muted">{orderStage(order)} · {formatDate(order.createdAt)}</p>
+                {order.fulfillment === "digital" && orderStage(order) === "File sent" ? (
+                  <p className="mt-1 text-sm text-muted">Next: confirm file access. This does not complete the order.</p>
+                ) : null}
                 {interaction ? (
                   <InteractionLine
                     item={interaction}
                     nextPath="/orders"
                     side="buyer"
                     showReview={false}
+                    showRef={false}
                     allowConfirm={fulfillmentDone(order.fulfillmentState) && !order.buyerReceivedAt}
-                    confirmLabel="Confirm item received"
+                    confirmLabel={order.fulfillment === "digital" ? "Confirm file access" : "Confirm item received"}
                   />
                 ) : null}
                 {interaction ? (
@@ -93,10 +97,8 @@ async function OrdersScreen() {
             {quotes.map((quote) => (
                 <li key={quote.id} className="rounded-2xl border border-line bg-card p-4">
                   <p className="font-medium">{quote.productTitle}</p>
-                  <p className="text-sm text-muted">qty {quote.quantity} · {formatDate(quote.createdAt)}</p>
-                  {quote.offerSentAt ? (
-                    <Link href={`/quote/${quote.id}`} className="mt-3 inline-flex text-sm font-medium text-forest">View estimate</Link>
-                  ) : null}
+                  <p className="text-sm text-muted">qty {quote.quantity} · {formatDate(quote.createdAt)} · {quote.offerSentAt ? "Reply received" : "Submitted"}</p>
+                  <Link href={`/quote/${quote.id}`} className="mt-3 inline-flex text-sm font-medium text-forest">{quote.offerSentAt ? "View estimate" : "View request"}</Link>
                 </li>
               ))}
           </ul>

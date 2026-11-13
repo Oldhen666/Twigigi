@@ -171,11 +171,12 @@ export function orderStage(order: StageOrder & { pickupConfirmedAt?: string | nu
   }
   if (order.reviewState !== "accepted") return "Awaiting seller";
   if (paymentNeedsConfirm(order.buyerPayment) && order.paymentStatus !== "paid" && order.status !== "paid") return "Awaiting payment";
-  if (!fulfillmentDone(order.fulfillmentState)) {
+  if (!fulfillmentDone(order.fulfillmentState) && !(order.fulfillment === "digital" && order.fileSentAt)) {
     if (order.fulfillment === "digital") return "Awaiting file";
     if (shipsToBuyer(order.fulfillment)) return "Awaiting delivery";
     return "Awaiting pickup";
   }
+  if (order.fulfillment === "digital") return order.buyerReceivedAt ? "File access confirmed" : "File sent";
   if (!order.buyerReceivedAt) return "Awaiting buyer";
   return "Ready to complete";
 }
@@ -190,15 +191,42 @@ export function buyerPlacement(order: StageOrder & { displayName: string; pickup
   const step = (title: string, detail: string, state: PlacementStep["state"]): PlacementStep => ({ title, detail, state });
   if (order.fulfillment === "digital") {
     const emailed = Boolean(order.fileSentAt) || handed;
-    if (paid && emailed) {
+    if (paid && emailed && order.status === "fulfilled") {
       return {
-        title: "Order completed",
+        title: "Completed",
         badge: "Completed",
-        intro: "The payment is confirmed and the file was emailed.",
+        intro: "The seller marked this order complete after the file was emailed.",
         steps: [
           step("Order placed", "Twigigi created this order right away.", "done"),
           step("Payment confirmed", "The payment is confirmed.", "done"),
           step("File emailed", "The file link was emailed.", "done"),
+          step("Completed", "The seller marked the order complete.", "done"),
+        ],
+      };
+    }
+    if (paid && emailed && order.buyerReceivedAt) {
+      return {
+        title: "File access confirmed",
+        badge: "File access confirmed",
+        intro: "You confirmed that you could open the file. The seller marks the order complete.",
+        steps: [
+          step("Order placed", "Twigigi created this order right away.", "done"),
+          step("Payment confirmed", "The payment is confirmed.", "done"),
+          step("File emailed", "The file link was emailed.", "done"),
+          step("File access confirmed", "Your confirmation does not complete the order.", "current"),
+        ],
+      };
+    }
+    if (paid && emailed) {
+      return {
+        title: "File sent",
+        badge: "File sent",
+        intro: "The file link was emailed. Confirm file access if you could open it. That confirmation does not complete the order.",
+        steps: [
+          step("Order placed", "Twigigi created this order right away.", "done"),
+          step("Payment confirmed", "The payment is confirmed.", "done"),
+          step("File emailed", "The file link was emailed.", "done"),
+          step("File access", "Tell the seller whether you could open the file.", "current"),
         ],
       };
     }

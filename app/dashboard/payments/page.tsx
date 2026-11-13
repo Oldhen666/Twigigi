@@ -146,8 +146,8 @@ export default async function Page({
 
   return (
     <main className="page-frame pb-16">
-      <h1 className="mt-6 font-serif text-4xl">Payment settings</h1>
-      <p className="mt-2 text-sm text-muted">From buyers is money buyers pay you. Fees to Twigigi is the card or PayPal you use to pay listing and quote fees.</p>
+      <h1 className="mt-6 font-serif text-4xl">Payments</h1>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">From buyers is money buyers pay you. Twigigi fees is what you pay Twigigi for listings and quotes.</p>
       <PaymentSettingsTabs
         initial={initial}
         receiving={
@@ -166,10 +166,10 @@ export default async function Page({
           <div className="space-y-4">
             <section className="rounded-3xl border border-line bg-card p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <h2 className="font-serif text-2xl">Billing overview</h2>
+                <h2 className="font-serif text-2xl">Fee summary</h2>
                 <span className="rounded-full bg-paper-deep px-2.5 py-1 text-xs font-medium">30-day cycles</span>
               </div>
-              <p className="mt-2 text-sm leading-6 text-muted">Each listing is C$1.49 or USD$1.49 for its own 30 days. Quote fees stay unpaid until the next listing payment, and they are not charged on their own.</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Each listing is C$1.49 or USD$1.49 for its own 30 days. A digital file is always C$1.49. Quote fees stay unpaid until the next listing payment in the same currency, and they are not charged on their own.</p>
               <div className="mt-4 grid gap-4 sm:grid-cols-3">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-muted">Estimated next payment</p>
@@ -181,10 +181,10 @@ export default async function Page({
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-muted">Charged from</p>
-                  <p className="mt-1 font-serif text-3xl">{autoRenew ? (cardLabel || "Card") : billingMethod === "paypal" && billingReady ? "PayPal, manual" : "Not connected"}</p>
+                  <p className="mt-1 font-serif text-3xl">{autoRenew ? (cardLabel || "Card saved") : billingMethod === "paypal" && billingReady ? "PayPal, manual" : cardLabel ? "Card saved" : "No card saved"}</p>
                 </div>
               </div>
-              <p className="mt-3 text-sm leading-6 text-muted">{chargesOn ? "Automatic card charges are on for sellers who saved a card and agreed. Each listing still renews on its own date." : "Automatic card charges are not turned on yet. Saving a card does not charge it until that switch is turned on."} The estimate includes the next listing renewal and unpaid quotes in that currency. Canadian and US amounts stay separate.</p>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">{chargesOn ? "Automatic charges are on for a saved card with agreement. Each listing still renews on its own date." : "Automatic charges are not on yet. A saved card is not charged until that switch is on."} The estimate includes the next listing renewal and unpaid quotes in that currency. Canadian and US amounts stay separate.</p>
             </section>
 
             {attention.map((row) => (
@@ -204,7 +204,7 @@ export default async function Page({
                 <button className={buttonClass}>Pay {platformFee(settlement.open[0].dueCents, settlement.open[0].currency)} now</button>
               </form>
             ) : null}
-            <BillingMethodForm saved={billingMethod} ready={billingReady} notice={billingNotice} autoRenew={autoRenew} cardLabel={cardLabel} />
+            <BillingMethodForm saved={billingMethod} ready={billingReady} notice={billingNotice} autoRenew={autoRenew} cardLabel={cardLabel} chargesOn={chargesOn} />
 
             <section className="rounded-3xl border border-line bg-card p-5">
               <h2 className="font-serif text-2xl">Listing charges</h2>
@@ -286,4 +286,4 @@ export default async function Page({
   );
 }
 
-export const metadata = { title: "Payment settings", robots: { index: false, follow: false } };
+export const metadata = { title: "Payments", robots: { index: false, follow: false } };

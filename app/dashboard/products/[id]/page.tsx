@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { Suspense } from "react";
 import { saveProduct } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
@@ -22,6 +23,12 @@ async function Editor({
   return (
     <main className="mx-auto w-full max-w-xl px-5 py-6">
       <h1 className="font-serif text-4xl">Edit Twig</h1>
+      {user.role === "admin" && product.userId !== user.id ? (
+        <p className="mt-3 rounded-2xl border border-line bg-card px-4 py-3 text-sm">
+          Editing as admin · Seller: {owner.displayName}
+          <Link href="/admin/twigs" className="mt-2 block font-medium text-forest">Back to Admin Twigs</Link>
+        </p>
+      ) : null}
       {query.saved === "1" ? <p className="mt-3 rounded-xl bg-moss px-3 py-2 text-sm text-forest">Draft saved.</p> : null}
       {query.blocked === "1" ? (
         <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">

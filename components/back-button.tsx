@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 function parentFor(path: string) {
   const clean = path.split("?")[0] || "/";
@@ -33,7 +34,12 @@ function parentFor(path: string) {
 
 export function BackButton({ href = "" }: { href?: string }) {
   const path = usePathname() || "/";
-  const target = href.startsWith("/") && !href.startsWith("//") && !href.includes("\\") ? href : parentFor(path);
+  const [fromAdmin, setFromAdmin] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setFromAdmin(params.get("from") === "admin" && path.startsWith("/dashboard/products/"));
+  }, [path]);
+  const target = href.startsWith("/") && !href.startsWith("//") && !href.includes("\\") ? href : fromAdmin ? "/admin/twigs" : parentFor(path);
   return (
     <Link href={target} className="self-start text-left text-sm text-muted">
       ← Back

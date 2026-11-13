@@ -63,7 +63,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
               <p className="text-muted">{product.displayName} · {product.status}{product.deactivatesAt ? " · ending" : ""}{product.feeExempt ? " · free forever" : ""}{product.cta === "quote" && product.quoteFeeExempt ? " · quote fee waived" : ""}</p>
             </div>
             <div className="flex items-center gap-3">
-              <Link href={`/dashboard/products/${product.id}`} className="text-forest">Edit</Link>
+              <Link href={`/dashboard/products/${product.id}?from=admin`} className="text-forest">Edit</Link>
               <form action={duplicateTwig}>
                 <input type="hidden" name="id" value={product.id} />
                 <button className="text-forest">Duplicate</button>

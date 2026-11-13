@@ -18,6 +18,11 @@ export function listingFeeCurrency(cta: string, location: string) {
   return billingCurrency(location);
 }
 
+export function saleCurrency(input: { cta?: string; location?: string }) {
+  if (input.cta === "file") return "CAD";
+  return billingCurrency(input.location || "");
+}
+
 export function formatListingFee(currency: string) {
   return currency === "USD" ? "USD$1.49" : "C$1.49";
 }

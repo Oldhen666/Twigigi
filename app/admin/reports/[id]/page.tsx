@@ -30,7 +30,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <p>
             <span className="text-muted">Listing.</span> {report.productTitle || report.productId}
             {report.publicId && report.productSlug ? <> · <Link href={`/${report.publicId}/${report.productSlug}`} className="text-forest">Open</Link></> : null}
-            {" "}· <Link href={`/dashboard/products/${report.productId}`} className="text-forest">Edit</Link>
+            {" "}· <Link href={`/dashboard/products/${report.productId}?from=admin`} className="text-forest">Edit</Link>
             {report.moderationStatus === "restricted" ? <span className="text-muted"> · Hidden from the public page</span> : null}
           </p>
         ) : <p className="text-muted">No Twig matched this URL. Review the address below.</p>}

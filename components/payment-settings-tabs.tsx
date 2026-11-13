@@ -22,7 +22,7 @@ export function PaymentSettingsTabs({
           From buyers
         </button>
         <button type="button" role="tab" aria-selected={tab === "receipts"} className={tabClass(tab === "receipts")} onClick={() => setTab("receipts")}>
-          Fees to Twigigi
+          Twigigi fees
         </button>
       </div>
       <div className="mt-4">{tab === "receiving" ? receiving : receipts}</div>

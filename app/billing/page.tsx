@@ -21,26 +21,22 @@ async function BillingScreen({
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-6">
-      <BackButton />
+      <BackButton href={next} />
       <div className="flex flex-1 flex-col justify-center py-6">
         <Logo />
-        <h1 className="mt-8 font-serif text-4xl">Billing & Payment</h1>
-        <p className="mt-2 text-muted">Add a payment method for your Twigigi fees.</p>
-        <div className="mt-6 space-y-2 text-sm">
+        <h1 className="mt-8 font-serif text-4xl">Twigigi fees</h1>
+        <p className="mt-2 max-w-prose text-sm leading-6 text-muted">Choose how you will pay Twigigi before a Twig can be published. This does not charge you and does not save a card.</p>
+        <div className="mt-6 max-w-prose space-y-2 text-sm">
           <div className="flex items-baseline justify-between gap-6">
-            <span>Active Buy Now or Quote listing</span>
-            <span>C$1.49 or USD$1.49 / month</span>
+            <span>Buy now or quote listing</span>
+            <span>C$1.49 or USD$1.49 / 30 days</span>
           </div>
-          <p className="text-muted">Canada is charged in CAD. A United States listing is charged in USD.</p>
+          <p className="text-muted">A Canadian listing is CAD. A United States listing is USD. A digital file is always C$1.49 / 30 days.</p>
           <div className="flex items-baseline justify-between gap-6">
-            <span>Active digital file</span>
-            <span>C$1.49 / month</span>
-          </div>
-          <div className="flex items-baseline justify-between gap-6">
-            <span>Valid new quote request</span>
+            <span>Valid quote request</span>
             <span>{quoteRequest} each</span>
           </div>
-          <p className="text-muted">Quote fees add up during the month and are included with the listing fee on the next bill. Twigigi does not charge the card for each quote. A quote-only balance under C$1.49 waits for the next bill. Deactivating a listing stops future listing charges and does not refund the current period. Quote fees already incurred remain payable.</p>
+          <p className="text-muted">Quote fees stay unpaid until the next listing payment in the same currency. Twigigi does not charge a quote by itself.</p>
         </div>
         <form action={saveBillingMethod} className="mt-8">
           <input type="hidden" name="next" value={next} />
@@ -58,13 +54,16 @@ async function BillingScreen({
               <span>PayPal</span>
             </label>
           </fieldset>
-          <p className="mt-4 text-sm text-muted">
-            Card payments are securely processed by Stripe. Twigigi does not store your card number.
+          <p className="mt-4 max-w-prose text-sm leading-6 text-muted">
+            Choosing a method here only records your preference. Save a card, see the balance, and download bills on Twigigi fees.
           </p>
-          <button className={`${buttonClass} mt-6 w-full`}>Continue</button>
+          <button className={`${buttonClass} mt-6 w-full sm:w-fit`}>Continue</button>
         </form>
         <p className="mt-4 text-sm">
-          <Link href={next} className="text-forest">Continue without changing</Link>
+          <Link href="/dashboard/payments?tab=receipts" className="text-forest">Open Twigigi fees</Link>
+        </p>
+        <p className="mt-2 text-sm">
+          <Link href={next} className="text-muted">Continue without changing</Link>
         </p>
       </div>
     </main>
@@ -83,4 +82,4 @@ export default function Page({
   );
 }
 
-export const metadata = { title: "Billing & Payment", robots: { index: false, follow: false } };
+export const metadata = { title: "Twigigi fees", robots: { index: false, follow: false } };

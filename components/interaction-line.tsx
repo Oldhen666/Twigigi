@@ -9,6 +9,7 @@ export function InteractionLine({
   showReview = true,
   allowConfirm = true,
   confirmLabel = "Mark completed",
+  showRef = true,
 }: {
   item: { id: string; publicRef: string; buyerConfirmedAt: string | null; sellerConfirmedAt: string | null };
   nextPath: string;
@@ -16,11 +17,12 @@ export function InteractionLine({
   showReview?: boolean;
   allowConfirm?: boolean;
   confirmLabel?: string;
+  showRef?: boolean;
 }) {
   const confirmed = side === "buyer" ? item.buyerConfirmedAt : item.sellerConfirmedAt;
   return (
     <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
-      <span className="text-muted">{item.publicRef} · {interactionLabel(item)}</span>
+      {showRef ? <span className="text-muted">{item.publicRef} · {interactionLabel(item)}</span> : null}
       {confirmed ? (
         showReview && side === "buyer" && item.buyerConfirmedAt ? <Link href="/orders" className="text-forest">Review the seller</Link> : null
       ) : allowConfirm ? (

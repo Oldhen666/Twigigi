@@ -11,16 +11,26 @@ export function BillingMethodForm({
   notice,
   autoRenew,
   cardLabel,
+  chargesOn,
 }: {
   saved: "" | "card" | "paypal" | "stripe";
   ready: boolean;
   notice: string;
   autoRenew: boolean;
   cardLabel: string;
+  chargesOn: boolean;
 }) {
   const [method, setMethod] = useState<"card" | "paypal">(saved === "paypal" ? "paypal" : "card");
-  const chosen = saved === "paypal" ? "PayPal" : saved === "card" || saved === "stripe" ? "Card" : "";
-  const status = autoRenew ? "Auto-renew on" : ready ? "Saved" : chosen ? "Not connected" : "Not saved";
+  const cardSaved = Boolean(cardLabel) || (ready && (saved === "card" || saved === "stripe"));
+  const status = saved === "paypal"
+    ? "PayPal · manual payments"
+    : cardSaved && autoRenew && chargesOn
+      ? "Automatic renewal on"
+      : cardSaved && autoRenew
+        ? "Card saved · automatic charges off"
+        : cardSaved
+          ? "Card saved"
+          : "No card saved";
 
   return (
     <section className="rounded-3xl border border-line bg-card p-5">
@@ -28,9 +38,9 @@ export function BillingMethodForm({
         <h2 className="font-serif text-2xl">How you pay Twigigi</h2>
         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${autoRenew ? "bg-forest text-card" : "bg-[#f4e7d4] text-[#8a5a2b]"}`}>{status}</span>
       </div>
-      <p className="mt-2 text-sm leading-6 text-muted">This pays Twigigi for listing and quote fees. Buyers never pay it, and it does not receive their payments. A one-time listing payment does not allow future automatic charges.</p>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">This card or PayPal pays Twigigi. It does not receive buyer payments. A one-time listing payment does not allow later automatic charges.</p>
       {cardLabel ? <p className="mt-3 text-sm font-medium">Saved card · {cardLabel}</p> : null}
-      {chosen && !cardLabel ? <p className="mt-3 text-sm font-medium">{chosen} · {status}</p> : null}
+      {saved === "paypal" && !cardLabel ? <p className="mt-3 text-sm font-medium">PayPal · manual payments</p> : null}
       {notice ? <p className="mt-3 text-sm text-clay">{notice}</p> : null}
       {autoRenew ? (
         <form action={stopAutomaticRenewal} className="mt-4">
@@ -61,7 +71,8 @@ export function BillingMethodForm({
             </span>
           </label>
         ) : null}
-        <button className={`${buttonClass} w-full sm:w-fit`}>{method === "paypal" ? "Use PayPal for manual payments" : autoRenew ? "Replace the saved card" : "Save a card for automatic renewal"}</button>
+        <button className={`${buttonClass} w-full sm:w-fit`}>{method === "paypal" ? "Use PayPal for manual payments" : autoRenew ? "Replace the saved card" : "Save a card"}</button>
+        {method === "card" && !chargesOn ? <p className="max-w-2xl text-sm leading-6 text-muted">Saving a card records your permission. Automatic charges are still off, so Twigigi will not charge it yet. The agreement checkbox is still required.</p> : null}
       </form>
       {!autoRenew && cardLabel ? (
         <form action={resumeAutomaticRenewal} className="mt-4 grid gap-3 border-t border-line pt-4">

@@ -418,7 +418,6 @@ export function CartCheckout({
           payment={paymentMethod ? methodLabel(paymentMethod) : ""}
           cash={isCashMethod(paymentMethod)}
           shipping={chosen.id === "pickup" ? "" : fee === 0 ? "Free" : formatMoney(fee, currency)}
-          currency={currency}
           total={formatMoney(total, currency)}
           gaps={reviewGaps(review, {
             requireName,
@@ -578,7 +577,6 @@ function OrderReviewDialog({
   payment,
   cash,
   shipping,
-  currency,
   total,
   gaps,
   pending,
@@ -595,7 +593,6 @@ function OrderReviewDialog({
   payment: string;
   cash: boolean;
   shipping: string;
-  currency: string;
   total: string;
   gaps: string[];
   pending: boolean;
@@ -669,7 +666,7 @@ function OrderReviewDialog({
             {shipping ? <div className="mb-2 flex justify-between text-sm text-muted"><span>Shipping</span><span>{shipping}</span></div> : null}
             <div className="flex items-baseline justify-between gap-3">
               <p className="font-medium">Order total</p>
-              <p className="text-2xl font-semibold text-forest">{total} {currency}</p>
+              <p className="text-2xl font-semibold text-forest">{total}</p>
             </div>
           </div>
           <p className="mt-4 flex gap-2 text-sm leading-6 text-muted">
