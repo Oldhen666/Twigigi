@@ -2,7 +2,7 @@ import { BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
 import { deliverBillingNotices } from "@/lib/billing-mail";
 import { confirmProviderPayment, holdSellerCollection, markCardActionRequired, markOrderPaid, saveCardAuthorization } from "@/lib/db";
 import { deliverPaidFile, fulfillStripeDigitalOrder } from "@/lib/file-delivery";
-import { billingSetupCustomer, billingSetupFromIntent, getStripe, type SetupVerdict } from "@/lib/stripe";
+import { billingSetupCustomer, billingSetupFromIntent, constructStripeEvent, getStripe, stripeWebhookSecrets, type SetupVerdict } from "@/lib/stripe";
 
 function rememberSetup(verdict: SetupVerdict) {
   if (!verdict.userId) return;
@@ -21,14 +21,14 @@ function rememberSetup(verdict: SetupVerdict) {
 
 export async function POST(request: Request) {
   const stripe = getStripe();
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!stripe || !secret) return new Response("Stripe is not configured", { status: 501 });
+  const secrets = stripeWebhookSecrets();
+  if (!stripe || secrets.length === 0) return new Response("Stripe is not configured", { status: 501 });
   const signature = request.headers.get("stripe-signature");
   if (!signature) return new Response("Missing signature", { status: 400 });
   const body = await request.text();
   let event: ReturnType<typeof stripe.webhooks.constructEvent>;
   try {
-    event = stripe.webhooks.constructEvent(body, signature, secret);
+    event = constructStripeEvent(stripe, body, signature, secrets);
   } catch {
     return new Response("Invalid signature", { status: 400 });
   }

@@ -10,6 +10,25 @@ export function getStripe() {
   return new Stripe(key);
 }
 
+export function stripeWebhookSecrets() {
+  const secrets = [process.env.STRIPE_WEBHOOK_SECRET, process.env.STRIPE_CONNECT_WEBHOOK_SECRET]
+    .map((value) => (value || "").trim())
+    .filter(Boolean);
+  return [...new Set(secrets)];
+}
+
+export function constructStripeEvent(stripe: Stripe, body: string, signature: string, secrets: string[]) {
+  let failure: unknown;
+  for (const secret of secrets) {
+    try {
+      return stripe.webhooks.constructEvent(body, signature, secret);
+    } catch (error) {
+      failure = error;
+    }
+  }
+  throw failure instanceof Error ? failure : new Error("Invalid signature");
+}
+
 export function paymentsReady() {
   return Boolean(process.env.STRIPE_SECRET_KEY);
 }
