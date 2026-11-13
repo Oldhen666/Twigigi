@@ -60,7 +60,7 @@ async function BillingScreen({
           <button className={`${buttonClass} mt-6 w-full sm:w-fit`}>Continue</button>
         </form>
         <p className="mt-4 text-sm">
-          <Link href="/dashboard/payments?tab=receipts" className="text-forest">Open Pay Twigigi</Link>
+          <Link href="/dashboard/payments?tab=receipts" className="text-forest">Open Twigigi Subscription</Link>
         </p>
         <p className="mt-2 text-sm">
           <Link href={next} className="text-muted">Continue without changing</Link>

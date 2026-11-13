@@ -14,19 +14,20 @@ export function PaymentSettingsTabs({
   receipts: React.ReactNode;
 }) {
   const [tab, setTab] = useState(initial);
-  const tabClass = (on: boolean) =>
-    `rounded-full px-4 py-2 text-sm font-medium ${focusClass} ${on ? "bg-forest text-card" : "border border-line bg-card text-ink"}`;
 
   return (
     <div className="mt-8">
-      <div role="tablist" className="flex flex-wrap gap-2">
-        <button type="button" role="tab" aria-selected={tab === "receiving"} className={tabClass(tab === "receiving")} onClick={() => setTab("receiving")}>
-          Get paid
-        </button>
-        <button type="button" role="tab" aria-selected={tab === "receipts"} className={tabClass(tab === "receipts")} onClick={() => setTab("receipts")}>
-          Pay Twigigi
-        </button>
-      </div>
+      <label className="block max-w-md">
+        <span className="sr-only">Payments section</span>
+        <select
+          value={tab}
+          onChange={(event) => setTab(event.target.value === "receipts" ? "receipts" : "receiving")}
+          className={`h-12 w-full rounded-xl border border-line bg-card px-3 text-base font-medium text-ink ${focusClass}`}
+        >
+          <option value="receiving">Setup payment for your customer</option>
+          <option value="receipts">Twigigi Subscription</option>
+        </select>
+      </label>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
         {tab === "receiving" ? "Choose how buyers pay you." : "Manage your listing fees and renewal payment method."}
       </p>

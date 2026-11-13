@@ -78,6 +78,9 @@ export function ReceivePayments({
       </div>
       {savedLine ? <p className="text-sm font-medium" role="status">{savedLine}</p> : null}
 
+      <section className="rounded-3xl border border-line bg-card p-4 sm:p-5">
+        <h2 className="font-serif text-2xl">Payment option</h2>
+        <div className="mt-4 space-y-3">
       {order.map((id) => {
         if (id === "stripe") {
           return (
@@ -103,6 +106,8 @@ export function ReceivePayments({
         if (id === "cash") return <ListingMethodCard key={id} kind="cash" />;
         return <ListingMethodCard key={id} kind="paypalFile" />;
       })}
+        </div>
+      </section>
 
       <Link href="/start" className={`${ghostClass} ${focusClass} w-full sm:w-fit`}>Create a Twig</Link>
 
