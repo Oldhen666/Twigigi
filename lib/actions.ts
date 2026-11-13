@@ -879,12 +879,13 @@ export async function deactivateProducts(formData: FormData) {
 export async function savePayoutDetails(formData: FormData) {
   const user = await requireSeller();
   const clip = (key: string, max: number) => text(formData, key).trim().slice(0, max);
-  setPayoutDetails(user.id, {
-    interac: clip("interac", 120),
-    venmo: clip("venmo", 80),
-    zelle: clip("zelle", 120),
-  });
-  redirect("/dashboard/payments");
+  const interac = clip("interac", 120);
+  const venmo = clip("venmo", 80);
+  const zelle = clip("zelle", 120);
+  setPayoutDetails(user.id, { interac, venmo, zelle });
+  const which = text(formData, "which");
+  const saved = which === "interac" || which === "venmo" || which === "zelle" ? which : "";
+  redirect(saved ? `/dashboard/payments?saved=${saved}` : "/dashboard/payments");
 }
 
 export async function saveBillingMethod(formData: FormData) {

@@ -4,10 +4,10 @@ import { PaymentSettingsTabs } from "@/components/payment-settings-tabs";
 import { ReceivePayments } from "@/components/receive-payments";
 import { buttonClass, ghostClass } from "@/components/ui";
 import { payHeldCollection, payOpenFees } from "@/lib/actions";
-import { listingFeeCents, listingFeeCurrency, platformFee } from "@/lib/billing";
+import { formatListingFee, listingFeeCents, listingFeeCurrency, platformFee, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { cardCanRenew, BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
 import { requireSeller } from "@/lib/auth";
-import { listAttentionCollections, listBillingListings, listSellerBills, markCardActionRequired, saveCardAuthorization, setStripeAccount } from "@/lib/db";
+import { listAttentionCollections, listBillingListings, listSellerBills, markCardActionRequired, saveCardAuthorization, sellerProducts, setStripeAccount } from "@/lib/db";
 import { collectSellerFees } from "@/lib/seller-fees";
 import { isOpenFee, outstandingCents } from "@/lib/fee-collection";
 import { billingYear } from "@/lib/format";
@@ -36,6 +36,37 @@ function billStatus(status: string) {
   if (isOpenFee(status)) return "Unpaid";
   if (status === "void") return "Not charged";
   return status;
+}
+
+function nextCharges(
+  listings: Array<{ cta: string; location: string; feeExempt: boolean; autoRenew: boolean; nextRenewalAt: string; billingStatus: string }>,
+  openQuotes: Array<{ currency: string; amountCents: number }>,
+) {
+  const groups = new Map<string, { nextIso: string; listingCents: number; quoteCents: number }>();
+  for (const product of listings) {
+    if (!product.autoRenew || !product.nextRenewalAt) continue;
+    if (product.billingStatus === "legacy_review" || product.billingStatus === "canceled" || product.billingStatus === "paused") continue;
+    const currency = listingFeeCurrency(product.cta, product.location);
+    const fee = listingFeeCents(product.cta, product.feeExempt);
+    const current = groups.get(currency);
+    if (!current || product.nextRenewalAt < current.nextIso) {
+      groups.set(currency, { nextIso: product.nextRenewalAt, listingCents: fee, quoteCents: 0 });
+    } else if (product.nextRenewalAt === current.nextIso) {
+      current.listingCents += fee;
+    }
+  }
+  for (const bill of openQuotes) {
+    const currency = bill.currency || "CAD";
+    const current = groups.get(currency) || { nextIso: "", listingCents: 0, quoteCents: 0 };
+    current.quoteCents += bill.amountCents;
+    groups.set(currency, current);
+  }
+  return [...groups.entries()].map(([currency, row]) => ({
+    currency,
+    nextIso: row.nextIso,
+    cents: row.nextIso ? row.listingCents + row.quoteCents : 0,
+    quoteCents: row.quoteCents,
+  }));
 }
 
 export default async function Page({
@@ -96,15 +127,6 @@ export default async function Page({
   const listings = listBillingListings(user.id).filter((product) => listingFeeCents(product.cta, product.feeExempt) > 0);
   const quoteBills = bills.filter((bill) => bill.kind === "quote");
   const openQuotes = quoteBills.filter((bill) => bill.status !== "paid" && bill.status !== "void");
-  const nextIso = listings
-    .filter((product) => product.autoRenew && product.nextRenewalAt && product.billingStatus !== "legacy_review" && product.billingStatus !== "canceled" && product.billingStatus !== "paused")
-    .map((product) => product.nextRenewalAt)
-    .sort()[0] || "";
-  const nextListing = listings.find((product) => product.nextRenewalAt === nextIso);
-  const estimateCurrency = nextListing ? listingFeeCurrency(nextListing.cta, nextListing.location) : "CAD";
-  const estimateListingCents = listings.filter((product) => nextIso && product.nextRenewalAt === nextIso).length * listingFeeCents("buy");
-  const estimateQuoteCents = openQuotes.filter((bill) => bill.currency === estimateCurrency).reduce((sum, bill) => sum + bill.amountCents, 0);
-  const estimateCents = nextIso ? estimateListingCents + estimateQuoteCents : 0;
   const outstandingByCurrency = [...new Set(bills.map((bill) => bill.currency || "CAD"))]
     .map((currency) => ({ currency, cents: outstandingCents(bills, currency) }))
     .filter((row) => row.cents > 0);
@@ -142,12 +164,22 @@ export default async function Page({
           ? reason || "Card setup could not start."
           : "";
   const country = user.payoutInterac || (!user.payoutVenmo && !user.payoutZelle) ? "CA" : "US";
-  const nextCharge = nextIso ? chargeName(nextIso) : "—";
+  const products = sellerProducts(user.id);
+  const catalog = {
+    hasProducts: products.length > 0,
+    hasFile: products.some((product) => product.cta === "file"),
+    hasBuy: products.some((product) => product.cta === "buy"),
+    hasQuote: products.some((product) => product.cta === "quote"),
+  };
+  const saved = params.saved === "interac" || params.saved === "venmo" || params.saved === "zelle" ? params.saved : "";
+  const charges = nextCharges(listings, openQuotes);
+  const hasActivity = listings.length > 0 || bills.length > 0 || attention.length > 0 || settlement.open.length > 0;
+  const quoteCad = platformFee(QUOTE_SUBMISSION_CENTS, "CAD");
+  const quoteUsd = platformFee(QUOTE_SUBMISSION_CENTS, "USD");
 
   return (
     <main className="page-frame pb-16">
       <h1 className="mt-6 font-serif text-4xl">Payments</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">From buyers is money buyers pay you. Twigigi fees is what you pay Twigigi for listings and quotes.</p>
       <PaymentSettingsTabs
         initial={initial}
         receiving={
@@ -160,32 +192,41 @@ export default async function Page({
             venmo={user.payoutVenmo}
             zelle={user.payoutZelle}
             initialCountry={country}
+            catalog={catalog}
+            saved={saved}
           />
         }
         receipts={
           <div className="space-y-4">
-            <section className="rounded-3xl border border-line bg-card p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <h2 className="font-serif text-2xl">Fee summary</h2>
-                <span className="rounded-full bg-paper-deep px-2.5 py-1 text-xs font-medium">30-day cycles</span>
-              </div>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Each listing is C$1.49 or USD$1.49 for its own 30 days. A digital file is always C$1.49. Quote fees stay unpaid until the next listing payment in the same currency, and they are not charged on their own.</p>
-              <div className="mt-4 grid gap-4 sm:grid-cols-3">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted">Estimated next payment</p>
-                  <p className="mt-1 font-serif text-3xl">{nextIso ? platformFee(estimateCents, estimateCurrency) : "—"}</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted">Next renewal</p>
-                  <p className="mt-1 font-serif text-3xl">{nextCharge}</p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted">Charged from</p>
-                  <p className="mt-1 font-serif text-3xl">{autoRenew ? (cardLabel || "Card saved") : billingMethod === "paypal" && billingReady ? "PayPal, manual" : cardLabel ? "Card saved" : "No card saved"}</p>
-                </div>
-              </div>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">{chargesOn ? "Automatic charges are on for a saved card with agreement. Each listing still renews on its own date." : "Automatic charges are not on yet. A saved card is not charged until that switch is on."} The estimate includes the next listing renewal and unpaid quotes in that currency. Canadian and US amounts stay separate.</p>
-            </section>
+            {hasActivity ? (
+              <section className="rounded-3xl border border-line bg-card p-5">
+                <h2 className="font-serif text-2xl">Next payment</h2>
+                {charges.length === 0 ? <p className="mt-3 text-sm text-muted">No charge scheduled.</p> : (
+                  <ul className="mt-3 space-y-2">
+                    {charges.map((row) => (
+                      <li key={row.currency} className="text-sm">
+                        {row.nextIso ? (
+                          <p><span className="font-serif text-3xl">{platformFee(row.cents, row.currency)}</span> <span className="text-muted">on {chargeName(row.nextIso)}</span></p>
+                        ) : (
+                          <p>{platformFee(row.quoteCents, row.currency)} in unpaid quotes. Added to the next listing payment in {row.currency}. Not charged alone.</p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-2 text-sm text-muted">Canadian and US amounts stay separate.</p>
+                <a href="#fee-details" className="mt-3 inline-block text-sm font-medium text-forest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">Fee details</a>
+              </section>
+            ) : (
+              <section className="rounded-3xl border border-line bg-card px-5 py-4">
+                <h2 className="font-serif text-2xl">Listing fees</h2>
+                <ul className="mt-2 space-y-1 text-sm leading-6">
+                  <li>Canadian listings and digital files: {formatListingFee("CAD")} per listing / 30 days</li>
+                  <li>US physical listings: {formatListingFee("USD")} per listing / 30 days</li>
+                  <li>A valid quote is {quoteCad} or {quoteUsd}. It is added to the next listing payment in the same currency and is not charged alone.</li>
+                </ul>
+              </section>
+            )}
 
             {attention.map((row) => (
               <section key={row.id} className="rounded-3xl border border-line bg-card p-5">
@@ -201,84 +242,86 @@ export default async function Page({
             ))}
             {settlement.open.length > 0 ? (
               <form action={payOpenFees}>
-                <button className={buttonClass}>Pay {platformFee(settlement.open[0].dueCents, settlement.open[0].currency)} now</button>
+                <button className={`${buttonClass} w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest sm:w-fit`}>Pay {platformFee(settlement.open[0].dueCents, settlement.open[0].currency)} now</button>
               </form>
             ) : null}
             <BillingMethodForm saved={billingMethod} ready={billingReady} notice={billingNotice} autoRenew={autoRenew} cardLabel={cardLabel} chargesOn={chargesOn} />
+            {listings.length === 0 && quoteBills.length === 0 && outstandingByCurrency.length === 0 && paymentHistory.length === 0 ? <p className="text-sm text-muted">No charges yet.</p> : null}
 
-            <section className="rounded-3xl border border-line bg-card p-5">
-              <h2 className="font-serif text-2xl">Listing charges</h2>
-              {listings.length === 0 ? <p className="mt-3 text-sm text-muted">No listing fee yet.</p> : (
-                <ul className="mt-4 divide-y divide-line">
-                  {listings.map((product) => (
-                    <li key={product.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3 text-sm">
-                      <div>
-                        <p className="font-medium">{product.title}</p>
-                        <p className="text-muted">{listingState(product.billingStatus)} · {product.autoRenew ? "Auto-renew on" : "Auto-renew off"} · Paid until {chargeName(product.paidUntil)} · Next renewal {chargeName(product.nextRenewalAt)}</p>
+            <details id="fee-details" className="rounded-3xl border border-line bg-card px-5 py-4">
+              <summary className="cursor-pointer font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">Fee details</summary>
+              <div className="mt-4 space-y-4 border-t border-line pt-4 text-sm leading-6">
+                <p className="text-muted">Canadian listings and digital files are {formatListingFee("CAD")} per listing / 30 days. US physical listings are {formatListingFee("USD")} per listing / 30 days. A valid quote is {quoteCad} or {quoteUsd}, added to the next listing payment in the same currency, and not charged alone. Canadian and US amounts stay separate.</p>
+                {listings.length > 0 ? (
+                  <div>
+                    <h3 className="font-medium">Listings</h3>
+                    <ul className="mt-2 divide-y divide-line">
+                      {listings.map((product) => (
+                        <li key={product.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3">
+                          <div>
+                            <p className="font-medium">{product.title}</p>
+                            <p className="text-muted">{listingState(product.billingStatus)} · {product.autoRenew ? "Auto-renew on" : "Auto-renew off"} · Paid until {chargeName(product.paidUntil)} · Next renewal {chargeName(product.nextRenewalAt)}</p>
+                          </div>
+                          <p className="font-serif text-lg">{platformFee(listingFeeCents(product.cta, product.feeExempt), listingFeeCurrency(product.cta, product.location))}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {quoteBills.length > 0 ? (
+                  <div>
+                    <h3 className="font-medium">Quotes</h3>
+                    <ul className="mt-2 divide-y divide-line">
+                      {quoteBills.map((bill) => (
+                        <li key={bill.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3">
+                          <div>
+                            <p className="font-medium">{bill.title}</p>
+                            <p className="text-muted">{billStatus(bill.status)} · {chargeName(bill.createdAt)}</p>
+                          </div>
+                          <p className="font-serif text-lg">{platformFee(bill.amountCents, bill.currency)}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {outstandingByCurrency.length > 0 ? (
+                  <div>
+                    <h3 className="font-medium">Outstanding</h3>
+                    <ul className="mt-2 space-y-1">
+                      {outstandingByCurrency.map((row) => (
+                        <li key={row.currency} className="font-serif text-lg">{platformFee(row.cents, row.currency)}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-1 text-muted">Unpaid quotes stay here until a listing payment in the same currency includes them.</p>
+                  </div>
+                ) : null}
+                {paymentHistory.length > 0 ? (
+                  <div>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h3 className="font-medium">Payment history</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {years.map((year) => (
+                          <a key={year} href={`/dashboard/payments/receipts?year=${year}`} className={`${ghostClass} h-10 px-4 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest`}>
+                            Download {year} statement
+                          </a>
+                        ))}
                       </div>
-                      <p className="font-serif text-lg">{platformFee(listingFeeCents(product.cta), listingFeeCurrency(product.cta, product.location))}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="rounded-3xl border border-line bg-card p-5">
-              <h2 className="font-serif text-2xl">Quote charges</h2>
-              {quoteBills.length === 0 ? <p className="mt-3 text-sm text-muted">No quote fee yet.</p> : (
-                <ul className="mt-4 divide-y divide-line">
-                  {quoteBills.map((bill) => (
-                    <li key={bill.id} className="flex flex-wrap items-baseline justify-between gap-3 py-3 text-sm">
-                      <div>
-                        <p className="font-medium">{bill.title}</p>
-                        <p className="text-muted">{billStatus(bill.status)} · {chargeName(bill.createdAt)}</p>
-                      </div>
-                      <p className="font-serif text-lg">{platformFee(bill.amountCents, bill.currency)}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="rounded-3xl border border-line bg-card p-5">
-              <h2 className="font-serif text-2xl">Outstanding balance</h2>
-              {outstandingByCurrency.length === 0 ? <p className="mt-3 font-serif text-3xl">C$0.00</p> : (
-                <ul className="mt-3 space-y-1">
-                  {outstandingByCurrency.map((row) => (
-                    <li key={row.currency} className="font-serif text-3xl">{platformFee(row.cents, row.currency)}</li>
-                  ))}
-                </ul>
-              )}
-              <p className="mt-2 text-sm leading-6 text-muted">Unpaid quotes stay here until a listing payment in the same currency includes them. A quote balance is not charged by itself, and Canadian and US balances are not combined.</p>
-            </section>
-
-            <section className="rounded-3xl border border-line bg-card p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="font-serif text-2xl">Payment history</h2>
-                <div className="flex flex-wrap gap-2">
-                  {years.map((year) => (
-                    <a key={year} href={`/dashboard/payments/receipts?year=${year}`} className={`${ghostClass} h-10 px-4 text-sm`}>
-                      Download {year} statement
-                    </a>
-                  ))}
-                </div>
+                    </div>
+                    <ul className="mt-2 divide-y divide-line">
+                      {paymentHistory.map((payment) => (
+                        <li key={payment.id} className="py-3">
+                          <div className="flex flex-wrap items-baseline justify-between gap-3">
+                            <p className="font-medium">{chargeName(payment.paidAt)}</p>
+                            <p className="font-serif text-lg">{platformFee(payment.total, payment.currency)}</p>
+                          </div>
+                          <p className="text-muted">{payment.lines.map((line) => `${line.kind === "quote" ? "Quote" : line.title} ${platformFee(line.amountCents, line.currency)}`).join(" · ")}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
-              {paymentHistory.length === 0 ? (
-                <p className="mt-3 text-sm text-muted">No payment yet.</p>
-              ) : (
-                <ul className="mt-4 divide-y divide-line">
-                  {paymentHistory.map((payment) => (
-                    <li key={payment.id} className="py-3 text-sm">
-                      <div className="flex flex-wrap items-baseline justify-between gap-3">
-                        <p className="font-medium">{chargeName(payment.paidAt)}</p>
-                        <p className="font-serif text-lg">{platformFee(payment.total, payment.currency)}</p>
-                      </div>
-                      <p className="text-muted">{payment.lines.map((line) => `${line.kind === "quote" ? "Quote" : line.title} ${platformFee(line.amountCents, line.currency)}`).join(" · ")}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            </details>
           </div>
         }
       />

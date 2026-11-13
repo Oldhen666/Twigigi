@@ -3865,8 +3865,9 @@ export function listBuyerQuotes(email: string) {
   return many(`${QUOTE_SELECT} WHERE lower(q.email) = ? ORDER BY q.created_at DESC LIMIT 100`, email.toLowerCase()).map(mapQuote);
 }
 
-export function listQuotes(userId: string) {
-  return many(`${QUOTE_SELECT} WHERE p.user_id = ? ORDER BY q.created_at DESC LIMIT 100`, userId).map(mapQuote);
+export function listQuotes(userId: string, limit = 100) {
+  const cap = Math.min(Math.max(Math.floor(limit), 1), 1000);
+  return many(`${QUOTE_SELECT} WHERE p.user_id = ? ORDER BY q.created_at DESC LIMIT ?`, userId, cap).map(mapQuote);
 }
 
 export function saveQuoteOffer(

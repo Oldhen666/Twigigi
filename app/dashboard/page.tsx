@@ -93,7 +93,7 @@ async function DashboardBody() {
       <section className="mt-8">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <h2 className="font-serif text-2xl">Your Twigs</h2>
+            <h2 className="font-serif text-2xl">Most recent Twigs</h2>
             <p className="mt-1 text-sm text-muted">{live} live · {drafts} {drafts === 1 ? "draft" : "drafts"}</p>
           </div>
           <Link href="/dashboard/twigs" className="text-sm font-medium text-forest">View all</Link>
