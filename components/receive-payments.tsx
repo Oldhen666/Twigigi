@@ -43,8 +43,9 @@ export function ReceivePayments({
   saved?: SavedField;
 }) {
   const [country, setCountry] = useState<"CA" | "US">(initialCountry);
+  const [offer, setOffer] = useState<"buy" | "file">(catalog.hasFile && !catalog.hasBuy ? "file" : "buy");
   const canada = country === "CA";
-  const order = methodOrder(canada, catalog);
+  const order = methodsFor(offer, canada);
   const savedLine = saved === "interac"
     ? (interac ? "e-Transfer email saved." : "e-Transfer email removed.")
     : saved === "venmo"
@@ -74,12 +75,15 @@ export function ReceivePayments({
             <option value="US">United States</option>
           </select>
         </label>
-        <p className="max-w-xl text-sm leading-6 text-muted">Canada shows Interac. The United States shows Venmo and Zelle. Stripe uses this country when you connect. A listing location is unchanged.</p>
       </div>
       {savedLine ? <p className="text-sm font-medium" role="status">{savedLine}</p> : null}
 
       <section className="rounded-3xl border border-line bg-card p-4 sm:p-5">
         <h2 className="font-serif text-2xl">Payment option</h2>
+        <div className="mt-4 flex flex-wrap gap-2" role="radiogroup" aria-label="Listing type">
+          <OfferChoice label="Buy now" selected={offer === "buy"} onSelect={() => setOffer("buy")} />
+          <OfferChoice label="Digital file" selected={offer === "file"} onSelect={() => setOffer("file")} />
+        </div>
         <div className="mt-4 space-y-3">
       {order.map((id) => {
         if (id === "stripe") {
@@ -104,7 +108,7 @@ export function ReceivePayments({
           return <AccountFieldCard key={id} kind="zelle" value={zelle} interac={interac} venmo={venmo} />;
         }
         if (id === "cash") return <ListingMethodCard key={id} kind="cash" />;
-        return <ListingMethodCard key={id} kind="paypalFile" />;
+        return <ListingMethodCard key={id} kind="paypal" offer={offer} />;
       })}
         </div>
       </section>
@@ -123,10 +127,23 @@ export function ReceivePayments({
   );
 }
 
-function methodOrder(canada: boolean, catalog: PayoutCatalog): MethodId[] {
-  const local: MethodId[] = canada ? ["interac", "cash", "paypalFile"] : ["venmo", "zelle", "cash", "paypalFile"];
-  if (catalog.hasFile) return ["stripe", "paypalFile", ...local.filter((id) => id !== "paypalFile")];
-  return [...local, "stripe"];
+function methodsFor(offer: "buy" | "file", canada: boolean): MethodId[] {
+  if (offer === "file") return ["stripe", "paypalFile"];
+  return canada ? ["interac", "cash", "paypalFile"] : ["venmo", "zelle", "cash", "paypalFile"];
+}
+
+function OfferChoice({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={`rounded-full px-4 py-2 text-sm font-medium ${focusClass} ${selected ? "bg-forest text-card" : "border border-line bg-white text-ink"}`}
+    >
+      {label}
+    </button>
+  );
 }
 
 function StripeCard({
@@ -260,18 +277,21 @@ function fieldCopy(kind: "interac" | "venmo" | "zelle") {
   };
 }
 
-function ListingMethodCard({ kind }: { kind: "cash" | "paypalFile" }) {
-  const paypal = kind === "paypalFile";
+function ListingMethodCard({ kind, offer = "buy" }: { kind: "cash" | "paypal"; offer?: "buy" | "file" }) {
+  const paypal = kind === "paypal";
+  const digitalPaypal = paypal && offer === "file";
   return (
     <section className="rounded-3xl border border-line bg-card p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-serif text-2xl">{paypal ? "PayPal" : "Cash"}</h2>
-        <p className="text-sm font-medium">{paypal ? "Set on each digital listing" : "Set on each listing"}</p>
+        <p className="text-sm font-medium">{digitalPaypal ? "Set on each digital listing" : "Set on each listing"}</p>
       </div>
       <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
-        {paypal
-          ? "Digital files. Buyers pay the PayPal email on that Twig. US buy-now listings can also offer PayPal."
-          : "Buy-now listings. Buyers pay you in person, and you confirm the money."}
+        {digitalPaypal
+          ? "Buyers pay the PayPal email on that Twig."
+          : paypal
+            ? "Buyers pay the PayPal link on that Twig."
+            : "Buyers pay you in person, and you confirm the money."}
       </p>
       <Link href="/dashboard/twigs" className={`${buttonClass} ${focusClass} mt-4 w-full sm:w-fit`}>Manage Twigs</Link>
     </section>
