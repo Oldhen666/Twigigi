@@ -128,11 +128,11 @@ export default function Page() {
         <p>Twigigi may charge sellers fees for publishing or maintaining listings and using certain Platform features.</p>
         <p>Where applicable, the current standard listing subscription is:</p>
         <ul className="list-disc space-y-1 pl-5">
-          <li>CAD $1.49 per month per listing for eligible Canadian listings.</li>
-          <li>USD $1.49 per month per listing for eligible United States listings.</li>
-          <li>CAD $1.49 per month per eligible digital listing.</li>
+          <li>CAD $1.49 per 30 days per listing for eligible Canadian listings.</li>
+          <li>USD $1.49 per 30 days per listing for eligible United States listings.</li>
+          <li>CAD $1.49 per 30 days per eligible digital listing.</li>
         </ul>
-        <p>A qualifying quote request is CAD $0.25, or USD $0.25 for a United States listing, where displayed and applicable. Twigigi counts a quote when it is a valid new request and the seller can see it. The same buyer is not charged again for the same request on that Twig. Quote fees accumulate during the billing period and are included with the listing fee on the next monthly seller bill. Twigigi does not make a separate card charge for each quote.</p>
+        <p>A qualifying quote request is CAD $0.25, or USD $0.25 for a United States listing, where displayed and applicable. Twigigi counts a quote when it is a valid new request and the seller can see it. The same buyer is not charged again for the same request on that Twig. Quote fees stay unpaid until the seller&apos;s next listing payment, which includes them in that one charge. Twigigi does not charge a quote by itself.</p>
         <p>Actual prices, currency, taxes, billing frequency, and any applicable additional charges will be disclosed before purchase or subscription activation.</p>
         <p>If automatic recurring billing is enabled, Twigigi will disclose the recurring charge and renewal terms and obtain any consent required by law.</p>
         <p>Sellers may cancel recurring subscriptions through the cancellation process made available by Twigigi. Cancellation stops future renewals according to the disclosed billing terms and applicable law.</p>

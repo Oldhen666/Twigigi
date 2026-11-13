@@ -179,6 +179,65 @@ export function readPaypalWebhookCapture(event: unknown): PaypalCapture | null {
   return readCaptureRecord(record.resource);
 }
 
+export async function createPlatformFeeCheckout(input: { reference: string; amountCents: number; currency: string; description: string }) {
+  const currency = input.currency === "USD" ? "USD" : "CAD";
+  const body = await paypalFetch("/v2/checkout/orders", {
+    method: "POST",
+    body: {
+      intent: "CAPTURE",
+      purchase_units: [
+        {
+          custom_id: input.reference.slice(0, 127),
+          description: input.description.replace(/\s+/g, " ").trim().slice(0, 127) || "Twigigi fees",
+          amount: { currency_code: currency, value: (input.amountCents / 100).toFixed(2) },
+        },
+      ],
+      application_context: {
+        brand_name: "Twigigi",
+        user_action: "PAY_NOW",
+        shipping_preference: "NO_SHIPPING",
+        return_url: `${appUrl()}/api/paypal/fee/return`,
+        cancel_url: `${appUrl()}/dashboard/payments?tab=receipts&billing=canceled`,
+      },
+    },
+  });
+  const links = Array.isArray(body?.links) ? body.links : [];
+  const approve = links.find((link) => {
+    if (!link || typeof link !== "object") return false;
+    const rel = "rel" in link ? link.rel : "";
+    return rel === "approve" || rel === "payer-action";
+  }) as { href?: string } | undefined;
+  if (!approve?.href || typeof body?.id !== "string") throw new PaypalCheckoutError("PAYPAL_APPROVE");
+  return { url: approve.href, orderId: body.id };
+}
+
+export async function chargePaypalBillingAgreement(input: { agreementId: string; amountCents: number; currency: string }) {
+  const body = await paypalFetch("/v1/payments/payment", {
+    method: "POST",
+    body: {
+      intent: "sale",
+      payer: {
+        payment_method: "PAYPAL",
+        funding_instruments: [{ billing: { billing_agreement_id: input.agreementId } }],
+      },
+      transactions: [
+        {
+          amount: { total: (input.amountCents / 100).toFixed(2), currency: input.currency === "USD" ? "USD" : "CAD" },
+          description: "Twigigi listing and quote fees",
+        },
+      ],
+    },
+  });
+  const transactions = Array.isArray(body?.transactions) ? body.transactions : [];
+  const first = transactions[0] && typeof transactions[0] === "object" ? (transactions[0] as Record<string, unknown>) : null;
+  const related = first && Array.isArray(first.related_resources) ? first.related_resources : [];
+  const sale = related[0] && typeof related[0] === "object" ? (related[0] as Record<string, unknown>).sale : null;
+  const record = sale && typeof sale === "object" ? (sale as Record<string, unknown>) : null;
+  const id = typeof record?.id === "string" ? record.id : "";
+  if (!id || record?.state !== "completed") throw new PaypalCheckoutError("PAYPAL_BILLING");
+  return id;
+}
+
 export async function beginPaypalBillingAgreement() {
   const body = await paypalFetch("/v1/billing-agreements/agreement-tokens", {
     method: "POST",

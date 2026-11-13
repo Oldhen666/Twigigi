@@ -1,13 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
-import { payAndPublish, reactivateTwig, setListingFree } from "@/lib/actions";
+import { payAndPublish, payToResume, reactivateTwig, setListingFree, setListingRenewal } from "@/lib/actions";
 import { formatListingFee, listingFeeCents, listingFeeCurrency, listingStillPaid } from "@/lib/billing";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
 import { TwigCheckbox } from "@/components/twig-selection";
 import { TwigMore } from "@/components/twig-more";
-import { addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive, nextBillingDate, productUrl } from "@/lib/format";
+import { addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive, productUrl } from "@/lib/format";
 import { storedUpload } from "@/lib/uploads";
 import type { Product } from "@/lib/types";
 
@@ -32,26 +32,25 @@ export function TwigCard({
   const ending = live && Boolean(product.deactivatesAt);
   const restricted = product.moderationStatus === "restricted";
   const url = productUrl(publicId, product.slug);
-  const badge = restricted ? "Restricted" : product.status === "deactivated" ? "Inactive" : ending ? "Ending" : live ? "Live" : "Draft";
+  const paused = product.billingStatus === "paused";
+  const badge = restricted ? "Restricted" : paused ? "Paused" : product.status === "deactivated" ? "Inactive" : ending ? "Ending" : live ? "Live" : "Draft";
   const free = product.feeExempt;
   const skipPay = free || acting;
   const currency = listingFeeCurrency(product.cta, product.location);
   const fee = listingFeeCents(product.cta);
   const listingLabel = formatListingFee(currency);
-  const renews = shortDate(nextBillingDate());
-  const endsLabel = product.deactivatesAt ? formatBillingDate(product.deactivatesAt) : formatBillingDate(nextBillingDate());
+  const renews = product.nextRenewalAt ? shortDate(product.nextRenewalAt) : "";
+  const endsLabel = product.deactivatesAt ? formatBillingDate(product.deactivatesAt) : product.paidUntil ? formatBillingDate(product.paidUntil) : "";
   const deactivatedLabel = product.deactivatedAt ? shortDate(product.deactivatedAt) : "";
-  const deleteLabel = formatBillingDate(
-    addDays(product.status === "deactivated" && product.deactivatedAt ? product.deactivatedAt : product.deactivatesAt || nextBillingDate(), DEACTIVATION_GRACE_DAYS),
-    true,
-  );
+  const deleteAnchor = product.status === "deactivated" && product.deactivatedAt ? product.deactivatedAt : product.deactivatesAt || product.paidUntil || "";
+  const deleteLabel = deleteAnchor ? formatBillingDate(addDays(deleteAnchor, DEACTIVATION_GRACE_DAYS), true) : "";
   const price = product.priceCents != null ? `${formatMoney(product.priceCents, product.currency)} ${product.currency}` : "Pricing on request";
   const views = `${product.viewCount} ${product.viewCount === 1 ? "view" : "views"}`;
   const publishLabel = skipPay || fee === 0 ? "Publish" : `Publish · ${listingLabel}/month`;
   const paidThrough = product.status === "deactivated" && listingStillPaid(product);
   const showDeactivate = product.status === "published";
   const showDelete = canDelete && (product.status === "draft" || product.status === "deactivated");
-  const period = product.status === "published" ? `Active ${formatBillingDate(product.billingStartedAt || product.createdAt)} – ${endsLabel}` : "";
+  const period = product.paidUntil ? `Paid until ${formatBillingDate(product.paidUntil)}` : product.billingStatus === "legacy_review" ? "Not on automatic billing" : "";
 
   return (
     <article className="flex gap-3 rounded-3xl border border-line bg-card p-3">
@@ -77,7 +76,8 @@ export function TwigCard({
         <p className="mt-1 text-sm text-muted">{price} · {views}</p>
         <p className="mt-1 text-sm text-muted">
           {restricted ? "Hidden while Twigigi reviews it." : null}
-          {!restricted && live && !ending ? (free ? "Free" : fee > 0 ? `Renews ${renews} · ${listingLabel}/month` : "No listing fee") : null}
+          {!restricted && paused ? "Paused until the listing fee is paid" : null}
+          {!restricted && live && !ending ? (free ? "Free" : product.billingStatus === "legacy_review" ? "Not on automatic billing" : fee > 0 && renews ? `Renews ${renews} · ${listingLabel} / 30 days` : fee > 0 ? `${listingLabel} / 30 days` : "No listing fee") : null}
           {!restricted && ending ? `Active until ${shortDate(product.deactivatesAt || "")}` : null}
           {!restricted && product.status === "deactivated" ? `Inactive${deactivatedLabel ? ` since ${deactivatedLabel}` : ""}` : null}
           {!restricted && product.status === "draft" ? "Not published" : null}
@@ -85,6 +85,13 @@ export function TwigCard({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Link href={`/dashboard/products/${product.id}`} className={pill}>Edit</Link>
           {live ? <CopyLink url={url} className={pill} /> : null}
+          {paused ? (
+            <form action={payToResume}>
+              <input type="hidden" name="id" value={product.id} />
+              <input type="hidden" name="next" value={returnTo} />
+              <button className="inline-flex h-9 items-center rounded-full bg-forest px-4 text-sm font-medium text-card">Pay to resume</button>
+            </form>
+          ) : null}
           {product.status === "draft" ? (
             <form action={payAndPublish}>
               <input type="hidden" name="id" value={product.id} />
@@ -115,6 +122,14 @@ export function TwigCard({
                   <input type="hidden" name="free" value={free ? "0" : "1"} />
                   <input type="hidden" name="next" value={returnTo} />
                   <button className="w-full rounded-xl px-3 py-2 text-left hover:bg-paper">{free ? "Charge this Twig" : "Make free forever"}</button>
+                </form>
+              ) : null}
+              {fee > 0 && product.paidUntil && !acting ? (
+                <form action={setListingRenewal}>
+                  <input type="hidden" name="id" value={product.id} />
+                  <input type="hidden" name="renew" value={product.autoRenew ? "0" : "1"} />
+                  <input type="hidden" name="next" value={returnTo} />
+                  <button className="w-full rounded-xl px-3 py-2 text-left hover:bg-paper">{product.autoRenew ? "Turn off auto-renew" : "Turn on auto-renew"}</button>
                 </form>
               ) : null}
               {showDeactivate ? (

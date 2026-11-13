@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { BILLING_CONSENT_VERSION, type IntentStatus, setupAuthorization } from "@/lib/billing-auth";
 import { getOrder, markOrderPaid } from "@/lib/db";
 import { deliverPaidFile, fulfillStripeDigitalOrder } from "@/lib/file-delivery";
 import { appUrl } from "@/lib/format";
@@ -99,9 +100,38 @@ export async function createStripeConnectLink(input: { accountId: string; email:
   }
 }
 
-export async function createBillingSetupSession(input: { customerId: string; email: string; userId: string }) {
+export function publicStripeError(raw: string) {
+  return raw
+    .replace(/\brk_(?:live|test)_[A-Za-z0-9]+/g, "the Stripe key")
+    .replace(/\bsk_(?:live|test)_[A-Za-z0-9]+/g, "the Stripe key")
+    .replace(/\bwhsec_[A-Za-z0-9]+/g, "the webhook secret")
+    .replace(/\bpm_[A-Za-z0-9]+/g, "the saved card")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
+
+function intentStatus(status: string | null | undefined): IntentStatus {
+  if (status === "succeeded" || status === "processing" || status === "requires_action" || status === "requires_payment_method" || status === "canceled") return status;
+  return "unknown";
+}
+
+export type SetupVerdict = {
+  status: "authorized" | "action_required" | "incomplete";
+  customerId: string;
+  paymentMethodId: string;
+  brand: string;
+  last4: string;
+  userId: string;
+};
+
+function emptySetup(): SetupVerdict {
+  return { status: "incomplete", customerId: "", paymentMethodId: "", brand: "", last4: "", userId: "" };
+}
+
+export async function createBillingSetupSession(input: { customerId: string; email: string; userId: string; consentVersion: string }) {
   const stripe = getStripe();
-  if (!stripe) return null;
+  if (!stripe || input.consentVersion !== BILLING_CONSENT_VERSION) return null;
   let customerId = input.customerId;
   if (!customerId) {
     const customer = await stripe.customers.create({
@@ -114,20 +144,136 @@ export async function createBillingSetupSession(input: { customerId: string; ema
     mode: "setup",
     customer: customerId,
     currency: "cad",
+    allowed_payment_method_types: ["card"],
     success_url: `${appUrl()}/dashboard/payments?tab=receipts&billing=return&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appUrl()}/dashboard/payments?tab=receipts&billing=canceled`,
-    metadata: { purpose: "billing_setup", userId: input.userId },
+    metadata: { purpose: "billing_setup", userId: input.userId, consentVersion: input.consentVersion },
+    setup_intent_data: {
+      metadata: { purpose: "billing_setup", userId: input.userId, consentVersion: input.consentVersion },
+    },
   });
   if (!session.url) return { customerId, url: "" };
   return { customerId, url: session.url };
 }
 
-export async function billingSetupCustomer(sessionId: string, userId: string) {
+async function verdictFromIntent(intent: Stripe.SetupIntent, expectedUserId: string, sessionComplete: boolean): Promise<SetupVerdict> {
   const stripe = getStripe();
-  if (!stripe || !sessionId) return "";
+  const paymentMethodId = typeof intent.payment_method === "string" ? intent.payment_method : "";
+  const customerId = typeof intent.customer === "string" ? intent.customer : "";
+  const status = setupAuthorization({
+    purpose: intent.metadata?.purpose,
+    userId: intent.metadata?.userId,
+    expectedUserId,
+    sessionComplete,
+    intentStatus: intent.status,
+    usage: intent.usage ?? "",
+    paymentMethodId,
+    customerId,
+    consentVersion: intent.metadata?.consentVersion,
+  });
+  if (!stripe || (status !== "authorized" && status !== "action_required")) return { ...emptySetup(), customerId, userId: intent.metadata?.userId || "" };
+  let brand = "";
+  let last4 = "";
+  if (paymentMethodId) {
+    const method = await stripe.paymentMethods.retrieve(paymentMethodId);
+    brand = method.card?.brand || "";
+    last4 = method.card?.last4 || "";
+  }
+  if (status === "authorized" && customerId && paymentMethodId) {
+    await stripe.customers.update(customerId, { invoice_settings: { default_payment_method: paymentMethodId } });
+  }
+  return { status, customerId, paymentMethodId, brand, last4, userId: intent.metadata?.userId || "" };
+}
+
+export async function billingSetupCustomer(sessionId: string, userId: string): Promise<SetupVerdict> {
+  const stripe = getStripe();
+  if (!stripe || !sessionId) return emptySetup();
   const session = await stripe.checkout.sessions.retrieve(sessionId);
-  if (session.metadata?.purpose !== "billing_setup" || session.metadata.userId !== userId || session.status !== "complete") return "";
-  return typeof session.customer === "string" ? session.customer : "";
+  if (session.metadata?.purpose !== "billing_setup" || session.metadata.userId !== userId) return emptySetup();
+  const intentId = typeof session.setup_intent === "string" ? session.setup_intent : "";
+  if (!intentId) return emptySetup();
+  const intent = await stripe.setupIntents.retrieve(intentId);
+  return verdictFromIntent(intent, userId, session.status === "complete");
+}
+
+export async function billingSetupFromIntent(intentId: string): Promise<SetupVerdict> {
+  const stripe = getStripe();
+  if (!stripe || !intentId) return emptySetup();
+  const intent = await stripe.setupIntents.retrieve(intentId);
+  const userId = intent.metadata?.userId || "";
+  return verdictFromIntent(intent, userId, intent.status === "succeeded" || intent.status === "requires_action");
+}
+
+export async function retrieveFeeIntent(id: string) {
+  const stripe = getStripe();
+  if (!stripe || !id.startsWith("pi_")) return null;
+  try {
+    const intent = await stripe.paymentIntents.retrieve(id);
+    return { id: intent.id, status: intentStatus(intent.status) };
+  } catch {
+    return { id, status: "unknown" as const };
+  }
+}
+
+export async function findCollectionIntent(customerId: string, collectionId: string) {
+  const stripe = getStripe();
+  if (!stripe || !customerId || !collectionId) return null;
+  const list = await stripe.paymentIntents.list({ customer: customerId, limit: 20 });
+  const match = list.data.find((intent) => intent.metadata?.collectionId === collectionId && intent.metadata?.purpose === "twigigi_fees");
+  if (!match) return null;
+  return { id: match.id, status: intentStatus(match.status) };
+}
+
+export async function createOffSessionFeePayment(input: {
+  customerId: string;
+  paymentMethodId: string;
+  amountCents: number;
+  currency: string;
+  collectionId: string;
+  userId: string;
+  idempotencyKey: string;
+}) {
+  const stripe = getStripe();
+  if (!stripe || !input.customerId || !input.paymentMethodId.startsWith("pm_") || input.amountCents < 1 || !input.idempotencyKey) {
+    return { id: "", status: "unknown" as const };
+  }
+  try {
+    const intent = await stripe.paymentIntents.create({
+      amount: input.amountCents,
+      currency: input.currency === "USD" ? "usd" : "cad",
+      customer: input.customerId,
+      payment_method: input.paymentMethodId,
+      off_session: true,
+      confirm: true,
+      description: "Twigigi listing and quote fees",
+      metadata: { purpose: "twigigi_fees", userId: input.userId, collectionId: input.collectionId },
+    }, { idempotencyKey: input.idempotencyKey });
+    return { id: intent.id, status: intentStatus(intent.status) };
+  } catch (error) {
+    const intent = (error as { payment_intent?: { id?: string; status?: string } }).payment_intent;
+    console.error("Off-session fee charge did not finish.", input.collectionId);
+    if (intent?.id) return { id: intent.id, status: intentStatus(intent.status) };
+    return { id: "", status: "unknown" as const };
+  }
+}
+
+export async function cancelFeeIntent(id: string) {
+  const stripe = getStripe();
+  if (!stripe || !id.startsWith("pi_")) return false;
+  try {
+    const intent = await stripe.paymentIntents.cancel(id);
+    return intent.status === "canceled";
+  } catch {
+    return false;
+  }
+}
+
+export async function settleFeeCheckout(sessionId: string, userId: string) {
+  const stripe = getStripe();
+  if (!stripe || !sessionId) return [];
+  const session = await stripe.checkout.sessions.retrieve(sessionId);
+  if (session.metadata?.purpose !== "twigigi_fees" || session.metadata.userId !== userId || session.payment_status !== "paid") return [];
+  return session.metadata.chargeKey ? [session.metadata.chargeKey] : [];
 }
 
 export async function createDigitalStripeCheckout(input: {

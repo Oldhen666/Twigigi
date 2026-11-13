@@ -14,7 +14,7 @@ import { UsernameForm } from "@/components/username-form";
 import { filterLiveTwigs, getPublicSeller, staticProductParams } from "@/lib/catalog";
 import { sellerPath } from "@/lib/seller-route";
 import { findUserById, findUserByUsername, followerCount, isFollowing, sellerProducts } from "@/lib/db";
-import { addDays, ctaCopy, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive, nextBillingDate } from "@/lib/format";
+import { addDays, ctaCopy, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive } from "@/lib/format";
 import { PROVINCES } from "@/lib/places";
 import type { Product } from "@/lib/types";
 
@@ -183,12 +183,12 @@ function PersonIcon() {
 
 function manageListing(product: Product, next: string, waiveFee: boolean) {
   const ending = isTwigLive(product) && Boolean(product.deactivatesAt);
-  const anchor = product.status === "deactivated" && product.deactivatedAt ? product.deactivatedAt : product.deactivatesAt || nextBillingDate();
+  const anchor = product.status === "deactivated" && product.deactivatedAt ? product.deactivatedAt : product.deactivatesAt || product.paidUntil || "";
   return {
     productId: product.id,
     mode: product.status === "deactivated" ? ("deactivated" as const) : ending ? ("ending" as const) : ("live" as const),
-    endsLabel: formatBillingDate(product.deactivatesAt || nextBillingDate()),
-    deleteLabel: formatBillingDate(addDays(anchor, DEACTIVATION_GRACE_DAYS), true),
+    endsLabel: product.deactivatesAt ? formatBillingDate(product.deactivatesAt) : product.paidUntil ? formatBillingDate(product.paidUntil) : "",
+    deleteLabel: anchor ? formatBillingDate(addDays(anchor, DEACTIVATION_GRACE_DAYS), true) : "",
     stillPaid: listingStillPaid(product),
     waiveFee,
     next,

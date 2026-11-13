@@ -23,6 +23,9 @@ import { fulfillmentDone, orderCanComplete, paymentNeedsConfirm } from "@/lib/or
 import { readStoredFileLinks } from "@/lib/files";
 import { parseQuoteForm } from "@/lib/quote-form";
 import { DEACTIVATION_GRACE_DAYS, RESERVED_USERNAMES, addDays, isPrivateUsername, slugify } from "@/lib/format";
+import { BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
+import { graceDeadline, paidUntilAfterPayment } from "@/lib/listing-cycle";
+import { applyPaymentResult, claimCollectionCharge, claimCollectionCheckout, collectionOwner, ensurePaymentLedger, noteCollectionHold, readCollection, releaseCollectionClaim, saveCollectionCheckout, saveCollectionPaymentId, stageFeeCollection, type PaymentNotice } from "@/lib/payment-ledger";
 import { readStoredOptions, readStoredVariants } from "@/lib/variants";
 import {
   PROTECTION_DAYS,
@@ -322,6 +325,13 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "deactivates_at", "deactivates_at TEXT");
   add("products", "deactivated_at", "deactivated_at TEXT");
   add("products", "billing_started_at", "billing_started_at TEXT");
+  add("products", "paid_until", "paid_until TEXT NOT NULL DEFAULT ''");
+  add("products", "next_renewal_at", "next_renewal_at TEXT NOT NULL DEFAULT ''");
+  add("products", "auto_renew", "auto_renew INTEGER NOT NULL DEFAULT 1");
+  add("products", "grace_until", "grace_until TEXT NOT NULL DEFAULT ''");
+  add("products", "billing_status", "billing_status TEXT NOT NULL DEFAULT ''");
+  add("products", "billing_currency", "billing_currency TEXT NOT NULL DEFAULT ''");
+  add("products", "billing_version", "billing_version INTEGER NOT NULL DEFAULT 0");
   add("products", "fee_exempt", "fee_exempt INTEGER NOT NULL DEFAULT 0");
   add("products", "quote_fee_exempt", "quote_fee_exempt INTEGER NOT NULL DEFAULT 0");
   add("users", "role", "role TEXT NOT NULL DEFAULT 'seller'");
@@ -332,6 +342,12 @@ function ensureColumns(database: DatabaseSync) {
   add("users", "stripe_account_id", "stripe_account_id TEXT NOT NULL DEFAULT ''");
   add("users", "stripe_customer_id", "stripe_customer_id TEXT NOT NULL DEFAULT ''");
   add("users", "billing_ready", "billing_ready INTEGER NOT NULL DEFAULT 0");
+  add("users", "billing_consent_at", "billing_consent_at TEXT NOT NULL DEFAULT ''");
+  add("users", "billing_consent_version", "billing_consent_version TEXT NOT NULL DEFAULT ''");
+  add("users", "billing_auth_status", "billing_auth_status TEXT NOT NULL DEFAULT ''");
+  add("users", "billing_pm_id", "billing_pm_id TEXT NOT NULL DEFAULT ''");
+  add("users", "billing_card_brand", "billing_card_brand TEXT NOT NULL DEFAULT ''");
+  add("users", "billing_card_last4", "billing_card_last4 TEXT NOT NULL DEFAULT ''");
   add("users", "paypal_billing_id", "paypal_billing_id TEXT NOT NULL DEFAULT ''");
   add("users", "stripe_charges_enabled", "stripe_charges_enabled INTEGER NOT NULL DEFAULT 0");
   add("users", "public_id", "public_id TEXT NOT NULL DEFAULT ''");
@@ -350,6 +366,27 @@ function ensureColumns(database: DatabaseSync) {
       created_at TEXT NOT NULL
     )`);
   add("twig_bills", "kind", "kind TEXT NOT NULL DEFAULT 'listing'");
+  add("twig_bills", "charge_key", "charge_key TEXT NOT NULL DEFAULT ''");
+  add("twig_bills", "billing_period_key", "billing_period_key TEXT NOT NULL DEFAULT ''");
+  add("twig_bills", "event_key", "event_key TEXT NOT NULL DEFAULT ''");
+  add("twig_bills", "quote_id", "quote_id TEXT NOT NULL DEFAULT ''");
+  add("twig_bills", "due_at", "due_at TEXT NOT NULL DEFAULT ''");
+  add("twig_bills", "paid_at", "paid_at TEXT NOT NULL DEFAULT ''");
+  add("twig_bills", "collection_id", "collection_id TEXT NOT NULL DEFAULT ''");
+  db.exec("CREATE TABLE IF NOT EXISTS schema_flags (name TEXT PRIMARY KEY)");
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS twig_bills_listing_period
+     ON twig_bills(product_id, billing_period_key)
+     WHERE kind = 'listing' AND billing_period_key != ''`,
+  );
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS twig_bills_quote_event
+     ON twig_bills(event_key)
+     WHERE kind = 'quote' AND event_key != ''`,
+  );
+  migrateListingCycles(database, new Date().toISOString());
+  ensurePaymentLedger(database);
+  database.prepare(`UPDATE twig_bills SET status = 'pending' WHERE kind = 'quote' AND status IN ('accrued', 'recorded', 'due')`).run();
   add("quotes", "documents_json", "documents_json TEXT NOT NULL DEFAULT '[]'");
   add("quotes", "billable", "billable INTEGER NOT NULL DEFAULT 1");
   add("quotes", "request_key", "request_key TEXT NOT NULL DEFAULT ''");
@@ -673,6 +710,52 @@ function migrateCommerce(database: DatabaseSync) {
   database.exec(`ALTER TABLE reviews_next RENAME TO reviews`);
 }
 
+function migrateListingCycles(database: DatabaseSync, now: string) {
+  database.exec("CREATE TABLE IF NOT EXISTS schema_flags (name TEXT PRIMARY KEY)");
+  const done = database.prepare("SELECT name FROM schema_flags WHERE name = 'listing_30_day'").get();
+  if (done) return;
+  database.prepare(
+    `UPDATE products
+     SET billing_status = 'active', auto_renew = 0, billing_version = 1
+     WHERE fee_exempt = 1 AND billing_status = ''`,
+  ).run();
+  database.prepare(
+    `UPDATE products
+     SET paid_until = (
+       SELECT period_end FROM twig_bills
+       WHERE twig_bills.product_id = products.id AND kind = 'listing' AND status = 'paid'
+       ORDER BY period_end DESC LIMIT 1
+     ),
+     billing_currency = (
+       SELECT currency FROM twig_bills
+       WHERE twig_bills.product_id = products.id AND kind = 'listing' AND status = 'paid'
+       ORDER BY period_end DESC LIMIT 1
+     )
+     WHERE billing_status = ''
+       AND EXISTS (
+         SELECT 1 FROM twig_bills
+         WHERE twig_bills.product_id = products.id AND kind = 'listing' AND status = 'paid'
+       )`,
+  ).run();
+  database.prepare(
+    `UPDATE products
+     SET billing_status = 'active', auto_renew = 1, next_renewal_at = paid_until, billing_version = 1
+     WHERE billing_status = '' AND paid_until != '' AND paid_until > ?`,
+  ).run(now);
+  database.prepare(
+    `UPDATE products
+     SET billing_status = 'legacy_review', auto_renew = 0, billing_version = 1
+     WHERE billing_status = '' AND status = 'published' AND fee_exempt = 0`,
+  ).run();
+  database.prepare(
+    `UPDATE twig_bills
+     SET status = 'void'
+     WHERE kind = 'listing' AND status = 'due' AND billing_period_key = ''
+       AND product_id IN (SELECT id FROM products WHERE billing_status = 'legacy_review')`,
+  ).run();
+  database.prepare("INSERT INTO schema_flags (name) VALUES ('listing_30_day')").run();
+}
+
 function promoteAdmins(database: DatabaseSync) {
   const emails = (process.env.ADMIN_EMAILS ?? "")
     .split(",")
@@ -780,6 +863,12 @@ function parseStoredMethods(raw: string) {
   }
 }
 
+function billingStatus(value: unknown): Product["billingStatus"] {
+  const status = str(value);
+  if (status === "active" || status === "grace" || status === "paused" || status === "canceled" || status === "legacy_review") return status;
+  return "";
+}
+
 function mapProduct(row: Row): Product {
   let images: string[] = [];
   try {
@@ -853,6 +942,12 @@ function mapProduct(row: Row): Product {
     deactivatesAt: row.deactivates_at ? str(row.deactivates_at) : null,
     deactivatedAt: row.deactivated_at ? str(row.deactivated_at) : null,
     billingStartedAt: row.billing_started_at ? str(row.billing_started_at) : null,
+    paidUntil: row.paid_until ? str(row.paid_until) : null,
+    nextRenewalAt: row.next_renewal_at ? str(row.next_renewal_at) : null,
+    autoRenew: row.auto_renew == null ? true : num(row.auto_renew) === 1,
+    graceUntil: row.grace_until ? str(row.grace_until) : null,
+    billingStatus: billingStatus(row.billing_status),
+    billingCurrency: str(row.billing_currency),
     feeExempt: num(row.fee_exempt) === 1,
     quoteFeeExempt: num(row.quote_fee_exempt) === 1,
     moderationStatus: str(row.moderation_status) === "restricted" ? "restricted" : "",
@@ -936,6 +1031,12 @@ function mapUser(row: Row): User {
     billingReady: num(row.billing_ready) === 1,
     stripeCustomerId: str(row.stripe_customer_id),
     paypalBillingId: str(row.paypal_billing_id),
+    billingConsentAt: str(row.billing_consent_at),
+    billingConsentVersion: str(row.billing_consent_version),
+    billingAuthStatus: str(row.billing_auth_status),
+    billingPmId: str(row.billing_pm_id),
+    billingCardBrand: str(row.billing_card_brand),
+    billingCardLast4: str(row.billing_card_last4),
     payoutInterac: str(row.payout_interac),
     payoutVenmo: str(row.payout_venmo),
     payoutZelle: str(row.payout_zelle),
@@ -1662,6 +1763,7 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     input.filePassword,
   );
   db.prepare("UPDATE products SET paypal_email = ? WHERE id = ?").run(input.paypalEmail || "", id);
+  db.prepare("UPDATE products SET auto_renew = 0 WHERE id = ?").run(id);
 }
 
 export function updateProduct(id: string, userId: string, input: ProductInput) {
@@ -1831,15 +1933,77 @@ export function setBillingAuthorization(userId: string, input: { method: "card" 
   ).run(input.method, input.ready ? 1 : 0, input.stripeCustomerId ?? null, input.paypalBillingId ?? null, userId);
 }
 
+export function recordBillingConsent(userId: string, version: string, now = new Date().toISOString()) {
+  if (version !== BILLING_CONSENT_VERSION) return false;
+  db.prepare(
+    `UPDATE users
+     SET billing_consent_version = ?, billing_consent_at = ?,
+         billing_auth_status = CASE WHEN billing_auth_status = 'authorized' THEN billing_auth_status ELSE 'pending' END
+     WHERE id = ?`,
+  ).run(version, now, userId);
+  return true;
+}
+
+export function saveCardAuthorization(userId: string, input: { customerId: string; paymentMethodId: string; brand: string; last4: string; consentVersion: string }) {
+  if (input.consentVersion !== BILLING_CONSENT_VERSION || !input.paymentMethodId.startsWith("pm_") || !input.customerId.startsWith("cus_")) return false;
+  const current = one("SELECT billing_consent_version FROM users WHERE id = ?", userId);
+  if (str(current?.billing_consent_version) !== input.consentVersion) return false;
+  const brand = input.brand.replace(/[^a-z0-9 ]/gi, "").slice(0, 20);
+  const last4 = /^\d{4}$/.test(input.last4) ? input.last4 : "";
+  db.prepare(
+    `UPDATE users
+     SET billing_method = 'card', billing_ready = 1, stripe_customer_id = ?, billing_pm_id = ?,
+         billing_card_brand = ?, billing_card_last4 = ?, billing_auth_status = 'authorized'
+     WHERE id = ?`,
+  ).run(input.customerId, input.paymentMethodId, brand, last4, userId);
+  return true;
+}
+
+export function markCardActionRequired(userId: string, customerId: string) {
+  db.prepare(
+    `UPDATE users SET billing_ready = 0, billing_auth_status = 'action_required', stripe_customer_id = COALESCE(NULLIF(?, ''), stripe_customer_id) WHERE id = ?`,
+  ).run(customerId, userId);
+}
+
+export function revokeCardAuthorization(userId: string) {
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE users SET billing_ready = 0, billing_auth_status = 'revoked' WHERE id = ?`,
+  ).run(userId);
+  db.prepare(
+    `UPDATE products SET auto_renew = 0, updated_at = ? WHERE user_id = ? AND billing_status != 'legacy_review'`,
+  ).run(now, userId);
+}
+
+export function resumeCardAuthorization(userId: string) {
+  const row = one(
+    "SELECT billing_pm_id, billing_consent_version, stripe_customer_id FROM users WHERE id = ?",
+    userId,
+  );
+  if (!row) return false;
+  if (str(row.billing_pm_id).startsWith("pm_") && str(row.billing_consent_version) === BILLING_CONSENT_VERSION && str(row.stripe_customer_id).startsWith("cus_")) {
+    db.prepare(`UPDATE users SET billing_method = 'card', billing_ready = 1, billing_auth_status = 'authorized', billing_consent_at = ? WHERE id = ?`).run(new Date().toISOString(), userId);
+    return true;
+  }
+  return false;
+}
+
 export function listBillingListings(userId: string) {
   return many(
-    "SELECT title, cta, location, fee_exempt FROM products WHERE user_id = ? AND status = 'published'",
+    "SELECT id, title, cta, location, status, fee_exempt, paid_until, next_renewal_at, grace_until, billing_status, auto_renew FROM products WHERE user_id = ? AND status IN ('published', 'deactivated')",
     userId,
   ).map((row) => ({
+    id: str(row.id),
     title: str(row.title),
+    status: str(row.status),
     cta: str(row.cta),
     location: str(row.location),
     feeExempt: num(row.fee_exempt) === 1,
+    paidUntil: str(row.paid_until),
+    nextRenewalAt: str(row.next_renewal_at),
+    graceUntil: str(row.grace_until),
+    billingStatus: billingStatus(row.billing_status),
+    autoRenew: num(row.auto_renew) === 1,
   }));
 }
 
@@ -1869,7 +2033,8 @@ export function setAutoConfirm(userId: string, enabled: boolean) {
 
 export function listSellerBills(userId: string) {
   return many(
-    `SELECT b.amount_cents, b.currency, b.method, b.kind, b.status, b.created_at, b.period_start, b.period_end,
+    `SELECT b.id, b.product_id, b.amount_cents, b.currency, b.method, b.kind, b.status, b.created_at, b.period_start, b.period_end,
+            b.collection_id, b.paid_at, b.billing_period_key,
             COALESCE(p.title, 'Removed Twig') AS title
      FROM twig_bills b
      LEFT JOIN products p ON p.id = b.product_id
@@ -1877,6 +2042,8 @@ export function listSellerBills(userId: string) {
      ORDER BY b.created_at DESC`,
     userId,
   ).map((row) => ({
+    id: str(row.id),
+    productId: str(row.product_id),
     title: str(row.title),
     amountCents: num(row.amount_cents),
     currency: str(row.currency) || "CAD",
@@ -1886,6 +2053,9 @@ export function listSellerBills(userId: string) {
     createdAt: str(row.created_at),
     periodStart: str(row.period_start),
     periodEnd: str(row.period_end),
+    collectionId: str(row.collection_id),
+    paidAt: str(row.paid_at),
+    billingPeriodKey: str(row.billing_period_key),
   }));
 }
 
@@ -1900,23 +2070,338 @@ export function recordTwigBill(input: {
   periodStart: string;
   periodEnd: string;
   status: string;
+  billingPeriodKey?: string;
+  eventKey?: string;
+  quoteId?: string;
+  dueAt?: string;
+  paidAt?: string;
 }) {
+  try {
+    db.prepare(
+      `INSERT INTO twig_bills (
+         id, user_id, product_id, amount_cents, currency, method, kind, period_start, period_end, status, created_at,
+         billing_period_key, event_key, quote_id, due_at, paid_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      input.id,
+      input.userId,
+      input.productId,
+      input.amountCents,
+      input.currency,
+      input.method,
+      input.kind,
+      input.periodStart,
+      input.periodEnd,
+      input.status,
+      new Date().toISOString(),
+      input.billingPeriodKey || "",
+      input.eventKey || "",
+      input.quoteId || "",
+      input.dueAt || "",
+      input.paidAt || "",
+    );
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("UNIQUE")) return false;
+    throw error;
+  }
+}
+
+export function activatePaidListing(id: string, userId: string, paidAt: string, currency: string) {
+  const product = one("SELECT paid_until, billing_status, grace_until, auto_renew FROM products WHERE id = ? AND user_id = ?", id, userId);
+  if (!product) return null;
+  const next = paidUntilAfterPayment({
+    paidUntil: str(product.paid_until),
+    billingStatus: str(product.billing_status),
+    graceUntil: str(product.grace_until),
+    autoRenew: num(product.auto_renew) === 1,
+    paidAt,
+  });
+  const paidUntil = next.paidUntil;
+  const current = next.periodKey;
   db.prepare(
-    `INSERT INTO twig_bills (id, user_id, product_id, amount_cents, currency, method, kind, period_start, period_end, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    input.id,
-    input.userId,
-    input.productId,
-    input.amountCents,
-    input.currency,
-    input.method,
-    input.kind,
-    input.periodStart,
-    input.periodEnd,
-    input.status,
-    new Date().toISOString(),
+    `UPDATE products
+     SET paid_until = ?, next_renewal_at = ?, grace_until = '', billing_status = 'active', billing_currency = ?,
+         billing_version = 1, billing_started_at = COALESCE(NULLIF(billing_started_at, ''), ?), updated_at = ?
+     WHERE id = ? AND user_id = ?`,
+  ).run(paidUntil, paidUntil, currency, paidAt, new Date().toISOString(), id, userId);
+  return { periodKey: current || paidAt, periodStart: current || paidAt, periodEnd: paidUntil, paidUntil };
+}
+
+export function markRenewalFailed(id: string, failedAt: string) {
+  db.prepare(
+    `UPDATE products SET billing_status = 'grace', grace_until = ?, updated_at = ?
+     WHERE id = ? AND billing_status = 'active'`,
+  ).run(graceDeadline(failedAt), new Date().toISOString(), id);
+}
+
+export function pauseExpiredGrace(now = new Date().toISOString()) {
+  const due = many(
+    `SELECT id, user_id, title FROM products
+     WHERE billing_status = 'grace' AND grace_until != '' AND grace_until <= ?`,
+    now,
   );
+  db.prepare(
+    `UPDATE products SET billing_status = 'paused', updated_at = ?
+     WHERE billing_status = 'grace' AND grace_until != '' AND grace_until <= ?`,
+  ).run(now, now);
+  return due.map((row) => ({ id: str(row.id), userId: str(row.user_id), title: str(row.title) }));
+}
+
+export function listGraceEndingSoon(now: string, until: string) {
+  return many(
+    `SELECT id, user_id, title, grace_until FROM products
+     WHERE billing_status = 'grace' AND grace_until > ? AND grace_until <= ?`,
+    now,
+    until,
+  ).map((row) => ({ id: str(row.id), userId: str(row.user_id), title: str(row.title), graceUntil: str(row.grace_until) }));
+}
+
+export function ensureListingFeeBill(input: {
+  id: string;
+  userId: string;
+  productId: string;
+  amountCents: number;
+  currency: string;
+  periodKey: string;
+  periodEnd: string;
+}) {
+  const existing = one(
+    `SELECT id, status FROM twig_bills
+     WHERE product_id = ? AND user_id = ? AND kind = 'listing' AND billing_period_key = ? AND status != 'void'`,
+    input.productId,
+    input.userId,
+    input.periodKey,
+  );
+  if (existing) return { id: str(existing.id), status: str(existing.status) };
+  recordTwigBill({
+    id: input.id,
+    userId: input.userId,
+    productId: input.productId,
+    amountCents: input.amountCents,
+    currency: input.currency,
+    method: "",
+    kind: "listing",
+    periodStart: input.periodKey,
+    periodEnd: input.periodEnd,
+    status: "due",
+    billingPeriodKey: input.periodKey,
+    dueAt: input.periodKey,
+  });
+  return { id: input.id, status: "due" };
+}
+
+export function stageSellerCollection(userId: string, currency: string) {
+  const bytes = crypto.getRandomValues(new Uint8Array(9));
+  return stageFeeCollection(db, { id: `col_${Buffer.from(bytes).toString("base64url")}`, userId, currency, now: new Date().toISOString() });
+}
+
+export function rememberCollectionCheckout(input: { collectionId: string; userId: string; provider: string; orderId: string; url: string }) {
+  saveCollectionCheckout(db, input);
+}
+
+export function claimSellerCheckout(collectionId: string, userId: string) {
+  return claimCollectionCheckout(db, collectionId, userId);
+}
+
+export function releaseSellerCheckout(collectionId: string, userId: string) {
+  releaseCollectionClaim(db, collectionId, userId);
+}
+
+export function collectionForSeller(collectionId: string, userId: string) {
+  return readCollection(db, collectionId, userId);
+}
+
+export function collectionOwnerId(collectionId: string) {
+  return collectionOwner(db, collectionId);
+}
+
+export function confirmProviderPayment(input: {
+  provider: "stripe" | "paypal";
+  transactionId: string;
+  eventId?: string;
+  userId: string;
+  collectionId: string;
+  paidAt: string;
+  succeeded: boolean;
+}) {
+  const result = applyPaymentResult(db, input);
+  for (const notice of result.notices) enqueueBillingNotice({ userId: input.userId, ...notice });
+  return result;
+}
+
+export function enqueueBillingNotice(input: { userId: string } & PaymentNotice) {
+  try {
+    const bytes = crypto.getRandomValues(new Uint8Array(9));
+    db.prepare(
+      `INSERT INTO billing_notices (id, user_id, kind, dedupe_key, subject, body, status, attempts, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?)
+       ON CONFLICT(dedupe_key) DO NOTHING`,
+    ).run(`note_${Buffer.from(bytes).toString("base64url")}`, input.userId, input.kind, input.dedupeKey, input.subject, input.body, new Date().toISOString());
+  } catch (error) {
+    console.error("Billing notice was not saved.", error instanceof Error ? error.name : "");
+  }
+}
+
+export function listPendingBillingNotices(limit = 20) {
+  db.prepare(`UPDATE billing_notices SET status = 'pending' WHERE status = 'sending' AND attempts < 5`).run();
+  return many(
+    `SELECT n.id, n.subject, n.body, u.email
+     FROM billing_notices n JOIN users u ON u.id = n.user_id
+     WHERE n.status = 'pending' AND n.attempts < 5
+     ORDER BY n.created_at ASC LIMIT ?`,
+    limit,
+  ).map((row) => ({ id: str(row.id), subject: str(row.subject), body: str(row.body), email: str(row.email) }));
+}
+
+export function markNoticeSending(id: string) {
+  return db.prepare(`UPDATE billing_notices SET status = 'sending', attempts = attempts + 1 WHERE id = ? AND status = 'pending'`).run(id).changes > 0;
+}
+
+export function markNoticeResult(id: string, sent: boolean) {
+  db.prepare(`UPDATE billing_notices SET status = ? WHERE id = ?`).run(sent ? "sent" : "pending", id);
+}
+
+export function listRenewalCollections() {
+  return many(
+    `SELECT id, user_id, currency, amount_cents, status, idempotency_key, provider_payment_id, provider_order_id
+     FROM fee_collections WHERE status IN ('processing', 'unknown', 'action_required')
+     ORDER BY created_at ASC`,
+  ).map((row) => ({
+    id: str(row.id),
+    userId: str(row.user_id),
+    currency: str(row.currency) || "CAD",
+    amountCents: num(row.amount_cents),
+    status: str(row.status),
+    idempotencyKey: str(row.idempotency_key),
+    paymentId: str(row.provider_payment_id),
+    providerOrderId: str(row.provider_order_id),
+  }));
+}
+
+export function listAttentionCollections(userId: string) {
+  return listRenewalCollections().filter((row) => row.userId === userId && (row.status === "unknown" || row.status === "action_required"));
+}
+
+export function holdSellerCollection(input: { collectionId: string; userId: string; paymentId: string; status: "unknown" | "action_required" }) {
+  return noteCollectionHold(db, input);
+}
+
+export function claimSellerCharge(collectionId: string, userId: string) {
+  return claimCollectionCharge(db, collectionId, userId);
+}
+
+export function rememberCollectionPayment(collectionId: string, userId: string, paymentId: string) {
+  saveCollectionPaymentId(db, collectionId, userId, paymentId);
+}
+
+export function setListingAutoRenew(id: string, userId: string, autoRenew: boolean) {
+  if (autoRenew) {
+    const product = one("SELECT billing_status FROM products WHERE id = ? AND user_id = ?", id, userId);
+    if (str(product?.billing_status) === "legacy_review") return false;
+  }
+  db.prepare("UPDATE products SET auto_renew = ?, updated_at = ? WHERE id = ? AND user_id = ?").run(
+    autoRenew ? 1 : 0,
+    new Date().toISOString(),
+    id,
+    userId,
+  );
+  return true;
+}
+
+export function listOpenFeeBills(userId: string) {
+  return many(
+    `SELECT id, product_id, amount_cents, currency, kind, status, created_at
+     FROM twig_bills
+     WHERE user_id = ? AND status IN ('accrued', 'recorded', 'due', 'pending')
+     ORDER BY created_at ASC`,
+    userId,
+  ).map((row) => ({
+    id: str(row.id),
+    productId: str(row.product_id),
+    amountCents: num(row.amount_cents),
+    currency: str(row.currency) || "CAD",
+    kind: str(row.kind),
+    status: str(row.status),
+    createdAt: str(row.created_at),
+  }));
+}
+
+export function hasListingBillForPeriod(productId: string, periodKey: string) {
+  return Boolean(one(
+    `SELECT id FROM twig_bills
+     WHERE product_id = ? AND kind = 'listing' AND billing_period_key = ? AND status IN ('due', 'recorded', 'paid')`,
+    productId,
+    periodKey,
+  ));
+}
+
+export function listFeeListings(userId: string) {
+  return many(
+    `SELECT id, cta, location, fee_exempt, paid_until, next_renewal_at, auto_renew, grace_until, billing_status, billing_currency
+     FROM products WHERE user_id = ? AND status = 'published'`,
+    userId,
+  ).map((row) => ({
+    id: str(row.id),
+    cta: str(row.cta),
+    location: str(row.location),
+    feeExempt: num(row.fee_exempt) === 1,
+    paidUntil: str(row.paid_until) || null,
+    nextRenewalAt: str(row.next_renewal_at) || null,
+    autoRenew: num(row.auto_renew) === 1,
+    graceUntil: str(row.grace_until) || null,
+    billingStatus: billingStatus(row.billing_status),
+    billingCurrency: str(row.billing_currency),
+  }));
+}
+
+export function unpaidListingIdsForCharge(chargeKey: string, userId: string) {
+  return many(
+    `SELECT DISTINCT product_id, currency FROM twig_bills
+     WHERE charge_key = ? AND user_id = ? AND kind = 'listing' AND status != 'paid'`,
+    chargeKey,
+    userId,
+  ).map((row) => ({ productId: str(row.product_id), currency: str(row.currency) || "CAD" }));
+}
+
+export function listUserIdsWithFees() {
+  const rows = many(
+    `SELECT user_id AS id FROM products WHERE status = 'published'
+     UNION
+     SELECT user_id AS id FROM twig_bills WHERE status IN ('accrued', 'recorded', 'due')`,
+  );
+  return rows.map((row) => str(row.id)).filter(Boolean);
+}
+
+export function assignChargeKey(ids: string[], chargeKey: string, userId: string) {
+  const statement = db.prepare("UPDATE twig_bills SET charge_key = ? WHERE id = ? AND user_id = ? AND status != 'paid'");
+  for (const id of ids) statement.run(chargeKey, id, userId);
+}
+
+export function markChargePaid(chargeKey: string, userId: string) {
+  const rows = many(
+    "SELECT product_id, kind FROM twig_bills WHERE charge_key = ? AND user_id = ? AND status != 'paid'",
+    chargeKey,
+    userId,
+  );
+  db.prepare("UPDATE twig_bills SET status = 'paid' WHERE charge_key = ? AND user_id = ? AND status != 'paid'").run(chargeKey, userId);
+  return rows.filter((row) => str(row.kind) === "listing").map((row) => str(row.product_id));
+}
+
+export function markBillsPaid(ids: string[], userId: string, chargeKey: string) {
+  const statement = db.prepare("UPDATE twig_bills SET status = 'paid', charge_key = ? WHERE id = ? AND user_id = ? AND status != 'paid'");
+  for (const id of ids) statement.run(chargeKey, id, userId);
+  const listings = many(
+    `SELECT product_id FROM twig_bills WHERE user_id = ? AND kind = 'listing' AND charge_key = ?`,
+    userId,
+    chargeKey,
+  );
+  return listings.map((row) => str(row.product_id));
+}
+
+export function holdAsDraft(id: string, userId: string) {
+  db.prepare("UPDATE products SET status = 'draft', updated_at = ? WHERE id = ? AND user_id = ? AND status = 'published'").run(new Date().toISOString(), id, userId);
 }
 
 export function quoteChargesSince(productId: string, since: string) {

@@ -104,12 +104,33 @@ export function formatDay(iso: string | null) {
 
 const BILLING_ZONE = "America/Edmonton";
 
-export function isTwigLive(product: { status: string; deactivatesAt?: string | null; moderationStatus?: string }, now?: number) {
+export function isTwigLive(
+  product: {
+    status: string;
+    deactivatesAt?: string | null;
+    moderationStatus?: string;
+    billingStatus?: string;
+    graceUntil?: string | null;
+    paidUntil?: string | null;
+    autoRenew?: boolean;
+  },
+  now?: number,
+) {
+  const at = now ?? Date.now();
   if (product.moderationStatus === "restricted") return false;
   if (product.status !== "published") return false;
+  if (product.billingStatus === "paused" || product.billingStatus === "canceled") return false;
+  if (product.billingStatus === "grace") {
+    const grace = Date.parse(product.graceUntil || "");
+    if (!Number.isFinite(grace) || grace <= at) return false;
+  }
+  if (product.billingStatus === "active" && product.autoRenew === false) {
+    const until = Date.parse(product.paidUntil || "");
+    if (Number.isFinite(until) && until <= at) return false;
+  }
   if (!product.deactivatesAt) return true;
   const ends = Date.parse(product.deactivatesAt);
-  return Number.isFinite(ends) && ends > (now ?? Date.now());
+  return Number.isFinite(ends) && ends > at;
 }
 
 function zonedParts(date: Date, timeZone: string) {
@@ -143,13 +164,6 @@ function edmontonMidnight(year: number, month: number, day: number) {
 export function periodStart(now = new Date()) {
   const current = zonedParts(now, BILLING_ZONE);
   return edmontonMidnight(current.year, current.month, 1);
-}
-
-export function nextBillingDate(now = new Date()) {
-  const current = zonedParts(now, BILLING_ZONE);
-  const month = current.month === 12 ? 1 : current.month + 1;
-  const year = current.month === 12 ? current.year + 1 : current.year;
-  return edmontonMidnight(year, month, 1);
 }
 
 export const DEACTIVATION_GRACE_DAYS = 30;

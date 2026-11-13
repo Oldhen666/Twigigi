@@ -32,6 +32,12 @@ export type User = {
   createdAt: string;
   billingMethod: "" | "card" | "paypal" | "stripe";
   billingReady: boolean;
+  billingConsentAt: string;
+  billingConsentVersion: string;
+  billingAuthStatus: string;
+  billingPmId: string;
+  billingCardBrand: string;
+  billingCardLast4: string;
   stripeCustomerId: string;
   paypalBillingId: string;
   payoutInterac: string;
@@ -145,6 +151,12 @@ export type Product = ProductInput & {
   deactivatesAt: string | null;
   deactivatedAt: string | null;
   billingStartedAt: string | null;
+  paidUntil: string | null;
+  nextRenewalAt: string | null;
+  autoRenew: boolean;
+  graceUntil: string | null;
+  billingStatus: "" | "active" | "grace" | "paused" | "canceled" | "legacy_review";
+  billingCurrency: string;
   feeExempt: boolean;
   quoteFeeExempt: boolean;
   moderationStatus: "" | "restricted";

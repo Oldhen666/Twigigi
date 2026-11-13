@@ -10,7 +10,7 @@ async function QuotesScreen() {
   return (
     <main className="page-frame pb-16">
       <h1 className="font-serif text-4xl">Quotes</h1>
-      <p className="mt-2 text-sm text-muted">A valid new quote is $0.25, in CAD or USD for that Twig. It is added to your next monthly Twigigi bill with the listing fee. The same buyer is not charged again for the same request, and a waived Twig is not charged.</p>
+      <p className="mt-2 text-sm text-muted">A valid new quote is $0.25, in CAD or USD for that Twig. It is added to the next listing payment. Twigigi does not charge it on its own. The same buyer is not charged again for the same request, and a waived Twig is not charged.</p>
       {quotes.length === 0 ? (
         <p className="mt-8 text-sm text-muted">No quote record</p>
       ) : (

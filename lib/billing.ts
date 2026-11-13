@@ -1,4 +1,5 @@
-import { nextBillingDate, periodStart } from "@/lib/format";
+import { periodStart } from "@/lib/format";
+import { firstPaidUntil, listingCoversNow, type ListingBillingStatus } from "@/lib/listing-cycle";
 import { splitLocation } from "@/lib/places";
 
 export type BillingMethod = "card" | "paypal" | "stripe";
@@ -42,13 +43,25 @@ export function billingMethodLabel(method: string) {
 }
 
 export function listingStillPaid(
-  product: { cta: string; deactivatedAt: string | null; billingStartedAt: string | null; createdAt: string; feeExempt?: boolean },
+  product: {
+    cta: string;
+    feeExempt?: boolean;
+    billingStatus?: ListingBillingStatus | string;
+    paidUntil?: string | null;
+    graceUntil?: string | null;
+  },
   now = new Date(),
 ) {
-  if (product.feeExempt || listingFeeCents(product.cta) === 0) return true;
-  const anchor = product.deactivatedAt || product.billingStartedAt || product.createdAt;
-  const until = Date.parse(nextBillingDate(new Date(anchor)));
-  return Number.isFinite(until) && until > now.getTime();
+  return listingCoversNow(
+    {
+      ctaFee: listingFeeCents(product.cta),
+      feeExempt: product.feeExempt,
+      billingStatus: product.billingStatus,
+      paidUntil: product.paidUntil,
+      graceUntil: product.graceUntil,
+    },
+    now.getTime(),
+  );
 }
 
 export function quoteCarryExpired(oldestIso: string | null, now = new Date()) {
@@ -60,19 +73,22 @@ export function quoteCarryExpired(oldestIso: string | null, now = new Date()) {
   return oldest < start.getTime();
 }
 
-export function periodCharge(input: { listingCents: number; quoteCents: number; oldestQuoteAt: string | null; now?: Date }) {
-  const chargeQuotes = input.listingCents > 0 || input.quoteCents >= MINIMUM_BILL_CENTS || quoteCarryExpired(input.oldestQuoteAt, input.now);
+export function periodCharge(input: { listingCents: number; quoteCents: number; oldestQuoteAt?: string | null; now?: Date }) {
+  const chargeQuotes = input.listingCents > 0;
   return {
     dueCents: input.listingCents + (chargeQuotes ? input.quoteCents : 0),
     carriedCents: chargeQuotes ? 0 : input.quoteCents,
   };
 }
 
+export function quoteWindow(quotedAt: string) {
+  const start = periodStart(new Date(quotedAt));
+  const end = new Date(start);
+  end.setUTCMonth(end.getUTCMonth() + 1);
+  return { start, end: end.toISOString() };
+}
+
 export function activeWindow(startedAt: string | null, now = new Date()) {
-  const end = nextBillingDate(now);
-  const monthStart = periodStart(now);
-  const started = startedAt ? Date.parse(startedAt) : Number.NaN;
-  const start =
-    Number.isFinite(started) && started > Date.parse(monthStart) && started < Date.parse(end) ? startedAt || monthStart : monthStart;
-  return { start, end };
+  const start = startedAt || now.toISOString();
+  return { start, end: firstPaidUntil(start) };
 }

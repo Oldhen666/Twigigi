@@ -10,7 +10,9 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, digitalPayMethods, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
-import { beginDigitalPaypalCheckout, beginPaypalBillingAgreement, paypalBillingMessage, paypalCheckoutError, paypalConfigured } from "@/lib/paypal";
+import { beginDigitalPaypalCheckout, beginPaypalBillingAgreement, createPlatformFeeCheckout, paypalBillingMessage, paypalCheckoutError, paypalConfigured } from "@/lib/paypal";
+import { plansFor, prepareRenewalBills } from "@/lib/seller-fees";
+import { chargePeriodKey } from "@/lib/listing-cycle";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
@@ -66,6 +68,11 @@ import {
   setOrderStripeAccount,
   setStripeAccount,
   rememberStripeCustomer,
+  recordBillingConsent,
+  resumeCardAuthorization,
+  revokeCardAuthorization,
+  collectionForSeller,
+  confirmProviderPayment,
   setBuyerPaymentMethod,
   recordPaymentLinkChange,
   setInteracPrompt,
@@ -90,9 +97,16 @@ import {
   setPayoutDetails,
   setAutoConfirm,
   setBillingStarted,
+  ensureListingFeeBill,
+  claimSellerCheckout,
+  rememberCollectionCheckout,
+  releaseSellerCheckout,
+  setListingAutoRenew,
+  stageSellerCollection,
   setListingFeeExempt,
   setQuoteFeeExempt,
   recordTwigBill,
+  holdAsDraft,
   reactivateProduct,
   replacePasswordReset,
   takePasswordReset,
@@ -137,9 +151,10 @@ import type { Cta, FormState, Fulfillment, OrderStatus, ProductInput } from "@/l
 import { IP_POLICY_VERSION, LISTING_REPORT_REASONS, PRIVACY_VERSION, REPORT_STATUSES, RIGHT_TYPES, TERMS_VERSION } from "@/lib/legal";
 import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { ensureVisitor } from "@/lib/visitor";
-import { activeWindow, billingCurrency, isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
+import { billingCurrency, isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid, quoteWindow, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
+import { BILLING_CONSENT_VERSION, cardCanRenew } from "@/lib/billing-auth";
 import { normalizeQuoteForm } from "@/lib/quote-form";
-import { createBillingSetupSession, createDigitalStripeCheckout, createStripeConnectLink, getStripe } from "@/lib/stripe";
+import { cancelFeeIntent, createBillingSetupSession, createDigitalStripeCheckout, createStripeConnectLink, getStripe, publicStripeError, retrieveFeeIntent } from "@/lib/stripe";
 import { DIGITAL_FILE_CATEGORY, categoryProblem, resolveCategory } from "@/lib/categories";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
 
@@ -799,22 +814,14 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
 
   if (needsBilling) redirect(`/billing?next=${encodeURIComponent(`/dashboard/products/${savedProductId}`)}`);
   if (input.status === "published" && (!existing || existing.status !== "published")) {
-    setBillingStarted(savedProductId, owner.id);
     const cents = listingFeeCents(input.cta, Boolean(existing?.feeExempt));
-    if (cents && user.billingMethod && !acting) {
-      const window = activeWindow(new Date().toISOString());
-      recordTwigBill({
-        id: newId("bill"),
-        userId: owner.id,
-        productId: savedProductId,
-        amountCents: cents,
-        currency: listingFeeCurrency(input.cta, location),
-        method: user.billingMethod,
-        kind: "listing",
-        periodStart: window.start,
-        periodEnd: window.end,
-        status: "recorded",
-      });
+    const cardReady = (user.billingMethod === "card" || user.billingMethod === "stripe") && Boolean(getStripe());
+    const paypalReady = user.billingMethod === "paypal" && paypalConfigured();
+    if (cents > 0 && !acting && !existing?.feeExempt) {
+      holdAsDraft(savedProductId, owner.id);
+      const draft = getProductById(savedProductId);
+      if (draft && (cardReady || paypalReady)) await redirectListingFee(user, draft);
+      redirect(`/dashboard/products/${savedProductId}?saved=1`);
     }
   }
   if (input.status === "published") redirect(`/${owner.publicId}/${slug}`);
@@ -888,6 +895,113 @@ export async function saveBillingMethod(formData: FormData) {
   redirect(safeNext(text(formData, "next")));
 }
 
+async function redirectCollectionCheckout(
+  user: { id: string; billingMethod: string; stripeCustomerId?: string },
+  staged: { collectionId: string; amountCents: number; currency: string; checkoutUrl: string; idempotencyKey?: string } | null,
+) {
+  if (!staged || staged.amountCents < 1) return;
+  if (staged.checkoutUrl) redirect(staged.checkoutUrl);
+  if (!claimSellerCheckout(staged.collectionId, user.id)) redirect("/dashboard/payments?tab=receipts&billing=error");
+  try {
+  if (user.billingMethod === "paypal") {
+    if (!paypalConfigured()) redirect("/dashboard/payments?tab=receipts&billing=paypal&reason=PayPal%20is%20not%20set%20up%20on%20this%20server%20yet.");
+    const checkout = await createPlatformFeeCheckout({
+      reference: `collection:${staged.collectionId}`,
+      amountCents: staged.amountCents,
+      currency: staged.currency,
+      description: "Twigigi listing and quote fees",
+    });
+    rememberCollectionCheckout({ collectionId: staged.collectionId, userId: user.id, provider: "paypal", orderId: checkout.orderId, url: checkout.url });
+    redirect(checkout.url);
+  }
+  const stripe = getStripe();
+  if (!stripe) {
+    releaseSellerCheckout(staged.collectionId, user.id);
+    return;
+  }
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    customer: user.stripeCustomerId || undefined,
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency: staged.currency === "USD" ? "usd" : "cad",
+          unit_amount: staged.amountCents,
+          product_data: { name: "Twigigi fees" },
+        },
+      },
+    ],
+    success_url: `${appUrl()}/billing/complete?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${appUrl()}/dashboard/payments?tab=receipts&billing=canceled`,
+    metadata: { purpose: "twigigi_fees", userId: user.id, collectionId: staged.collectionId },
+    payment_intent_data: {
+      metadata: { purpose: "twigigi_fees", userId: user.id, collectionId: staged.collectionId },
+    },
+  }, staged.idempotencyKey ? { idempotencyKey: staged.idempotencyKey } : undefined);
+  if (!session.url) {
+    releaseSellerCheckout(staged.collectionId, user.id);
+    return;
+  }
+  rememberCollectionCheckout({ collectionId: staged.collectionId, userId: user.id, provider: "stripe", orderId: session.id, url: session.url });
+  redirect(session.url);
+  } catch (error) {
+    releaseSellerCheckout(staged.collectionId, user.id);
+    throw error;
+  }
+}
+
+async function redirectListingFee(
+  user: { id: string; billingMethod: string; stripeCustomerId?: string },
+  product: { id: string; title: string; cta: string; location: string; feeExempt?: boolean; paidUntil?: string | null; billingStatus?: string; graceUntil?: string | null; autoRenew?: boolean },
+) {
+  const cents = listingFeeCents(product.cta, Boolean(product.feeExempt));
+  const currency = listingFeeCurrency(product.cta, product.location);
+  if (cents < 1) return;
+  const now = new Date().toISOString();
+  const periodKey = chargePeriodKey(product, now);
+  const bill = ensureListingFeeBill({
+    id: newId("bill"),
+    userId: user.id,
+    productId: product.id,
+    amountCents: cents,
+    currency,
+    periodKey,
+    periodEnd: "",
+  });
+  if (bill.status === "paid") return;
+  await redirectCollectionCheckout(user, stageSellerCollection(user.id, currency));
+}
+
+export async function payOpenFees() {
+  const user = await requireSeller();
+  prepareRenewalBills(user.id);
+  const plan = plansFor(user.id)[0];
+  if (!plan) redirect("/dashboard/payments?tab=receipts");
+  try {
+    await redirectCollectionCheckout(user, stageSellerCollection(user.id, plan.currency));
+  } catch (error) {
+    unstable_rethrow(error);
+    redirect("/dashboard/payments?tab=receipts&billing=error");
+  }
+  redirect("/dashboard/payments?tab=receipts&billing=error");
+}
+
+export async function payToResume(formData: FormData) {
+  const user = await requireSeller();
+  const product = getProductById(text(formData, "id"));
+  const back = safeNext(text(formData, "next"));
+  if (!product || product.userId !== user.id) redirect(back || "/dashboard");
+  if (product.billingStatus !== "paused" && listingStillPaid(product)) redirect(back || "/dashboard");
+  try {
+    await redirectListingFee(user, product);
+  } catch (error) {
+    unstable_rethrow(error);
+    redirect("/dashboard/payments?tab=receipts&billing=error");
+  }
+  redirect(back || "/dashboard");
+}
+
 export async function payAndPublish(formData: FormData) {
   const user = await requireSeller();
   const acting = await getImpersonation();
@@ -906,44 +1020,12 @@ export async function payAndPublish(formData: FormData) {
     redirect(`/dashboard/products/${product.id}`);
   }
   const cents = waived ? 0 : listingFeeCents(product.cta);
-  const currency = listingFeeCurrency(product.cta, product.location);
-  const stripe = getStripe();
-  if (stripe && cents && (user.billingMethod === "card" || user.billingMethod === "stripe")) {
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: currency.toLowerCase(),
-            unit_amount: cents,
-            product_data: { name: `Twigigi · ${product.title}` },
-          },
-        },
-      ],
-      success_url: `${appUrl()}/billing/complete?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl()}/dashboard`,
-      metadata: { purpose: "twig", userId: user.id, productId: product.id },
-    });
-    if (session.url) redirect(session.url);
+  if (!waived && cents) {
+    await redirectListingFee(user, product);
+    redirect(back);
   }
   if (product.status === "deactivated") reactivateProduct(product.id, user.id);
   else publishDraft(product.id, user.id);
-  if (cents) {
-    const window = activeWindow(new Date().toISOString());
-    recordTwigBill({
-      id: newId("bill"),
-      userId: user.id,
-      productId: product.id,
-      amountCents: cents,
-      currency,
-      method: user.billingMethod,
-      kind: "listing",
-      periodStart: window.start,
-      periodEnd: window.end,
-      status: "recorded",
-    });
-  }
   updateTag(productTag(user.publicId, product.slug));
   updateTag(sellerTag(user.publicId));
   redirect(back);
@@ -1279,7 +1361,13 @@ export async function beginBillingSetup(formData: FormData) {
       const url = await beginPaypalBillingAgreement();
       redirect(url);
     }
-    const session = await createBillingSetupSession({ customerId: user.stripeCustomerId, email: user.email, userId: user.id });
+    if (text(formData, "consent") !== "yes") {
+      redirect("/dashboard/payments?tab=receipts&billing=error&reason=Check%20the%20automatic%20renewal%20agreement%20before%20saving%20a%20card.");
+    }
+    if (!recordBillingConsent(user.id, BILLING_CONSENT_VERSION)) {
+      redirect("/dashboard/payments?tab=receipts&billing=error");
+    }
+    const session = await createBillingSetupSession({ customerId: user.stripeCustomerId, email: user.email, userId: user.id, consentVersion: BILLING_CONSENT_VERSION });
     if (!session) redirect("/dashboard/payments?tab=receipts&billing=setup");
     if (session.customerId) rememberStripeCustomer(user.id, session.customerId);
     if (!session.url) redirect("/dashboard/payments?tab=receipts&billing=error");
@@ -1287,10 +1375,78 @@ export async function beginBillingSetup(formData: FormData) {
   } catch (error) {
     unstable_rethrow(error);
     const raw = error instanceof Error ? error.message : "";
-    const reason = method === "paypal" ? paypalBillingMessage(raw) : raw.replace(/\s+/g, " ").trim().slice(0, 180);
+    const reason = method === "paypal" ? paypalBillingMessage(raw) : publicStripeError(raw);
     const code = method === "paypal" ? "paypal" : "error";
     redirect(`/dashboard/payments?tab=receipts&billing=${code}${reason ? `&reason=${encodeURIComponent(reason)}` : ""}`);
   }
+}
+
+export async function stopAutomaticRenewal() {
+  const user = await requireSeller();
+  revokeCardAuthorization(user.id);
+  redirect("/dashboard/payments?tab=receipts&billing=stopped");
+}
+
+export async function resumeAutomaticRenewal(formData: FormData) {
+  const user = await requireSeller();
+  if (text(formData, "consent") !== "yes") {
+    redirect("/dashboard/payments?tab=receipts&billing=error&reason=Check%20the%20automatic%20renewal%20agreement%20before%20turning%20it%20back%20on.");
+  }
+  recordBillingConsent(user.id, BILLING_CONSENT_VERSION);
+  if (!resumeCardAuthorization(user.id)) {
+    redirect("/dashboard/payments?tab=receipts&billing=error&reason=Save%20a%20card%20again%20before%20turning%20automatic%20renewal%20on.");
+  }
+  redirect("/dashboard/payments?tab=receipts");
+}
+
+export async function payHeldCollection(formData: FormData) {
+  const user = await requireSeller();
+  const collection = collectionForSeller(text(formData, "id"), user.id);
+  if (!collection) redirect("/dashboard/payments?tab=receipts");
+  if (collection.status === "unknown") {
+    redirect("/dashboard/payments?tab=receipts&billing=pending");
+  }
+  if (collection.providerPaymentId) {
+    const intent = await retrieveFeeIntent(collection.providerPaymentId);
+    if (intent?.status === "succeeded") {
+      confirmProviderPayment({
+        provider: "stripe",
+        transactionId: intent.id,
+        userId: user.id,
+        collectionId: collection.id,
+        paidAt: new Date().toISOString(),
+        succeeded: true,
+      });
+      redirect(`/billing/complete?state=confirmed&collection=${collection.id}`);
+    }
+    if (!intent || intent.status === "processing" || intent.status === "unknown") {
+      redirect("/dashboard/payments?tab=receipts&billing=pending");
+    }
+    if (intent.status === "requires_action") {
+      const canceled = await cancelFeeIntent(intent.id);
+      if (!canceled) redirect("/dashboard/payments?tab=receipts&billing=pending");
+    }
+    if (intent.status === "requires_action" || intent.status === "requires_payment_method" || intent.status === "canceled") {
+      confirmProviderPayment({
+        provider: "stripe",
+        transactionId: intent.id,
+        userId: user.id,
+        collectionId: collection.id,
+        paidAt: new Date().toISOString(),
+        succeeded: false,
+      });
+    }
+  }
+  try {
+    prepareRenewalBills(user.id);
+    const plan = plansFor(user.id)[0];
+    if (!plan) redirect("/dashboard/payments?tab=receipts");
+    await redirectCollectionCheckout(user, stageSellerCollection(user.id, plan.currency));
+  } catch (error) {
+    unstable_rethrow(error);
+    redirect("/dashboard/payments?tab=receipts&billing=error");
+  }
+  redirect("/dashboard/payments?tab=receipts&billing=error");
 }
 
 export async function placeCartOrder(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -1638,7 +1794,7 @@ export async function requestQuote(_prev: FormState, formData: FormData): Promis
   const quoteSeller = findUserById(product.userId);
   const quotedAt = new Date().toISOString();
   if (billable) {
-    const window = activeWindow(quotedAt);
+    const window = quoteWindow(quotedAt);
     recordTwigBill({
       id: newId("bill"),
       userId: product.userId,
@@ -1649,7 +1805,9 @@ export async function requestQuote(_prev: FormState, formData: FormData): Promis
       kind: "quote",
       periodStart: window.start,
       periodEnd: window.end,
-      status: "accrued",
+      eventKey: id,
+      quoteId: id,
+      status: "pending",
     });
   }
   openInteraction({
@@ -2291,6 +2449,26 @@ export async function exitSellerAccount() {
   if (!admin) redirect("/dashboard");
   await setSession(admin.id);
   redirect("/admin/users");
+}
+
+export async function setListingRenewal(formData: FormData) {
+  const user = await requireSeller();
+  const back = safeNext(text(formData, "next"));
+  const product = getProductById(text(formData, "id"));
+  if (!product || product.userId !== user.id) redirect(back || "/dashboard");
+  const renew = text(formData, "renew") === "1";
+  if (renew && product.billingStatus === "legacy_review") redirect(back || "/dashboard");
+  if (renew && !cardCanRenew({
+    method: user.billingMethod,
+    ready: user.billingReady,
+    authStatus: user.billingAuthStatus,
+    paymentMethodId: user.billingPmId,
+    consentVersion: user.billingConsentVersion,
+  })) {
+    redirect("/dashboard/payments?tab=receipts&billing=error&reason=Save%20a%20card%20and%20agree%20to%20automatic%20renewal%20before%20turning%20it%20on%20for%20a%20listing.");
+  }
+  setListingAutoRenew(product.id, user.id, renew);
+  redirect(back || "/dashboard");
 }
 
 export async function setListingFree(formData: FormData) {
