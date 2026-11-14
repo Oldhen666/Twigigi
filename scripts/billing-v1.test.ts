@@ -10,13 +10,13 @@ function openDb() {
     CREATE TABLE products (
       id TEXT PRIMARY KEY, user_id TEXT, status TEXT, paid_until TEXT DEFAULT '', next_renewal_at TEXT DEFAULT '',
       grace_until TEXT DEFAULT '', billing_status TEXT DEFAULT '', billing_currency TEXT DEFAULT '',
-      billing_version INTEGER DEFAULT 0, billing_started_at TEXT DEFAULT '', auto_renew INTEGER DEFAULT 1,
+      billing_version INTEGER DEFAULT 0, billing_started_at TEXT DEFAULT '', billing_anchor_day INTEGER DEFAULT 0, auto_renew INTEGER DEFAULT 1,
       deactivates_at TEXT, deactivated_at TEXT, updated_at TEXT
     );
     CREATE TABLE twig_bills (
       id TEXT PRIMARY KEY, user_id TEXT, product_id TEXT, kind TEXT, amount_cents INTEGER, currency TEXT,
       status TEXT, collection_id TEXT DEFAULT '', billing_period_key TEXT DEFAULT '', paid_at TEXT DEFAULT '',
-      charge_key TEXT DEFAULT '', period_start TEXT DEFAULT '', period_end TEXT DEFAULT ''
+      charge_key TEXT DEFAULT '', period_start TEXT DEFAULT '', period_end TEXT DEFAULT '', due_at TEXT DEFAULT ''
     );
   `);
   return db;

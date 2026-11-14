@@ -1,4 +1,5 @@
 import { listingFeeCents, listingFeeCurrency } from "@/lib/billing";
+import { nextPeriodBill, shouldAccrueNextPeriod } from "@/lib/billing-calendar";
 import {
   enqueueBillingNotice,
   findUserById,
@@ -11,7 +12,6 @@ import {
   recordTwigBill,
 } from "@/lib/db";
 import { previewCollections } from "@/lib/fee-collection";
-import { renewPaidUntil, shouldRenewListing } from "@/lib/listing-cycle";
 import type { User } from "@/lib/types";
 
 export type FeePlan = {
@@ -45,13 +45,20 @@ export function prepareRenewalBills(userId: string, now = new Date()) {
       kind: "pause_soon",
       dedupeKey: `pause-soon:${product.id}:${product.graceUntil}`,
       subject: "A Twigigi listing will pause soon",
-      body: `${title} is inside its 72-hour grace period. Pay before it ends to keep the current cycle.`,
+      body: `${title} is inside its 72-hour grace period. The unpaid fee remains due. After 72 hours, only that listing pauses.`,
     });
   }
   for (const product of listFeeListings(userId)) {
-    if (listingFeeCents(product.cta, product.feeExempt) < 1 || !shouldRenewListing(product, now.getTime())) continue;
-    const periodKey = product.paidUntil || "";
-    if (!periodKey || hasListingBillForPeriod(product.id, periodKey)) continue;
+    if (listingFeeCents(product.cta, product.feeExempt) < 1) continue;
+    if (!shouldAccrueNextPeriod({
+      status: "published",
+      billingStatus: product.billingStatus,
+      anchorDay: product.anchorDay,
+      paidUntil: product.paidUntil,
+      now: now.toISOString(),
+    })) continue;
+    const next = nextPeriodBill({ paidUntil: product.paidUntil || "" });
+    if (!next || hasListingBillForPeriod(product.id, next.periodKey)) continue;
     recordTwigBill({
       id: feeId(),
       userId,
@@ -60,11 +67,11 @@ export function prepareRenewalBills(userId: string, now = new Date()) {
       currency: product.billingCurrency || listingFeeCurrency(product.cta, product.location),
       method: "",
       kind: "listing",
-      periodStart: periodKey,
-      periodEnd: renewPaidUntil(periodKey),
+      periodStart: next.periodStart,
+      periodEnd: next.periodEnd,
       status: "due",
-      billingPeriodKey: periodKey,
-      dueAt: periodKey,
+      billingPeriodKey: next.periodKey,
+      dueAt: next.dueAt,
     });
   }
 }
@@ -77,7 +84,8 @@ export function plansFor(userId: string): FeePlan[] {
     currency: bill.currency,
     amountCents: bill.amountCents,
     status: bill.status,
-    periodKey: "",
+    periodKey: bill.periodKey,
+    dueAt: bill.dueAt,
   }))).map((plan) => ({ currency: plan.currency, dueCents: plan.totalCents, billIds: plan.billIds }));
 }
 

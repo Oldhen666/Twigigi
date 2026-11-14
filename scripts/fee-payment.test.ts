@@ -22,6 +22,7 @@ function openDb() {
       billing_currency TEXT DEFAULT '',
       billing_version INTEGER DEFAULT 0,
       billing_started_at TEXT DEFAULT '',
+      billing_anchor_day INTEGER DEFAULT 0,
       auto_renew INTEGER DEFAULT 1,
       deactivates_at TEXT,
       deactivated_at TEXT,
@@ -40,7 +41,8 @@ function openDb() {
       paid_at TEXT DEFAULT '',
       charge_key TEXT DEFAULT '',
       period_start TEXT DEFAULT '',
-      period_end TEXT DEFAULT ''
+      period_end TEXT DEFAULT '',
+      due_at TEXT DEFAULT ''
     );
   `);
   return db;
@@ -108,9 +110,9 @@ test("the same quotes cannot be attached to two collections", () => {
 
 test("a confirmed payment extends once, and a second callback does not", () => {
   const db = openDb();
-  db.prepare(`INSERT INTO products (id, user_id, status, paid_until, next_renewal_at, billing_status, auto_renew) VALUES ('prd_a', 'usr', 'published', ?, ?, 'active', 1)`).run(dec1, dec1);
-  db.prepare(`INSERT INTO products (id, user_id, status, paid_until, next_renewal_at, billing_status, auto_renew) VALUES ('prd_b', 'usr', 'published', '2026-12-20T00:00:00.000Z', '2026-12-20T00:00:00.000Z', 'active', 1)`).run();
-  db.prepare(`INSERT INTO twig_bills (id, user_id, product_id, kind, amount_cents, currency, status, billing_period_key) VALUES ('bill_a', 'usr', 'prd_a', 'listing', 149, 'CAD', 'due', ?)`).run(dec1);
+  db.prepare(`INSERT INTO products (id, user_id, status, paid_until, next_renewal_at, billing_status, auto_renew, billing_anchor_day) VALUES ('prd_a', 'usr', 'published', ?, ?, 'active', 1, 15)`).run(dec1, dec1);
+  db.prepare(`INSERT INTO products (id, user_id, status, paid_until, next_renewal_at, billing_status, auto_renew, billing_anchor_day) VALUES ('prd_b', 'usr', 'published', '2026-12-20T00:00:00.000Z', '2026-12-20T00:00:00.000Z', 'active', 1, 28)`).run();
+  db.prepare(`INSERT INTO twig_bills (id, user_id, product_id, kind, amount_cents, currency, status, billing_period_key, period_end) VALUES ('bill_a', 'usr', 'prd_a', 'listing', 149, 'CAD', 'due', ?, ?)`).run(dec1, "2027-01-15T07:00:00.000Z");
   const staged = stageFeeCollection(db, { id: "col_dec", userId: "usr", currency: "CAD", now: dec1 });
   assert.ok(staged);
   const paid = applyPaymentResult(db, {
@@ -135,7 +137,7 @@ test("a confirmed payment extends once, and a second callback does not", () => {
   const other = db.prepare(`SELECT paid_until, billing_status FROM products WHERE id = 'prd_b'`).get() as { paid_until: string; billing_status: string };
   assert.equal(paid.applied, true);
   assert.equal(again.alreadyApplied, true);
-  assert.equal(product.paid_until, "2026-12-31T00:00:00.000Z");
+  assert.equal(product.paid_until, "2027-01-15T07:00:00.000Z");
   assert.equal(product.billing_status, "active");
   assert.equal(other.paid_until, "2026-12-20T00:00:00.000Z");
   assert.equal(other.billing_status, "active");
@@ -172,8 +174,8 @@ test("a failed renewal pauses only that listing after grace, and does not mark q
 test("payment during grace extends, and payment after pause starts over", () => {
   const db = openDb();
   ensurePaymentLedger(db);
-  db.prepare(`INSERT INTO products (id, user_id, status, paid_until, billing_status, grace_until, auto_renew) VALUES ('prd_grace', 'usr', 'published', ?, 'grace', '2026-12-04T00:00:00.000Z', 1)`).run(dec1);
-  db.prepare(`INSERT INTO twig_bills (id, user_id, product_id, kind, amount_cents, currency, status, billing_period_key, collection_id) VALUES ('bill_g', 'usr', 'prd_grace', 'listing', 149, 'CAD', 'processing', ?, 'col_grace')`).run(dec1);
+  db.prepare(`INSERT INTO products (id, user_id, status, paid_until, billing_status, grace_until, auto_renew, billing_anchor_day) VALUES ('prd_grace', 'usr', 'published', ?, 'grace', '2026-12-04T00:00:00.000Z', 1, 15)`).run(dec1);
+  db.prepare(`INSERT INTO twig_bills (id, user_id, product_id, kind, amount_cents, currency, status, billing_period_key, collection_id, period_end) VALUES ('bill_g', 'usr', 'prd_grace', 'listing', 149, 'CAD', 'processing', ?, 'col_grace', '2027-01-15T07:00:00.000Z')`).run(dec1);
   db.prepare(`INSERT INTO fee_collections (id, user_id, currency, amount_cents, status, idempotency_key, created_at) VALUES ('col_grace', 'usr', 'CAD', 149, 'processing', 'key-grace', ?)`).run(dec2);
   applyPaymentResult(db, {
     provider: "stripe",
@@ -184,11 +186,11 @@ test("payment during grace extends, and payment after pause starts over", () => 
     succeeded: true,
   });
   const grace = db.prepare(`SELECT paid_until, billing_status FROM products WHERE id = 'prd_grace'`).get() as { paid_until: string; billing_status: string };
-  assert.equal(grace.paid_until, "2026-12-31T00:00:00.000Z");
+  assert.equal(grace.paid_until, "2027-01-15T07:00:00.000Z");
   assert.equal(grace.billing_status, "active");
 
-  db.prepare(`INSERT INTO products (id, user_id, status, paid_until, billing_status, grace_until, auto_renew) VALUES ('prd_late', 'usr', 'published', ?, 'paused', '2026-12-04T00:00:00.000Z', 1)`).run(dec1);
-  db.prepare(`INSERT INTO twig_bills (id, user_id, product_id, kind, amount_cents, currency, status, billing_period_key, collection_id) VALUES ('bill_late', 'usr', 'prd_late', 'listing', 149, 'CAD', 'processing', 'restart:prd_late', 'col_late')`).run();
+  db.prepare(`INSERT INTO products (id, user_id, status, paid_until, billing_status, grace_until, auto_renew, billing_anchor_day) VALUES ('prd_late', 'usr', 'published', ?, 'paused', '2026-12-04T00:00:00.000Z', 1, 28)`).run(dec1);
+  db.prepare(`INSERT INTO twig_bills (id, user_id, product_id, kind, amount_cents, currency, status, billing_period_key, collection_id, period_end) VALUES ('bill_late', 'usr', 'prd_late', 'listing', 149, 'CAD', 'processing', 'restart:prd_late', 'col_late', '2027-01-28T07:00:00.000Z')`).run();
   db.prepare(`INSERT INTO fee_collections (id, user_id, currency, amount_cents, status, idempotency_key, created_at) VALUES ('col_late', 'usr', 'CAD', 149, 'processing', 'key-late', ?)`).run(dec6);
   applyPaymentResult(db, {
     provider: "paypal",
@@ -198,7 +200,8 @@ test("payment during grace extends, and payment after pause starts over", () => 
     paidAt: dec6,
     succeeded: true,
   });
-  const late = db.prepare(`SELECT paid_until FROM products WHERE id = 'prd_late'`).get() as { paid_until: string };
-  assert.equal(late.paid_until, "2027-01-05T00:00:00.000Z");
+  const late = db.prepare(`SELECT paid_until, billing_anchor_day FROM products WHERE id = 'prd_late'`).get() as { paid_until: string; billing_anchor_day: number };
+  assert.equal(late.paid_until, "2027-01-28T07:00:00.000Z");
+  assert.equal(Number(late.billing_anchor_day), 28);
   db.close();
 });

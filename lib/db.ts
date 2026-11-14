@@ -24,8 +24,10 @@ import { readStoredFileLinks } from "@/lib/files";
 import { parseQuoteForm } from "@/lib/quote-form";
 import { DEACTIVATION_GRACE_DAYS, RESERVED_USERNAMES, addDays, isPrivateUsername, slugify } from "@/lib/format";
 import { saleCurrency } from "@/lib/billing";
+import { splitLocation } from "@/lib/places";
 import { BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
-import { graceDeadline, paidUntilAfterPayment } from "@/lib/listing-cycle";
+import { firstCoverage } from "@/lib/billing-calendar";
+import { graceDeadline } from "@/lib/listing-cycle";
 import { applyPaymentResult, claimCollectionCharge, claimCollectionCheckout, collectionOwner, ensurePaymentLedger, noteCollectionHold, readCollection, releaseCollectionClaim, saveCollectionCheckout, saveCollectionPaymentId, stageFeeCollection, type PaymentNotice } from "@/lib/payment-ledger";
 import { readStoredOptions, readStoredVariants } from "@/lib/variants";
 import {
@@ -333,6 +335,7 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "billing_status", "billing_status TEXT NOT NULL DEFAULT ''");
   add("products", "billing_currency", "billing_currency TEXT NOT NULL DEFAULT ''");
   add("products", "billing_version", "billing_version INTEGER NOT NULL DEFAULT 0");
+  add("products", "billing_anchor_day", "billing_anchor_day INTEGER NOT NULL DEFAULT 0");
   add("products", "fee_exempt", "fee_exempt INTEGER NOT NULL DEFAULT 0");
   add("products", "quote_fee_exempt", "quote_fee_exempt INTEGER NOT NULL DEFAULT 0");
   add("users", "role", "role TEXT NOT NULL DEFAULT 'seller'");
@@ -340,9 +343,12 @@ function ensureColumns(database: DatabaseSync) {
   add("users", "payout_interac", "payout_interac TEXT NOT NULL DEFAULT ''");
   add("users", "payout_venmo", "payout_venmo TEXT NOT NULL DEFAULT ''");
   add("users", "payout_zelle", "payout_zelle TEXT NOT NULL DEFAULT ''");
+  add("users", "payout_paypal_me", "payout_paypal_me TEXT NOT NULL DEFAULT ''");
+  add("users", "payout_paypal_email", "payout_paypal_email TEXT NOT NULL DEFAULT ''");
   add("users", "stripe_account_id", "stripe_account_id TEXT NOT NULL DEFAULT ''");
   add("users", "stripe_customer_id", "stripe_customer_id TEXT NOT NULL DEFAULT ''");
   add("users", "billing_ready", "billing_ready INTEGER NOT NULL DEFAULT 0");
+  add("users", "billing_auto_pay", "billing_auto_pay INTEGER NOT NULL DEFAULT 0");
   add("users", "billing_consent_at", "billing_consent_at TEXT NOT NULL DEFAULT ''");
   add("users", "billing_consent_version", "billing_consent_version TEXT NOT NULL DEFAULT ''");
   add("users", "billing_auth_status", "billing_auth_status TEXT NOT NULL DEFAULT ''");
@@ -943,6 +949,7 @@ function mapProduct(row: Row): Product {
     deactivatesAt: row.deactivates_at ? str(row.deactivates_at) : null,
     deactivatedAt: row.deactivated_at ? str(row.deactivated_at) : null,
     billingStartedAt: row.billing_started_at ? str(row.billing_started_at) : null,
+    billingAnchorDay: num(row.billing_anchor_day) === 28 ? 28 : num(row.billing_anchor_day) === 15 ? 15 : 0,
     paidUntil: row.paid_until ? str(row.paid_until) : null,
     nextRenewalAt: row.next_renewal_at ? str(row.next_renewal_at) : null,
     autoRenew: row.auto_renew == null ? true : num(row.auto_renew) === 1,
@@ -1030,6 +1037,7 @@ function mapUser(row: Row): User {
     createdAt: str(row.created_at),
     billingMethod: row.billing_method === "card" || row.billing_method === "paypal" || row.billing_method === "stripe" ? row.billing_method : "",
     billingReady: num(row.billing_ready) === 1,
+    billingAutoPay: num(row.billing_auto_pay) === 1,
     stripeCustomerId: str(row.stripe_customer_id),
     paypalBillingId: str(row.paypal_billing_id),
     billingConsentAt: str(row.billing_consent_at),
@@ -1041,6 +1049,8 @@ function mapUser(row: Row): User {
     payoutInterac: str(row.payout_interac),
     payoutVenmo: str(row.payout_venmo),
     payoutZelle: str(row.payout_zelle),
+    payoutPaypalMe: str(row.payout_paypal_me),
+    payoutPaypalEmail: str(row.payout_paypal_email),
     stripeAccountId: str(row.stripe_account_id),
     stripeChargesEnabled: num(row.stripe_charges_enabled) === 1,
     autoConfirmOrders: num(row.auto_confirm_orders) === 1,
@@ -1978,6 +1988,10 @@ export function revokeCardAuthorization(userId: string) {
   ).run(now, userId);
 }
 
+export function setBillingAutoPay(userId: string, enabled: boolean) {
+  db.prepare("UPDATE users SET billing_auto_pay = ? WHERE id = ?").run(enabled ? 1 : 0, userId);
+}
+
 export function resumeCardAuthorization(userId: string) {
   const row = one(
     "SELECT billing_pm_id, billing_consent_version, stripe_customer_id FROM users WHERE id = ?",
@@ -1993,7 +2007,7 @@ export function resumeCardAuthorization(userId: string) {
 
 export function listBillingListings(userId: string) {
   return many(
-    "SELECT id, title, cta, location, status, fee_exempt, paid_until, next_renewal_at, grace_until, billing_status, auto_renew FROM products WHERE user_id = ? AND status IN ('published', 'deactivated')",
+    "SELECT id, title, cta, location, status, fee_exempt, paid_until, next_renewal_at, grace_until, billing_status, auto_renew, billing_anchor_day, billing_currency FROM products WHERE user_id = ? AND status IN ('published', 'deactivated')",
     userId,
   ).map((row) => ({
     id: str(row.id),
@@ -2007,6 +2021,8 @@ export function listBillingListings(userId: string) {
     graceUntil: str(row.grace_until),
     billingStatus: billingStatus(row.billing_status),
     autoRenew: num(row.auto_renew) === 1,
+    anchorDay: num(row.billing_anchor_day),
+    billingCurrency: str(row.billing_currency),
   }));
 }
 
@@ -2021,13 +2037,48 @@ export function quotePeriodCounts(userId: string, since: string) {
   ).map((row) => ({ location: str(row.location), billable: num(row.billable) === 1, count: num(row.n) }));
 }
 
-export function setPayoutDetails(userId: string, input: { interac: string; venmo: string; zelle: string }) {
-  db.prepare("UPDATE users SET payout_interac = ?, payout_venmo = ?, payout_zelle = ? WHERE id = ?").run(
-    input.interac,
-    input.venmo,
-    input.zelle,
-    userId,
-  );
+const PAYOUT_FIELDS = {
+  interac: "payout_interac",
+  venmo: "payout_venmo",
+  zelle: "payout_zelle",
+  paypal: "payout_paypal_me",
+  paypalEmail: "payout_paypal_email",
+} as const;
+
+export function setPayoutField(userId: string, kind: keyof typeof PAYOUT_FIELDS, value: string) {
+  const column = PAYOUT_FIELDS[kind];
+  db.prepare(`UPDATE users SET ${column} = ? WHERE id = ?`).run(value, userId);
+}
+
+export function applyListingPayout(userId: string, kind: "interac" | "venmo" | "paypal" | "paypal-file", value: string) {
+  const now = new Date().toISOString();
+  const slugs: string[] = [];
+  for (const row of many("SELECT id, slug, cta, location, payment_methods FROM products WHERE user_id = ?", userId)) {
+    const offer = str(row.cta);
+    const unitedStates = splitLocation(str(row.location)).country === "US";
+    if (kind === "paypal-file") {
+      if (offer !== "file") continue;
+    } else if (offer !== "buy") {
+      continue;
+    } else if (kind === "interac" && unitedStates) {
+      continue;
+    } else if (kind === "venmo" && !unitedStates) {
+      continue;
+    }
+    const methodId = kind === "interac" ? "interac" : kind === "venmo" ? "venmo" : "paypal";
+    const column = kind === "interac" ? "interac_email" : kind === "venmo" ? "venmo_username" : kind === "paypal" ? "paypal_me" : "paypal_email";
+    const current = parseStoredMethods(str(row.payment_methods));
+    const methods = value ? (current.includes(methodId) ? current : [...current, methodId]) : current.filter((item) => item !== methodId);
+    db.prepare(`UPDATE products SET ${column} = ?, payment_methods = ?, updated_at = ? WHERE id = ? AND user_id = ?`).run(
+      value,
+      JSON.stringify(methods),
+      now,
+      str(row.id),
+      userId,
+    );
+    slugs.push(str(row.slug));
+  }
+  return slugs;
 }
 
 export function setAutoConfirm(userId: string, enabled: boolean) {
@@ -2037,10 +2088,12 @@ export function setAutoConfirm(userId: string, enabled: boolean) {
 export function listSellerBills(userId: string) {
   return many(
     `SELECT b.id, b.product_id, b.amount_cents, b.currency, b.method, b.kind, b.status, b.created_at, b.period_start, b.period_end,
-            b.collection_id, b.paid_at, b.billing_period_key,
-            COALESCE(p.title, 'Removed Twig') AS title
+            b.collection_id, b.paid_at, b.billing_period_key, b.due_at,
+            COALESCE(p.title, 'Removed Twig') AS title,
+            COALESCE(c.status, '') AS collection_status
      FROM twig_bills b
      LEFT JOIN products p ON p.id = b.product_id
+     LEFT JOIN fee_collections c ON c.id = b.collection_id
      WHERE b.user_id = ?
      ORDER BY b.created_at DESC`,
     userId,
@@ -2059,6 +2112,8 @@ export function listSellerBills(userId: string) {
     collectionId: str(row.collection_id),
     paidAt: str(row.paid_at),
     billingPeriodKey: str(row.billing_period_key),
+    dueAt: str(row.due_at),
+    collectionStatus: str(row.collection_status),
   }));
 }
 
@@ -2112,24 +2167,21 @@ export function recordTwigBill(input: {
 }
 
 export function activatePaidListing(id: string, userId: string, paidAt: string, currency: string) {
-  const product = one("SELECT paid_until, billing_status, grace_until, auto_renew FROM products WHERE id = ? AND user_id = ?", id, userId);
+  const product = one("SELECT paid_until, billing_anchor_day FROM products WHERE id = ? AND user_id = ?", id, userId);
   if (!product) return null;
-  const next = paidUntilAfterPayment({
-    paidUntil: str(product.paid_until),
-    billingStatus: str(product.billing_status),
-    graceUntil: str(product.grace_until),
-    autoRenew: num(product.auto_renew) === 1,
-    paidAt,
-  });
-  const paidUntil = next.paidUntil;
-  const current = next.periodKey;
+  const anchor = num(product.billing_anchor_day);
+  const hasAnchor = anchor === 15 || anchor === 28;
+  const coverage = hasAnchor ? null : firstCoverage(paidAt);
+  const paidUntil = hasAnchor ? str(product.paid_until) : coverage?.periodEnd || "";
+  if (!paidUntil) return null;
   db.prepare(
     `UPDATE products
      SET paid_until = ?, next_renewal_at = ?, grace_until = '', billing_status = 'active', billing_currency = ?,
+         billing_anchor_day = CASE WHEN billing_anchor_day IN (15, 28) THEN billing_anchor_day ELSE ? END,
          billing_version = 1, billing_started_at = COALESCE(NULLIF(billing_started_at, ''), ?), updated_at = ?
      WHERE id = ? AND user_id = ?`,
-  ).run(paidUntil, paidUntil, currency, paidAt, new Date().toISOString(), id, userId);
-  return { periodKey: current || paidAt, periodStart: current || paidAt, periodEnd: paidUntil, paidUntil };
+  ).run(paidUntil, paidUntil, currency, coverage?.anchor || anchor, paidAt, new Date().toISOString(), id, userId);
+  return { periodKey: hasAnchor ? str(product.paid_until) : `first:${id}`, periodStart: paidAt, periodEnd: paidUntil, paidUntil };
 }
 
 export function markRenewalFailed(id: string, failedAt: string) {
@@ -2169,6 +2221,7 @@ export function ensureListingFeeBill(input: {
   currency: string;
   periodKey: string;
   periodEnd: string;
+  dueAt?: string;
 }) {
   const existing = one(
     `SELECT id, status FROM twig_bills
@@ -2186,11 +2239,11 @@ export function ensureListingFeeBill(input: {
     currency: input.currency,
     method: "",
     kind: "listing",
-    periodStart: input.periodKey,
+    periodStart: input.dueAt || input.periodKey,
     periodEnd: input.periodEnd,
     status: "due",
     billingPeriodKey: input.periodKey,
-    dueAt: input.periodKey,
+    dueAt: input.dueAt || input.periodKey,
   });
   return { id: input.id, status: "due" };
 }
@@ -2315,7 +2368,7 @@ export function setListingAutoRenew(id: string, userId: string, autoRenew: boole
 
 export function listOpenFeeBills(userId: string) {
   return many(
-    `SELECT id, product_id, amount_cents, currency, kind, status, created_at
+    `SELECT id, product_id, amount_cents, currency, kind, status, created_at, due_at, billing_period_key
      FROM twig_bills
      WHERE user_id = ? AND status IN ('accrued', 'recorded', 'due', 'pending')
      ORDER BY created_at ASC`,
@@ -2328,6 +2381,8 @@ export function listOpenFeeBills(userId: string) {
     kind: str(row.kind),
     status: str(row.status),
     createdAt: str(row.created_at),
+    dueAt: str(row.due_at),
+    periodKey: str(row.billing_period_key),
   }));
 }
 
@@ -2342,7 +2397,7 @@ export function hasListingBillForPeriod(productId: string, periodKey: string) {
 
 export function listFeeListings(userId: string) {
   return many(
-    `SELECT id, cta, location, fee_exempt, paid_until, next_renewal_at, auto_renew, grace_until, billing_status, billing_currency
+    `SELECT id, cta, location, fee_exempt, paid_until, next_renewal_at, auto_renew, grace_until, billing_status, billing_currency, billing_anchor_day
      FROM products WHERE user_id = ? AND status = 'published'`,
     userId,
   ).map((row) => ({
@@ -2356,6 +2411,7 @@ export function listFeeListings(userId: string) {
     graceUntil: str(row.grace_until) || null,
     billingStatus: billingStatus(row.billing_status),
     billingCurrency: str(row.billing_currency),
+    anchorDay: num(row.billing_anchor_day),
   }));
 }
 

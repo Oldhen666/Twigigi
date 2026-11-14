@@ -5,7 +5,7 @@ import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { savePayoutDetails, startStripeConnect } from "@/lib/actions";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
-import { SELLER_PAYMENT_RESPONSIBILITY } from "@/lib/legal";
+import { readPayoutSaved, type SavedField } from "@/lib/payments";
 
 export type PayoutCatalog = {
   hasProducts: boolean;
@@ -14,8 +14,7 @@ export type PayoutCatalog = {
   hasQuote: boolean;
 };
 
-type SavedField = "" | "interac" | "venmo" | "zelle";
-type MethodId = "stripe" | "interac" | "venmo" | "zelle" | "cash" | "paypalFile";
+type MethodId = "stripe" | "interac" | "venmo" | "zelle" | "paypalFile";
 
 const focusClass = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest";
 
@@ -27,6 +26,8 @@ export function ReceivePayments({
   interac,
   venmo,
   zelle,
+  paypalMe,
+  paypalEmail,
   initialCountry,
   catalog,
   saved = "",
@@ -38,6 +39,8 @@ export function ReceivePayments({
   interac: string;
   venmo: string;
   zelle: string;
+  paypalMe: string;
+  paypalEmail: string;
   initialCountry: "CA" | "US";
   catalog: PayoutCatalog;
   saved?: SavedField;
@@ -46,13 +49,7 @@ export function ReceivePayments({
   const [offer, setOffer] = useState<"buy" | "file">(catalog.hasFile && !catalog.hasBuy ? "file" : "buy");
   const canada = country === "CA";
   const order = methodsFor(offer, canada);
-  const savedLine = saved === "interac"
-    ? (interac ? "e-Transfer email saved." : "e-Transfer email removed.")
-    : saved === "venmo"
-      ? (venmo ? "Venmo username saved." : "Venmo username removed.")
-      : saved === "zelle"
-        ? (zelle ? "Zelle details saved." : "Zelle details removed.")
-        : "";
+  const savedLine = payoutSavedLine(saved, { interac, venmo, zelle, paypalMe, paypalEmail });
 
   return (
     <div className="space-y-3">
@@ -79,10 +76,11 @@ export function ReceivePayments({
       {savedLine ? <p className="text-sm font-medium" role="status">{savedLine}</p> : null}
 
       <section className="rounded-3xl border border-line bg-card p-4 sm:p-5">
-        <h2 className="font-serif text-2xl">Payment option</h2>
-        <div className="mt-4 flex flex-wrap gap-2" role="radiogroup" aria-label="Listing type">
-          <OfferChoice label="Buy now" selected={offer === "buy"} onSelect={() => setOffer("buy")} />
-          <OfferChoice label="Digital file" selected={offer === "file"} onSelect={() => setOffer("file")} />
+        <h2 className="font-serif text-2xl">Payment methods by Twig type</h2>
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-base" role="radiogroup" aria-label="Listing type">
+          <OfferChoice label="Buy now Twigs" selected={offer === "buy"} onSelect={() => setOffer("buy")} />
+          <span className="text-muted" aria-hidden="true">|</span>
+          <OfferChoice label="Digital file Twigs" selected={offer === "file"} onSelect={() => setOffer("file")} />
         </div>
         <div className="mt-4 space-y-3">
       {order.map((id) => {
@@ -98,38 +96,57 @@ export function ReceivePayments({
             />
           );
         }
-        if (id === "interac") {
-          return <AccountFieldCard key={id} kind="interac" value={interac} venmo={venmo} zelle={zelle} />;
-        }
-        if (id === "venmo") {
-          return <AccountFieldCard key={id} kind="venmo" value={venmo} interac={interac} zelle={zelle} />;
-        }
-        if (id === "zelle") {
-          return <AccountFieldCard key={id} kind="zelle" value={zelle} interac={interac} venmo={venmo} />;
-        }
-        if (id === "cash") return <ListingMethodCard key={id} kind="cash" />;
-        return <ListingMethodCard key={id} kind="paypal" offer={offer} />;
+        if (id === "interac") return <AccountFieldCard key={id} kind="interac" value={interac} />;
+        if (id === "venmo") return <AccountFieldCard key={id} kind="venmo" value={venmo} />;
+        if (id === "zelle") return <AccountFieldCard key={id} kind="zelle" value={zelle} />;
+        return <AccountFieldCard key={id} kind={offer === "file" ? "paypal-file" : "paypal"} value={offer === "file" ? paypalEmail : paypalMe} />;
       })}
         </div>
       </section>
 
-      <Link href="/start" className={`${ghostClass} ${focusClass} w-full sm:w-fit`}>Create a Twig</Link>
-
-      <details className="rounded-2xl border border-line bg-card px-4 py-3">
-        <summary className={`cursor-pointer font-medium ${focusClass}`}>Learn more</summary>
-        <div className="mt-3 space-y-3 border-t border-line pt-3 text-sm leading-6 text-muted">
-          {SELLER_PAYMENT_RESPONSIBILITY.map((paragraph) => (
-            <p key={paragraph}>{paragraph}</p>
-          ))}
-        </div>
-      </details>
+      <section className="rounded-2xl border border-line bg-card px-4 py-4">
+        <h2 className="text-sm font-medium text-ink">Payment responsibilities</h2>
+        <ul className="mt-3 grid gap-3 sm:grid-cols-3">
+          <li>
+            <p className="text-sm font-medium text-ink">Payment details</p>
+            <p className="mt-1 text-sm leading-5 text-muted">Keep your payment information accurate and use only accounts you’re authorized to manage.</p>
+          </li>
+          <li>
+            <p className="text-sm font-medium text-ink">Payment confirmation</p>
+            <p className="mt-1 text-sm leading-5 text-muted">For e-Transfer, Venmo, PayPal.Me, and cash, mark the order paid only after you have the money. Stripe and PayPal confirm digital-file payments.</p>
+          </li>
+          <li>
+            <p className="text-sm font-medium text-ink">Direct payments</p>
+            <p className="mt-1 text-sm leading-5 text-muted">Buyers pay you directly. Twigigi does not receive or hold these funds.</p>
+          </li>
+        </ul>
+        <Link href="/legal/terms?from=payments#payments" className={`${focusClass} mt-3 inline-block text-sm text-muted underline decoration-1 underline-offset-4`}>
+          View payment terms →
+        </Link>
+      </section>
     </div>
   );
 }
 
+function payoutSavedLine(saved: SavedField, values: { interac: string; venmo: string; zelle: string; paypalMe: string; paypalEmail: string }) {
+  if (saved === "interac-invalid" || saved === "paypal-file-invalid") return "Enter an email like name@email.com.";
+  if (saved === "venmo-invalid") return "Enter a Venmo username like johnsmith.";
+  if (saved === "paypal-invalid") return "Use a PayPal.Me link like https://paypal.me/yourname.";
+  if (saved === "interac-setting") return values.interac ? "e-Transfer email saved for new Twigs." : "Saved e-Transfer email removed.";
+  if (saved === "interac") return values.interac ? "e-Transfer email saved and updated on your Canadian Buy now Twigs." : "e-Transfer email removed from your Canadian Buy now Twigs.";
+  if (saved === "venmo-setting") return values.venmo ? "Venmo username saved for new Twigs." : "Saved Venmo username removed.";
+  if (saved === "venmo") return values.venmo ? "Venmo username saved and updated on your US Buy now Twigs." : "Venmo username removed from your US Buy now Twigs.";
+  if (saved === "paypal-setting") return values.paypalMe ? "PayPal.Me link saved for new Twigs." : "Saved PayPal.Me link removed.";
+  if (saved === "paypal") return values.paypalMe ? "PayPal.Me link saved and updated on your Buy now Twigs." : "PayPal.Me link removed from your Buy now Twigs.";
+  if (saved === "paypal-file-setting") return values.paypalEmail ? "PayPal email saved for new digital file Twigs." : "Saved PayPal email removed.";
+  if (saved === "paypal-file") return values.paypalEmail ? "PayPal email saved and updated on your digital file Twigs." : "PayPal email removed from your digital file Twigs.";
+  if (saved === "zelle") return values.zelle ? "Zelle details saved." : "Zelle details removed.";
+  return "";
+}
+
 function methodsFor(offer: "buy" | "file", canada: boolean): MethodId[] {
   if (offer === "file") return ["stripe", "paypalFile"];
-  return canada ? ["interac", "cash", "paypalFile"] : ["venmo", "zelle", "cash", "paypalFile"];
+  return canada ? ["interac", "paypalFile"] : ["venmo", "zelle", "paypalFile"];
 }
 
 function OfferChoice({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }) {
@@ -139,7 +156,7 @@ function OfferChoice({ label, selected, onSelect }: { label: string; selected: b
       role="radio"
       aria-checked={selected}
       onClick={onSelect}
-      className={`rounded-full px-4 py-2 text-sm font-medium ${focusClass} ${selected ? "bg-forest text-card" : "border border-line bg-white text-ink"}`}
+      className={`${focusClass} rounded-sm ${selected ? "font-medium text-ink underline decoration-2 underline-offset-4" : "text-muted"}`}
     >
       {label}
     </button>
@@ -181,19 +198,7 @@ function StripeCard({
   );
 }
 
-function AccountFieldCard({
-  kind,
-  value,
-  interac = "",
-  venmo = "",
-  zelle = "",
-}: {
-  kind: "interac" | "venmo" | "zelle";
-  value: string;
-  interac?: string;
-  venmo?: string;
-  zelle?: string;
-}) {
+function AccountFieldCard({ kind, value }: { kind: "interac" | "venmo" | "zelle" | "paypal" | "paypal-file"; value: string }) {
   const [editing, setEditing] = useState(!value);
   const copy = fieldCopy(kind);
   const showForm = editing || !value;
@@ -209,64 +214,103 @@ function AccountFieldCard({
         <form action={savePayoutDetails} className="mt-4 grid gap-3" noValidate>
           <input type="hidden" name="which" value={kind} />
           {kind === "interac" ? (
-            <>
-              <input type="hidden" name="venmo" value={venmo} />
-              <input type="hidden" name="zelle" value={zelle} />
-              <label>
-                <span className={labelClass}>e-Transfer email</span>
-                <input name="interac" type="email" defaultValue={value} placeholder="you@example.com" autoComplete="email" className={`${inputClass} ${focusClass}`} />
-              </label>
-            </>
+            <label>
+              <span className={labelClass}>e-Transfer email</span>
+              <input name="interac" type="email" defaultValue={value} placeholder="you@example.com" autoComplete="email" className={`${inputClass} ${focusClass}`} />
+            </label>
           ) : null}
           {kind === "venmo" ? (
-            <>
-              <input type="hidden" name="interac" value={interac} />
-              <input type="hidden" name="zelle" value={zelle} />
-              <label>
-                <span className={labelClass}>Venmo username</span>
-                <input name="venmo" defaultValue={value} placeholder="username" autoComplete="off" className={`${inputClass} ${focusClass}`} />
-              </label>
-            </>
+            <label>
+              <span className={labelClass}>Venmo username</span>
+              <input name="venmo" defaultValue={value} placeholder="username" autoComplete="off" className={`${inputClass} ${focusClass}`} />
+            </label>
           ) : null}
           {kind === "zelle" ? (
-            <>
-              <input type="hidden" name="interac" value={interac} />
-              <input type="hidden" name="venmo" value={venmo} />
-              <label>
-                <span className={labelClass}>Zelle email or phone</span>
-                <input name="zelle" defaultValue={value} placeholder="you@example.com" autoComplete="off" className={`${inputClass} ${focusClass}`} />
-              </label>
-            </>
+            <label>
+              <span className={labelClass}>Zelle email or phone</span>
+              <input name="zelle" defaultValue={value} placeholder="you@example.com" autoComplete="off" className={`${inputClass} ${focusClass}`} />
+            </label>
           ) : null}
-          <SubmitButton label={copy.save} pendingLabel="Saving…" />
+          {kind === "paypal" ? (
+            <label>
+              <span className={labelClass}>PayPal.Me link</span>
+              <input name="paypal" defaultValue={value} placeholder="https://paypal.me/yourname" inputMode="url" autoComplete="off" className={`${inputClass} ${focusClass}`} />
+            </label>
+          ) : null}
+          {kind === "paypal-file" ? (
+            <label>
+              <span className={labelClass}>PayPal email</span>
+              <input name="paypalEmail" type="email" defaultValue={value} placeholder="name@email.com" autoComplete="off" className={`${inputClass} ${focusClass}`} />
+            </label>
+          ) : null}
+          {copy.apply ? (
+            <IntentButton intent="save" label="Save this setting" pendingLabel="Saving…" tone="solid" />
+          ) : (
+            <SubmitButton label={copy.save} pendingLabel="Saving…" />
+          )}
         </form>
       ) : (
         <div className="mt-4">
           <p className="text-sm font-medium">{value}</p>
-          <button type="button" className={`${buttonClass} ${focusClass} mt-3 w-full sm:w-fit`} onClick={() => setEditing(true)}>Edit</button>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <button type="button" className={`${buttonClass} ${focusClass} w-full sm:w-fit`} onClick={() => setEditing(true)}>Edit</button>
+            {copy.apply && kind !== "zelle" ? (
+              <form action={savePayoutDetails} className="contents">
+                <input type="hidden" name="which" value={kind} />
+                <input type="hidden" name={payoutInputName(kind)} value={value} />
+                <IntentButton intent="apply" label="Update to all applicable listings" pendingLabel="Updating…" tone="solid" />
+              </form>
+            ) : null}
+          </div>
         </div>
       )}
-      <p className="mt-3 text-sm leading-6 text-muted">{copy.limit}</p>
-      <Link href="/dashboard/twigs" className={`mt-2 inline-block text-sm font-medium text-forest ${focusClass}`}>Set on each listing</Link>
+      {copy.limit ? <p className="mt-3 text-sm leading-6 text-muted">{copy.limit}</p> : null}
     </section>
   );
 }
 
-function fieldCopy(kind: "interac" | "venmo" | "zelle") {
+function payoutInputName(kind: "interac" | "venmo" | "paypal" | "paypal-file") {
+  if (kind === "interac") return "interac";
+  if (kind === "venmo") return "venmo";
+  if (kind === "paypal") return "paypal";
+  return "paypalEmail";
+}
+
+function fieldCopy(kind: "interac" | "venmo" | "zelle" | "paypal" | "paypal-file") {
   if (kind === "interac") {
     return {
       title: "Interac e-Transfer",
-      scope: "Buy-now listings in Canada. Buyers pay the e-Transfer email on each listing.",
-      limit: "Saving here stores an email on your account. Checkout still uses the email on the Twig.",
-      save: "Save email",
+      scope: "Canadian Buy now Twigs. Save stores this email for new Twigs. Update also writes it onto existing ones.",
+      limit: "",
+      save: "",
+      apply: true,
     };
   }
   if (kind === "venmo") {
     return {
       title: "Venmo",
-      scope: "Buy-now listings in the United States. Buyers pay the Venmo username on each listing.",
-      limit: "Saving here stores a username on your account. Checkout still uses the username on the Twig.",
-      save: "Save username",
+      scope: "US Buy now Twigs. Save stores this username for new Twigs. Update also writes it onto existing ones.",
+      limit: "",
+      save: "",
+      apply: true,
+    };
+  }
+  if (kind === "paypal") {
+    return {
+      title: "PayPal",
+      scope: "Buy now Twigs. Save stores this PayPal.Me link for new Twigs. Update also writes it onto existing ones.",
+      limit: "",
+      save: "",
+      apply: true,
+    };
+  }
+  if (kind === "paypal-file") {
+    return {
+      title: "PayPal",
+      scope: "Digital file Twigs. Save stores this email for new Twigs. Update also writes it onto existing ones.",
+      limit: "",
+      save: "",
+      apply: true,
     };
   }
   return {
@@ -274,28 +318,8 @@ function fieldCopy(kind: "interac" | "venmo" | "zelle") {
     scope: "Saved on your account for your records.",
     limit: "Buyer checkout does not offer Zelle. US listings use Venmo, PayPal, or cash set on each Twig.",
     save: "Save Zelle",
+    apply: false,
   };
-}
-
-function ListingMethodCard({ kind, offer = "buy" }: { kind: "cash" | "paypal"; offer?: "buy" | "file" }) {
-  const paypal = kind === "paypal";
-  const digitalPaypal = paypal && offer === "file";
-  return (
-    <section className="rounded-3xl border border-line bg-card p-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-serif text-2xl">{paypal ? "PayPal" : "Cash"}</h2>
-        <p className="text-sm font-medium">{digitalPaypal ? "Set on each digital listing" : "Set on each listing"}</p>
-      </div>
-      <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
-        {digitalPaypal
-          ? "Buyers pay the PayPal email on that Twig."
-          : paypal
-            ? "Buyers pay the PayPal link on that Twig."
-            : "Buyers pay you in person, and you confirm the money."}
-      </p>
-      <Link href="/dashboard/twigs" className={`${buttonClass} ${focusClass} mt-4 w-full sm:w-fit`}>Manage Twigs</Link>
-    </section>
-  );
 }
 
 function SubmitButton({ label, pendingLabel }: { label: string; pendingLabel: string }) {
@@ -303,6 +327,16 @@ function SubmitButton({ label, pendingLabel }: { label: string; pendingLabel: st
   return (
     <button disabled={pending} className={`${buttonClass} ${focusClass} w-full sm:w-fit`}>
       {pending ? pendingLabel : label}
+    </button>
+  );
+}
+
+function IntentButton({ intent, label, pendingLabel, tone }: { intent: "save" | "apply"; label: string; pendingLabel: string; tone: "solid" | "ghost" }) {
+  const { pending, data } = useFormStatus();
+  const active = pending && data?.get("intent") === intent;
+  return (
+    <button name="intent" value={intent} disabled={pending} className={`${tone === "ghost" ? ghostClass : buttonClass} ${focusClass} w-full sm:w-fit disabled:opacity-60`}>
+      {active ? pendingLabel : label}
     </button>
   );
 }

@@ -9,6 +9,13 @@ import { inputClass, labelClass } from "@/components/ui";
 import { CA_PROVINCES, US_STATES, joinLocation, lookupCurrentPlace, lookupIpPlace, splitLocation } from "@/lib/places";
 import { parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile, paypalMeName, venmoProfileUrl, venmoUsernameFrom } from "@/lib/payments";
 
+export type PaymentDefaults = {
+  interac: string;
+  venmo: string;
+  paypalMe: string;
+  paypalEmail: string;
+};
+
 function readOptions(seed: NewPageDraft | null, product?: Product): ProductOption[] {
   let saved: ProductOption[] = [];
   if (seed) {
@@ -43,6 +50,7 @@ export function BuyOfferFields({
   onChange,
   digital = false,
   stripeReady = false,
+  paymentDefaults,
 }: {
   product?: Product;
   errors?: Record<string, string>;
@@ -50,6 +58,7 @@ export function BuyOfferFields({
   onChange?: () => void;
   digital?: boolean;
   stripeReady?: boolean;
+  paymentDefaults?: PaymentDefaults;
 }) {
   const seededOptions = readOptions(seed, product);
   const [price, setPrice] = useState(seed?.fields.price ?? centsToInput(product?.priceCents ?? null));
@@ -73,7 +82,11 @@ export function BuyOfferFields({
   const [interacQuestion, setInteracQuestion] = useState(seed?.fields.interacQuestion ?? product?.interacQuestion ?? "");
   const [interacPassword, setInteracPassword] = useState(seed?.fields.interacPassword ?? product?.interacPassword ?? "");
   const [venmoUsername, setVenmoUsername] = useState(seed?.fields.venmoUsername ?? product?.venmoUsername ?? "");
-  const [paypalEmail, setPaypalEmail] = useState(seed?.fields.paypalEmail ?? product?.paypalEmail ?? "");
+  const [paypalEmail, setPaypalEmail] = useState(() => {
+    if (seed) return seed.fields.paypalEmail ?? "";
+    if (product) return product.paypalEmail ?? "";
+    return digital ? paymentDefaults?.paypalEmail ?? "" : "";
+  });
   const [paypalMe, setPaypalMe] = useState(() => {
     const saved = seed?.fields.paypalMe ?? product?.paypalMe ?? "";
     if (paypalMeName(saved)) return saved;
@@ -148,12 +161,35 @@ export function BuyOfferFields({
     setSellerContact("");
   }
 
+  const defaultsRef = useRef(paymentDefaults);
+  defaultsRef.current = paymentDefaults;
+
+  function fillSavedPayment(id: string) {
+    const defaults = defaultsRef.current;
+    if (!defaults) return;
+    if (id === "interac") setInteracEmail((current) => (current.trim() ? current : defaults.interac));
+    if (id === "venmo") setVenmoUsername((current) => (current.trim() ? current : defaults.venmo));
+    if (id === "paypal" && !digital) setPaypalMe((current) => (current.trim() ? current : defaults.paypalMe));
+    if (id === "paypal" && digital) setPaypalEmail((current) => (current.trim() ? current : defaults.paypalEmail));
+  }
+
+  useEffect(() => {
+    if (digital) return;
+    if (methods.includes("interac")) fillSavedPayment("interac");
+    if (methods.includes("venmo")) fillSavedPayment("venmo");
+    if (methods.includes("paypal")) fillSavedPayment("paypal");
+    // Fill an already selected method once. Later edits stay under the seller's control.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function toggleMethod(id: string) {
+    const turningOn = !methods.includes(id);
     poke.current = true;
     if (id === "card") pokeCard.current = true;
     if (id === "interac") pokeInterac.current = true;
     if (id === "venmo") pokeVenmo.current = true;
     if (id === "paypal") pokePaypal.current = true;
+    if (turningOn) fillSavedPayment(id);
     setMethods((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   }
   const baseCents = parseDollars(price) ?? product?.priceCents ?? 0;

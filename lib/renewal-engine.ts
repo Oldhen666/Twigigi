@@ -39,7 +39,7 @@ export async function settleRenewalCollections(chargeEnabled = autoChargeEnabled
   for (const row of listRenewalCollections()) {
     const user = findUserById(row.userId);
     if (!user) continue;
-    const authorized = cardCanRenew({
+    const authorized = user.billingAutoPay && cardCanRenew({
       method: user.billingMethod,
       ready: user.billingReady,
       authStatus: user.billingAuthStatus,

@@ -6,6 +6,7 @@ export type FeeBill = {
   status: string;
   collectionId?: string;
   periodKey?: string;
+  dueAt?: string;
 };
 
 const OPEN_STATUSES = new Set(["pending", "accrued", "due", "recorded"]);
@@ -19,24 +20,39 @@ export function listingCycleKey(userId: string, currency: string, periodKeys: st
   return `listing-cycle-${userId}-${currency}-${periods}-${attemptId}`;
 }
 
+function dueSortKey(bill: FeeBill) {
+  return bill.dueAt || bill.periodKey || "9999-99-99";
+}
+
 export function previewCollections(bills: FeeBill[]) {
   const open = bills.filter((bill) => isOpenFee(bill.status) && !bill.collectionId);
-  const currencies = [...new Set(open.filter((bill) => bill.kind === "listing").map((bill) => bill.currency))];
-  return currencies
-    .map((currency) => {
-      const listings = open.filter((bill) => bill.kind === "listing" && bill.currency === currency);
-      const quotes = open.filter((bill) => bill.kind === "quote" && bill.currency === currency);
-      const rows = [...listings, ...quotes];
+  const listings = open.filter((bill) => bill.kind === "listing");
+  const groups = new Map<string, FeeBill[]>();
+  for (const bill of listings) {
+    const key = `${bill.currency}|${dueSortKey(bill)}`;
+    groups.set(key, [...(groups.get(key) || []), bill]);
+  }
+  const byCurrency = new Map<string, string[]>();
+  for (const key of groups.keys()) {
+    const currency = key.split("|")[0] || "";
+    byCurrency.set(currency, [...(byCurrency.get(currency) || []), key].sort());
+  }
+  return [...byCurrency.entries()].flatMap(([currency, keys]) => {
+    const quotes = open.filter((bill) => bill.kind === "quote" && bill.currency === currency);
+    return keys.map((key, index) => {
+      const rows = groups.get(key) || [];
+      const attached = index === 0 ? quotes : [];
+      const combined = [...rows, ...attached];
       return {
         currency,
-        billIds: rows.map((bill) => bill.id),
-        listingCents: listings.reduce((sum, bill) => sum + bill.amountCents, 0),
-        quoteCents: quotes.reduce((sum, bill) => sum + bill.amountCents, 0),
-        totalCents: rows.reduce((sum, bill) => sum + bill.amountCents, 0),
-        periodKeys: listings.map((bill) => bill.periodKey || "").filter(Boolean),
+        billIds: combined.map((bill) => bill.id),
+        listingCents: rows.reduce((sum, bill) => sum + bill.amountCents, 0),
+        quoteCents: attached.reduce((sum, bill) => sum + bill.amountCents, 0),
+        totalCents: combined.reduce((sum, bill) => sum + bill.amountCents, 0),
+        periodKeys: rows.map((bill) => bill.periodKey || bill.dueAt || "").filter(Boolean),
       };
-    })
-    .filter((plan) => plan.listingCents > 0);
+    });
+  }).filter((plan) => plan.listingCents > 0);
 }
 
 export function outstandingCents(bills: FeeBill[], currency: string) {

@@ -21,9 +21,9 @@ export function LegalPage({
   );
 }
 
-export function LegalSection({ title, children }: { title: string; children: React.ReactNode }) {
+export function LegalSection({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
   return (
-    <section>
+    <section id={id} className={id ? "scroll-mt-14" : undefined}>
       <h2 className="font-serif text-2xl">{title}</h2>
       <div className="mt-2 space-y-3">{children}</div>
     </section>

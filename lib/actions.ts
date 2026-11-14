@@ -12,7 +12,7 @@ import { placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, digitalPayMethods, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
 import { beginDigitalPaypalCheckout, beginPaypalBillingAgreement, createPlatformFeeCheckout, paypalBillingMessage, paypalCheckoutError, paypalConfigured } from "@/lib/paypal";
 import { plansFor, prepareRenewalBills } from "@/lib/seller-fees";
-import { chargePeriodKey } from "@/lib/listing-cycle";
+import { firstCoverage, nextPeriodBill } from "@/lib/billing-calendar";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
@@ -69,6 +69,7 @@ import {
   setStripeAccount,
   rememberStripeCustomer,
   recordBillingConsent,
+  setBillingAutoPay,
   resumeCardAuthorization,
   revokeCardAuthorization,
   collectionForSeller,
@@ -94,7 +95,8 @@ import {
   setProductModeration,
   setUserSuspended,
   setBillingMethod,
-  setPayoutDetails,
+  applyListingPayout,
+  setPayoutField,
   setAutoConfirm,
   setBillingStarted,
   ensureListingFeeBill,
@@ -153,6 +155,7 @@ import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { ensureVisitor } from "@/lib/visitor";
 import { billingCurrency, isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid, quoteWindow, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { BILLING_CONSENT_VERSION, cardCanRenew } from "@/lib/billing-auth";
+import { autoChargeEnabled } from "@/lib/renewal-engine";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { cancelFeeIntent, createBillingSetupSession, createDigitalStripeCheckout, createStripeConnectLink, getStripe, publicStripeError, retrieveFeeIntent } from "@/lib/stripe";
 import { DIGITAL_FILE_CATEGORY, categoryProblem, resolveCategory } from "@/lib/categories";
@@ -876,16 +879,55 @@ export async function deactivateProducts(formData: FormData) {
   redirect("/dashboard");
 }
 
+function rememberListingPayout(user: { publicId: string }, slugs: string[]) {
+  for (const slug of slugs) updateTag(productTag(user.publicId, slug));
+  updateTag(sellerTag(user.publicId));
+}
+
 export async function savePayoutDetails(formData: FormData) {
   const user = await requireSeller();
   const clip = (key: string, max: number) => text(formData, key).trim().slice(0, max);
-  const interac = clip("interac", 120);
-  const venmo = clip("venmo", 80);
-  const zelle = clip("zelle", 120);
-  setPayoutDetails(user.id, { interac, venmo, zelle });
   const which = text(formData, "which");
-  const saved = which === "interac" || which === "venmo" || which === "zelle" ? which : "";
-  redirect(saved ? `/dashboard/payments?saved=${saved}` : "/dashboard/payments");
+  const apply = text(formData, "intent") === "apply" && which !== "zelle";
+
+  if (which === "interac") {
+    const raw = clip("interac", 120);
+    if (raw && interacEmailProblem(raw)) redirect("/dashboard/payments?saved=interac-invalid");
+    const stored = raw ? safeEmail(raw) : "";
+    setPayoutField(user.id, "interac", stored);
+    if (apply) rememberListingPayout(user, applyListingPayout(user.id, "interac", stored));
+    redirect(`/dashboard/payments?saved=${apply ? "interac" : "interac-setting"}`);
+  }
+  if (which === "venmo") {
+    const raw = clip("venmo", 80);
+    if (raw && venmoUsernameProblem(raw)) redirect("/dashboard/payments?saved=venmo-invalid");
+    const stored = raw ? venmoUsernameFrom(raw) : "";
+    setPayoutField(user.id, "venmo", stored);
+    if (apply) rememberListingPayout(user, applyListingPayout(user.id, "venmo", stored));
+    redirect(`/dashboard/payments?saved=${apply ? "venmo" : "venmo-setting"}`);
+  }
+  if (which === "paypal") {
+    const raw = clip("paypal", 200);
+    if (raw && paypalMeProblem(raw)) redirect("/dashboard/payments?saved=paypal-invalid");
+    const name = paypalMeName(raw);
+    const stored = name ? `https://paypal.me/${name}` : "";
+    setPayoutField(user.id, "paypal", stored);
+    if (apply) rememberListingPayout(user, applyListingPayout(user.id, "paypal", stored));
+    redirect(`/dashboard/payments?saved=${apply ? "paypal" : "paypal-setting"}`);
+  }
+  if (which === "paypal-file") {
+    const raw = clip("paypalEmail", 120);
+    if (raw && !safeEmail(raw)) redirect("/dashboard/payments?saved=paypal-file-invalid");
+    const stored = safeEmail(raw);
+    setPayoutField(user.id, "paypalEmail", stored);
+    if (apply) rememberListingPayout(user, applyListingPayout(user.id, "paypal-file", stored));
+    redirect(`/dashboard/payments?saved=${apply ? "paypal-file" : "paypal-file-setting"}`);
+  }
+  if (which === "zelle") {
+    setPayoutField(user.id, "zelle", clip("zelle", 120));
+    redirect("/dashboard/payments?saved=zelle");
+  }
+  redirect("/dashboard/payments");
 }
 
 export async function saveBillingMethod(formData: FormData) {
@@ -954,13 +996,18 @@ async function redirectCollectionCheckout(
 
 async function redirectListingFee(
   user: { id: string; billingMethod: string; stripeCustomerId?: string },
-  product: { id: string; title: string; cta: string; location: string; feeExempt?: boolean; paidUntil?: string | null; billingStatus?: string; graceUntil?: string | null; autoRenew?: boolean },
+  product: { id: string; title: string; cta: string; location: string; feeExempt?: boolean; paidUntil?: string | null; billingStatus?: string; graceUntil?: string | null; autoRenew?: boolean; billingAnchorDay?: number },
 ) {
   const cents = listingFeeCents(product.cta, Boolean(product.feeExempt));
   const currency = listingFeeCurrency(product.cta, product.location);
   if (cents < 1) return;
   const now = new Date().toISOString();
-  const periodKey = chargePeriodKey(product, now);
+  const repeat = product.billingAnchorDay === 15 || product.billingAnchorDay === 28;
+  const next = repeat ? nextPeriodBill({ paidUntil: product.paidUntil || now }) : null;
+  const coverage = repeat ? null : firstCoverage(now);
+  const periodKey = next?.periodKey || `first:${product.id}`;
+  const periodEnd = next?.periodEnd || coverage?.periodEnd || "";
+  const dueAt = next?.dueAt || now;
   const bill = ensureListingFeeBill({
     id: newId("bill"),
     userId: user.id,
@@ -968,7 +1015,8 @@ async function redirectListingFee(
     amountCents: cents,
     currency,
     periodKey,
-    periodEnd: "",
+    periodEnd,
+    dueAt,
   });
   if (bill.status === "paid") return;
   await redirectCollectionCheckout(user, stageSellerCollection(user.id, currency));
@@ -1386,6 +1434,38 @@ export async function stopAutomaticRenewal() {
   const user = await requireSeller();
   revokeCardAuthorization(user.id);
   redirect("/dashboard/payments?tab=receipts&billing=stopped");
+}
+
+export async function setAutomaticPayment(formData: FormData) {
+  const user = await requireSeller();
+  if (text(formData, "enabled") !== "1") {
+    setBillingAutoPay(user.id, false);
+    redirect("/dashboard/payments?tab=receipts&billing=manual");
+  }
+  if (!autoChargeEnabled()) {
+    redirect("/dashboard/payments?tab=receipts&billing=error&reason=Automatic%20charging%20is%20not%20available%20yet.");
+  }
+  if (user.billingMethod === "paypal") {
+    redirect("/dashboard/payments?tab=receipts&billing=error&reason=PayPal%20is%20manual%20payments%20only.");
+  }
+  if (text(formData, "consent") !== "yes") {
+    redirect("/dashboard/payments?tab=receipts&billing=error&reason=Check%20the%20automatic%20payment%20agreement%20before%20turning%20it%20on.");
+  }
+  if (!recordBillingConsent(user.id, BILLING_CONSENT_VERSION)) {
+    redirect("/dashboard/payments?tab=receipts&billing=error");
+  }
+  const current = findUserById(user.id);
+  if (!current || !cardCanRenew({
+    method: current.billingMethod,
+    ready: current.billingReady,
+    authStatus: current.billingAuthStatus,
+    paymentMethodId: current.billingPmId,
+    consentVersion: current.billingConsentVersion,
+  })) {
+    redirect("/dashboard/payments?tab=receipts&billing=error&reason=Save%20a%20card%20before%20automatic%20payment%20can%20be%20turned%20on.");
+  }
+  setBillingAutoPay(user.id, true);
+  redirect("/dashboard/payments?tab=receipts");
 }
 
 export async function resumeAutomaticRenewal(formData: FormData) {

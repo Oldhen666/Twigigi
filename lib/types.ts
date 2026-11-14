@@ -32,6 +32,7 @@ export type User = {
   createdAt: string;
   billingMethod: "" | "card" | "paypal" | "stripe";
   billingReady: boolean;
+  billingAutoPay: boolean;
   billingConsentAt: string;
   billingConsentVersion: string;
   billingAuthStatus: string;
@@ -43,6 +44,8 @@ export type User = {
   payoutInterac: string;
   payoutVenmo: string;
   payoutZelle: string;
+  payoutPaypalMe: string;
+  payoutPaypalEmail: string;
   stripeAccountId: string;
   stripeChargesEnabled: boolean;
   autoConfirmOrders: boolean;
@@ -151,6 +154,7 @@ export type Product = ProductInput & {
   deactivatesAt: string | null;
   deactivatedAt: string | null;
   billingStartedAt: string | null;
+  billingAnchorDay: number;
   paidUntil: string | null;
   nextRenewalAt: string | null;
   autoRenew: boolean;

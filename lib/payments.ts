@@ -248,3 +248,40 @@ export function buyerPayUrl(stored: string, payment: { amountCents: number; curr
   const direct = safeCardUrl(trimmed);
   return direct;
 }
+
+const PAYOUT_SAVED = new Set([
+  "interac",
+  "interac-setting",
+  "interac-invalid",
+  "venmo",
+  "venmo-setting",
+  "venmo-invalid",
+  "paypal",
+  "paypal-setting",
+  "paypal-invalid",
+  "paypal-file",
+  "paypal-file-setting",
+  "paypal-file-invalid",
+  "zelle",
+]);
+
+export type SavedField =
+  | ""
+  | "interac"
+  | "interac-setting"
+  | "interac-invalid"
+  | "venmo"
+  | "venmo-setting"
+  | "venmo-invalid"
+  | "paypal"
+  | "paypal-setting"
+  | "paypal-invalid"
+  | "paypal-file"
+  | "paypal-file-setting"
+  | "paypal-file-invalid"
+  | "zelle";
+
+export function readPayoutSaved(value: string | string[] | undefined): SavedField {
+  const raw = Array.isArray(value) ? value[0] ?? "" : value ?? "";
+  return PAYOUT_SAVED.has(raw) ? (raw as SavedField) : "";
+}

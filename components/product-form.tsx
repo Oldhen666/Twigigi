@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useActionState } from "react";
 import { captureDraft, readDraftImage, type DraftImage, type NewPageDraft } from "@/lib/new-page-draft";
 import type { Cta, FormState, Product, QuoteForm } from "@/lib/types";
-import { BuyOfferFields } from "@/components/buy-offer-fields";
+import { BuyOfferFields, type PaymentDefaults } from "@/components/buy-offer-fields";
 import { CategoryFields } from "@/components/category-fields";
 import { FileLinkFields } from "@/components/file-link-fields";
 import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/components/page-preview";
@@ -40,6 +40,7 @@ export function ProductForm({
   sellerName,
   guest = false,
   stripeReady = false,
+  paymentDefaults,
 }: {
   action: Action;
   product?: Product;
@@ -48,6 +49,7 @@ export function ProductForm({
   sellerName: string;
   guest?: boolean;
   stripeReady?: boolean;
+  paymentDefaults?: PaymentDefaults;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const refreshRef = useRef<(form: HTMLFormElement) => void>(() => {});
@@ -976,7 +978,7 @@ export function ProductForm({
 
       {priced ? (
         <div className={step !== 2 ? "hidden" : undefined}>
-          <BuyOfferFields product={product} errors={visibleErrors} seed={fresh ? draft : null} onChange={fresh ? remember : undefined} digital={file} stripeReady={stripeReady} />
+          <BuyOfferFields product={product} errors={visibleErrors} seed={fresh ? draft : null} onChange={fresh ? remember : undefined} digital={file} stripeReady={stripeReady} paymentDefaults={paymentDefaults} />
           <Section title="Order email">
             <Field label="Email for new orders" error={visibleErrors.contactEmail}>
               <input name="contactEmail" type="email" defaultValue={emailValue(draft, product, defaultEmail)} placeholder="name@email.com (email)" className={inputClass} />

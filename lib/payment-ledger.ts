@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
-import { listingCycleKey } from "@/lib/fee-collection";
-import { graceDeadline, paidUntilAfterPayment } from "@/lib/listing-cycle";
+import { firstCoverage } from "./billing-calendar";
+import { listingCycleKey } from "./fee-collection";
+import { graceDeadline } from "./listing-cycle";
 
 type SqlRow = Record<string, unknown>;
 
@@ -90,18 +91,21 @@ export function stageFeeCollection(
         created: false,
       };
     }
-    const listings = rowsOf(
+    const openListings = rowsOf(
       database,
-      `SELECT id, billing_period_key, amount_cents, collection_id, status
+      `SELECT id, billing_period_key, amount_cents, collection_id, status, due_at
        FROM twig_bills
        WHERE user_id = ? AND currency = ? AND kind = 'listing' AND status IN ('pending', 'accrued', 'due', 'recorded') AND collection_id = ''`,
       input.userId,
       input.currency,
     );
-    if (listings.length < 1) {
+    if (openListings.length < 1) {
       database.exec("COMMIT");
       return null;
     }
+    const dueKeys = openListings.map((row) => text(row.due_at) || text(row.billing_period_key) || "9999-99-99");
+    const earliest = [...dueKeys].sort()[0];
+    const listings = openListings.filter((row, index) => dueKeys[index] === earliest);
     const periodKeys = listings.map((row) => text(row.billing_period_key)).filter(Boolean);
     const existingKey = listingCycleKey(input.userId, input.currency, periodKeys, "open");
     const existing = oneOf(
@@ -131,6 +135,37 @@ export function stageFeeCollection(
     );
     const ids = [...listings.map((row) => text(row.id)), ...quotes.map((row) => text(row.id))];
     const amount = [...listings, ...quotes].reduce((sum, row) => sum + cents(row.amount_cents), 0);
+    const failed = oneOf(
+      database,
+      `SELECT id FROM fee_collections
+       WHERE user_id = ? AND currency = ? AND status = 'failed'
+         AND (idempotency_key = ? OR idempotency_key LIKE ?)
+       ORDER BY created_at DESC LIMIT 1`,
+      input.userId,
+      input.currency,
+      existingKey,
+      `${existingKey}-retry-%`,
+    );
+    if (failed) {
+      const attempts = rowsOf(
+        database,
+        `SELECT transaction_id FROM provider_payments WHERE collection_id = ? AND status = 'failed'`,
+        text(failed.id),
+      ).length;
+      const retryKey = `${existingKey}-retry-${attempts || 1}`;
+      database.prepare(
+        `UPDATE fee_collections
+         SET status = 'processing', amount_cents = ?, idempotency_key = ?, provider_payment_id = '', provider_order_id = '', checkout_url = ''
+         WHERE id = ? AND user_id = ? AND status = 'failed'`,
+      ).run(amount, retryKey, text(failed.id), input.userId);
+      const claimFailed = database.prepare(
+        `UPDATE twig_bills SET collection_id = ?, status = 'processing'
+         WHERE id = ? AND user_id = ? AND collection_id = '' AND status IN ('pending', 'accrued', 'due', 'recorded')`,
+      );
+      for (const id of ids) claimFailed.run(text(failed.id), id, input.userId);
+      database.exec("COMMIT");
+      return { collectionId: text(failed.id), amountCents: amount, currency: input.currency, checkoutUrl: "", idempotencyKey: retryKey, created: false };
+    }
     database.prepare(
       `INSERT INTO fee_collections (id, user_id, currency, amount_cents, status, idempotency_key, created_at)
        VALUES (?, ?, ?, ?, 'processing', ?, ?)`,
@@ -327,7 +362,7 @@ export function applyPaymentResult(
           kind: "grace",
           dedupeKey: `grace:${input.collectionId}`,
           subject: "A Twigigi listing is in its grace period",
-          body: "The listing stays visible for 72 hours. Pay during that time to keep the same 30-day cycle. After 72 hours, only that listing pauses.",
+          body: "The listing stays visible for 72 hours. The unpaid fee remains due on its settlement date. After 72 hours, only that listing pauses.",
         });
       }
       return paymentResult(true, false, "failed", notices);
@@ -353,7 +388,7 @@ export function applyPaymentResult(
       const productId = text(row.product_id);
       const product = oneOf(
         database,
-        `SELECT paid_until, billing_status, grace_until, auto_renew, status FROM products WHERE id = ? AND user_id = ?`,
+        `SELECT paid_until, billing_status, grace_until, auto_renew, status, billing_anchor_day, billing_started_at FROM products WHERE id = ? AND user_id = ?`,
         productId,
         input.userId,
       );
@@ -364,29 +399,38 @@ export function applyPaymentResult(
           kind: "restored",
           dedupeKey: `restored:${productId}:${input.transactionId}`,
           subject: "Twigigi listing is active again",
-          body: previous === "paused"
-            ? "Payment after the grace period started a new 30-day cycle for that listing."
-            : "Payment during the grace period extended that listing from its previous end date.",
+          body: "The unpaid fee is paid. The settlement date stays the same.",
         });
       }
-      const next = paidUntilAfterPayment({
-        paidUntil: text(product.paid_until),
-        billingStatus: text(product.billing_status),
-        graceUntil: text(product.grace_until),
-        autoRenew: Number(product.auto_renew) === 1,
-        paidAt: input.paidAt,
-      });
+      const bill = oneOf(
+        database,
+        `SELECT period_end FROM twig_bills
+         WHERE collection_id = ? AND user_id = ? AND product_id = ? AND kind = 'listing' AND status != 'paid'
+         LIMIT 1`,
+        input.collectionId,
+        input.userId,
+        productId,
+      );
+      const currentAnchor = Number(product.billing_anchor_day);
+      const hasAnchor = currentAnchor === 15 || currentAnchor === 28;
+      const coverage = hasAnchor ? null : firstCoverage(input.paidAt);
+      const paidUntil = hasAnchor ? text(bill?.period_end) || text(product.paid_until) : coverage?.periodEnd || text(product.paid_until);
+      const anchorValue = hasAnchor ? currentAnchor : coverage?.anchor || 0;
+      if (!hasAnchor && coverage) {
+        database.prepare(
+          `UPDATE twig_bills SET period_start = ?, period_end = ?
+           WHERE collection_id = ? AND user_id = ? AND product_id = ? AND kind = 'listing' AND status != 'paid'`,
+        ).run(coverage.periodStart, coverage.periodEnd, input.collectionId, input.userId, productId);
+      }
       database.prepare(
         `UPDATE products
          SET paid_until = ?, next_renewal_at = ?, grace_until = '', billing_status = 'active', billing_version = 1,
+             billing_anchor_day = CASE WHEN billing_anchor_day IN (15, 28) THEN billing_anchor_day ELSE ? END,
              billing_started_at = COALESCE(NULLIF(billing_started_at, ''), ?),
              status = CASE WHEN status IN ('draft', 'deactivated') THEN 'published' ELSE status END,
              deactivates_at = NULL, deactivated_at = NULL, updated_at = ?
          WHERE id = ? AND user_id = ?`,
-      ).run(next.paidUntil, next.paidUntil, input.paidAt, input.paidAt, productId, input.userId);
-      database.prepare(
-        `UPDATE twig_bills SET period_start = ?, period_end = ? WHERE collection_id = ? AND user_id = ? AND product_id = ? AND kind = 'listing'`,
-      ).run(next.periodKey, next.paidUntil, input.collectionId, input.userId, productId);
+      ).run(paidUntil, paidUntil, anchorValue, input.paidAt, input.paidAt, productId, input.userId);
     }
     database.prepare(
       `UPDATE twig_bills SET status = 'paid', paid_at = ?, charge_key = ?
