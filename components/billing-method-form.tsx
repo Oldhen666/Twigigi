@@ -101,7 +101,6 @@ function SavedCard({ brand, last4 }: { brand: string; last4: string }) {
       <p className="text-[11px] font-medium tracking-[0.14em] text-muted uppercase">Saved card</p>
       <p className="mt-2 text-[15px] font-medium">{name}</p>
       <p className="font-sans text-lg tracking-[0.18em] tabular-nums">{last4 ? `···· ${last4}` : "Card saved"}</p>
-      <p className="mt-1 text-sm text-muted">For Twigigi fees</p>
     </div>
   );
 }

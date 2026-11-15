@@ -251,66 +251,49 @@ export default async function Page({
                   <span className="hidden group-open:inline">Hide</span>
                 </span>
               </summary>
-              <div className="mt-3 min-w-0 space-y-4 border-t border-line pt-3 text-sm leading-6">
-                <div>
-                  <h3 className="font-medium">Listing fee rate</h3>
-                  <p className="mt-1 text-[13px] leading-5 text-muted">This is the rate for a listing period. It is not the amount due until a fee is created.</p>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                    <div className="min-w-0">
-                      <p>Canadian listings and digital files</p>
-                      <p className="font-sans text-[15px] font-semibold tabular-nums">{formatListingFee("CAD")}</p>
-                      <p className="text-muted">CAD</p>
-                      <p className="text-muted">First charge at paid publish</p>
-                      <p className="text-muted">Then the 15th or the 28th</p>
-                    </div>
-                    <div className="min-w-0">
-                      <p>US physical listings</p>
-                      <p className="font-sans text-[15px] font-semibold tabular-nums">{formatListingFee("USD")}</p>
-                      <p className="text-muted">USD</p>
-                      <p className="text-muted">First charge at paid publish</p>
-                      <p className="text-muted">Then the 15th or the 28th</p>
-                    </div>
-                  </div>
+              <div className="mt-4 min-w-0 space-y-8 border-t border-line pt-4 text-sm leading-6">
+                <section>
+                  <h3 className="font-serif text-xl">Each Twig</h3>
+                  <p className="mt-1 text-[13px] leading-5 text-muted">Next listing fee and the end of the current period. A quote Twig also shows requests so far. Paid charges are not included.</p>
                   <ListingCharges currencies={listingCharges} />
-                </div>
-                <div>
-                  <h3 className="font-medium">Quote fee rate</h3>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                    <div className="min-w-0">
-                      <p>Valid quote on a Canadian listing or digital file</p>
-                      <p className="font-sans text-[15px] font-semibold tabular-nums">{quoteCad}</p>
-                      <p className="text-muted">CAD</p>
-                      <p className="text-muted">Each valid request</p>
+                </section>
+                <section className="border-t border-line pt-6">
+                  <h3 className="text-sm font-medium text-muted">Rates</h3>
+                  <p className="mt-1 text-[13px] leading-5 text-muted">These are the rates. A fee is due only after it is created. Canadian and US amounts stay separate. Digital files are always CAD.</p>
+                  <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                    <div className="min-w-0 rounded-xl border border-line px-4 py-3">
+                      <p className="text-[13px] text-muted">Listing fee</p>
+                      <p className="mt-1">Canadian listings and digital files</p>
+                      <p className="font-sans text-[15px] font-semibold tabular-nums">{formatListingFee("CAD")}</p>
+                      <p className="mt-2">US physical listings</p>
+                      <p className="font-sans text-[15px] font-semibold tabular-nums">{formatListingFee("USD")}</p>
+                      <p className="mt-2 text-[13px] text-muted">First charge at paid publish, then the 15th or the 28th.</p>
                     </div>
-                    <div className="min-w-0">
-                      <p>Valid quote on a US listing</p>
+                    <div className="min-w-0 rounded-xl border border-line px-4 py-3">
+                      <p className="text-[13px] text-muted">Quote fee</p>
+                      <p className="mt-1">Canadian listing or digital file</p>
+                      <p className="font-sans text-[15px] font-semibold tabular-nums">{quoteCad}</p>
+                      <p className="mt-2">US listing</p>
                       <p className="font-sans text-[15px] font-semibold tabular-nums">{quoteUsd}</p>
-                      <p className="text-muted">USD</p>
-                      <p className="text-muted">Each valid request</p>
+                      <p className="mt-2 text-[13px] text-muted">Each valid request. Added to the next listing payment in the same currency. Not charged alone.</p>
                     </div>
                   </div>
-                  <p className="mt-2 max-w-prose text-muted">Added to the next listing payment in the same currency. Not charged alone.</p>
-                </div>
-                <div>
-                  <h3 className="font-medium">Currencies</h3>
-                  <p className="mt-2 max-w-prose">Canadian and US amounts stay separate.</p>
-                  <p className="max-w-prose text-muted">Digital files are always CAD. Quotes use the listing currency and are not converted.</p>
-                </div>
+                </section>
                 {outstandingByCurrency.length > 0 ? (
-                  <div>
-                    <h3 className="font-medium">Outstanding</h3>
+                  <section className="border-t border-line pt-6">
+                    <h3 className="text-sm font-medium text-muted">Still unpaid</h3>
                     <ul className="mt-2 space-y-1">
                       {outstandingByCurrency.map((row) => (
-                        <li key={row.currency} className="font-serif text-lg">{platformFee(row.cents, row.currency)}</li>
+                        <li key={row.currency} className="font-serif text-2xl">{platformFee(row.cents, row.currency)}</li>
                       ))}
                     </ul>
-                    <p className="mt-1 text-muted">Unpaid quotes stay here until a listing payment in the same currency includes them.</p>
-                  </div>
+                    <p className="mt-1 text-[13px] text-muted">This is the full unpaid total. A Twig card above shows only its next fee. Unpaid quotes stay here until a listing payment in the same currency includes them.</p>
+                  </section>
                 ) : null}
                 {paymentHistory.length > 0 ? (
-                  <div>
+                  <section className="border-t border-line pt-6">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h3 className="font-medium">Payment history</h3>
+                      <h3 className="text-sm font-medium text-muted">Payment history</h3>
                       <div className="flex flex-wrap gap-2">
                         {years.map((year) => (
                           <a key={year} href={`/dashboard/payments/receipts?year=${year}`} className={`${ghostClass} h-10 px-4 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest`}>
@@ -319,18 +302,25 @@ export default async function Page({
                         ))}
                       </div>
                     </div>
-                    <ul className="mt-2 divide-y divide-line">
+                    <ul className="mt-3 space-y-2">
                       {paymentHistory.map((payment) => (
-                        <li key={payment.id} className="py-3">
-                          <div className="flex flex-wrap items-baseline justify-between gap-3">
-                            <p className="font-medium">{chargeName(payment.paidAt)}</p>
-                            <p className="font-serif text-lg">{platformFee(payment.total, payment.currency)}</p>
+                        <li key={payment.id} className="rounded-xl border border-line px-4 py-3">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <p className="text-[13px] text-muted">{chargeName(payment.paidAt)}</p>
+                            <p className="font-sans text-[15px] font-semibold tabular-nums">{platformFee(payment.total, payment.currency)}</p>
                           </div>
-                          <p className="break-words text-muted">{payment.lines.map((line) => `${line.kind === "quote" ? "Quote" : line.title} ${platformFee(line.amountCents, line.currency)}`).join(" · ")}</p>
+                          <ul className="mt-2 space-y-1">
+                            {payment.lines.map((line) => (
+                              <li key={line.id} className="flex items-baseline justify-between gap-3">
+                                <p className="min-w-0 break-words font-medium">{line.title}</p>
+                                <p className="shrink-0 text-[13px] text-muted">{line.kind === "quote" ? "Quote fee" : "Listing fee"} · {platformFee(line.amountCents, line.currency)}</p>
+                              </li>
+                            ))}
+                          </ul>
                         </li>
                       ))}
                     </ul>
-                  </div>
+                  </section>
                 ) : null}
               </div>
             </details>

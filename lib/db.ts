@@ -1926,10 +1926,31 @@ export function setBillingStarted(id: string, userId: string) {
 
 export function setListingFeeExempt(id: string, exempt: boolean) {
   db.prepare("UPDATE products SET fee_exempt = ?, updated_at = ? WHERE id = ?").run(exempt ? 1 : 0, new Date().toISOString(), id);
+  voidWaivedOpenFees(id);
 }
 
 export function setQuoteFeeExempt(id: string, exempt: boolean) {
   db.prepare("UPDATE products SET quote_fee_exempt = ?, updated_at = ? WHERE id = ?").run(exempt ? 1 : 0, new Date().toISOString(), id);
+  voidWaivedOpenFees(id);
+}
+
+export function voidWaivedOpenFees(productId = "") {
+  const scope = productId ? " AND product_id = ?" : "";
+  const params = productId ? [productId] : [];
+  db.prepare(
+    `UPDATE twig_bills
+     SET status = 'void'
+     WHERE status IN ('pending', 'accrued', 'due', 'recorded')
+       AND kind = 'listing'${scope}
+       AND product_id IN (SELECT id FROM products WHERE fee_exempt = 1)`,
+  ).run(...params);
+  db.prepare(
+    `UPDATE twig_bills
+     SET status = 'void'
+     WHERE status IN ('pending', 'accrued', 'due', 'recorded')
+       AND kind = 'quote'${scope}
+       AND product_id IN (SELECT id FROM products WHERE quote_fee_exempt = 1)`,
+  ).run(...params);
 }
 
 export function setBillingMethod(userId: string, method: string) {
@@ -4508,3 +4529,4 @@ ensureDemoCategories();
 ensureAvaDemoDetails();
 ensureCurrentDemoTwigs();
 ensurePublicIds();
+voidWaivedOpenFees();
