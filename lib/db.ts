@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { updateTag } from "next/cache";
 import fs from "node:fs";
 import path from "node:path";
 import bcrypt from "bcryptjs";
@@ -4136,30 +4137,88 @@ function seedIfEmpty() {
   }
 }
 
-function ensureConsultPage() {
-  if (one("SELECT id FROM products WHERE id = ?", "prd_consult")) return;
-  if (!one("SELECT id FROM users WHERE id = ?", "usr_ava")) return;
+function ensureDemoFile() {
+  if (one("SELECT id FROM products WHERE id = 'prd_consult' AND user_id = 'usr_ava'")) {
+    db.prepare("DELETE FROM twig_bills WHERE product_id = 'prd_consult'").run();
+    eraseProduct("prd_consult");
+  }
+  if (!one("SELECT id FROM users WHERE id = 'usr_ava'")) return;
   const now = "2026-10-12T15:00:00.000Z";
+  const file = "https://twigigi.com/seed/garden-bed-plan.pdf";
+  if (!one("SELECT id FROM products WHERE id = 'prd_plan'")) {
+    db.prepare(
+      `INSERT INTO products (
+        id, user_id, slug, title, description, price_cents, currency, location,
+        cta, status, images_json, button_label, payment_methods, paypal_email,
+        category_kind, category_group, category, file_links,
+        require_name, require_phone, seller_contact_mode, seller_contact,
+        demo, billing_status, auto_renew, created_at, updated_at
+      ) VALUES (
+        'prd_plan', 'usr_ava', 'garden-bed-plan', ?, ?, 1200, 'CAD', '',
+        'file', 'published', ?, 'Get the file', ?, 'ava@twigigi.demo',
+        'product', 'digital-file', 'digital-file', ?,
+        0, 0, 'email', 'ava@twigigi.demo',
+        1, 'legacy_review', 0, ?, ?
+      )`,
+    ).run(
+      "Garden bed plan",
+      "A one-page layout for a home garden bed: sun, spacing, and what to plant together. The file is emailed after payment.",
+      JSON.stringify(["/seed/consult-1.jpg"]),
+      JSON.stringify(["paypal"]),
+      JSON.stringify([file]),
+      now,
+      now,
+    );
+  }
   db.prepare(
-    `INSERT INTO products (
-      id, user_id, slug, title, description, price_cents, currency, location, video_url,
-      pickup_enabled, pickup_note, delivery_enabled, delivery_radius_km, delivery_fee_cents,
-      shipping_enabled, shipping_fee_cents, shipping_note, cta, contact_email, contact_phone,
-      status, images_json, view_count, created_at, updated_at
-    ) VALUES (
-      'prd_consult', 'usr_ava', 'garden-consult', ?, ?, NULL, 'CAD', 'Edmonton, Alberta', NULL,
-      1, ?, 0, NULL, NULL,
-      0, NULL, '', 'contact', 'ava@twigigi.demo', '780-555-0148',
-      'published', ?, 0, ?, ?
-    )`,
+    `UPDATE products SET
+      slug = 'garden-bed-plan',
+      title = 'Garden bed plan',
+      description = ?,
+      price_cents = 1200,
+      currency = 'CAD',
+      location = '',
+      cta = 'file',
+      status = 'published',
+      images_json = ?,
+      button_label = 'Get the file',
+      payment_methods = ?,
+      paypal_email = 'ava@twigigi.demo',
+      category_kind = 'product',
+      category_group = 'digital-file',
+      category = 'digital-file',
+      file_links = ?,
+      file_password = '',
+      require_name = 0,
+      require_phone = 0,
+      pickup_enabled = 0,
+      delivery_enabled = 0,
+      shipping_enabled = 0,
+      onsite_enabled = 0,
+      seller_contact_mode = 'email',
+      seller_contact = 'ava@twigigi.demo',
+      zelle_contact = '',
+      demo = 1,
+      fee_exempt = 0,
+      updated_at = ?
+     WHERE id = 'prd_plan' AND user_id = 'usr_ava'`,
   ).run(
-    "Garden bed consult",
-    "A short visit to look at light, soil, and what is worth planting this season. Write with the neighbourhood and a photo of the bed.",
-    "We meet in your neighbourhood. The exact address stays in the message, not on this Twig.",
+    "A one-page layout for a home garden bed: sun, spacing, and what to plant together. The file is emailed after payment.",
     JSON.stringify(["/seed/consult-1.jpg"]),
-    now,
-    now,
+    JSON.stringify(["paypal"]),
+    JSON.stringify([file]),
+    new Date().toISOString(),
   );
+  const ava = one("SELECT public_id FROM users WHERE id = 'usr_ava'");
+  const publicId = str(ava?.public_id).toLowerCase();
+  if (!publicId) return;
+  try {
+    updateTag(`seller:${publicId}`);
+    updateTag(`product:${publicId}:garden-consult`);
+    updateTag(`product:${publicId}:garden-bed-plan`);
+  } catch {
+    // Cache tags are not ready while the database module is loading.
+  }
 }
 
 function ensureDemoReviews() {
@@ -4388,9 +4447,6 @@ function ensureAvaDemoDetails() {
     "UPDATE products SET pickup_time = ? WHERE id = 'prd_wreath' AND user_id = 'usr_ava' AND pickup_enabled = 1 AND pickup_time = ''",
   ).run("Thursday, between 6:00 PM and 8:00 PM");
   db.prepare(
-    "UPDATE products SET pickup_time = ? WHERE id = 'prd_consult' AND user_id = 'usr_ava' AND pickup_enabled = 1 AND pickup_time = ''",
-  ).run("Weekdays, between 10:00 AM and 4:00 PM");
-  db.prepare(
     `UPDATE products SET pickup_note = ?
      WHERE id = 'prd_cedar' AND user_id = 'usr_ava' AND pickup_note = ?`,
   ).run(
@@ -4400,7 +4456,7 @@ function ensureAvaDemoDetails() {
 }
 
 function ensureCurrentDemoTwigs() {
-  const ids = ["prd_cedar", "prd_bench", "prd_wreath", "prd_consult"];
+  const ids = ["prd_cedar", "prd_bench", "prd_wreath", "prd_plan"];
   const mark = db.prepare("UPDATE products SET demo = 1 WHERE id = ? AND user_id = 'usr_ava'");
   for (const id of ids) mark.run(id);
   db.prepare(
@@ -4445,7 +4501,7 @@ function ensureCurrentDemoTwigs() {
       seller_contact_mode = 'email',
       seller_contact = 'ava@twigigi.demo',
       zelle_contact = ''
-     WHERE id IN ('prd_wreath', 'prd_consult') AND user_id = 'usr_ava'`,
+     WHERE id = 'prd_wreath' AND user_id = 'usr_ava'`,
   ).run();
   db.prepare(
     `UPDATE products SET billing_status = 'legacy_review', auto_renew = 0
@@ -4522,7 +4578,7 @@ function ensurePublicIds() {
 }
 
 seedIfEmpty();
-ensureConsultPage();
+ensureDemoFile();
 ensureLandscapeDemo();
 ensureDemoReviews();
 ensureDemoCategories();

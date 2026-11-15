@@ -6,6 +6,7 @@ import { beginBillingSetup, setAutomaticPayment } from "@/lib/actions";
 import { buttonClass } from "@/components/ui";
 
 const focusClass = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest";
+const paypalChoice = false;
 const RENEWAL_TERMS = "Twigigi may charge this card when a listing renews, including unpaid quote fees in the same currency, without you being present. The settlement date stays on the 15th or the 28th chosen at the first paid publish.";
 
 export function BillingMethodForm({
@@ -25,9 +26,10 @@ export function BillingMethodForm({
   cardBrand: string;
   cardLast4: string;
 }) {
-  const [method, setMethod] = useState<"card" | "paypal">(saved === "paypal" ? "paypal" : "card");
+  const [method, setMethod] = useState<"card" | "paypal">(paypalChoice && saved === "paypal" ? "paypal" : "card");
   const cardSaved = Boolean(cardLast4) || (ready && (saved === "card" || saved === "stripe"));
-  const paypalSelected = method === "paypal" || saved === "paypal";
+  const paypalSelected = paypalChoice && (method === "paypal" || saved === "paypal");
+  const visibleNotice = !paypalChoice && /paypal/i.test(notice) ? "" : notice;
   const switchOn = autoPay && autoRenew && saved !== "paypal";
   const blocked = paypalSelected
     ? "Not available for PayPal."
@@ -41,11 +43,11 @@ export function BillingMethodForm({
     <section className="min-w-0 overflow-x-clip rounded-2xl border border-line bg-card px-4 py-4 shadow-none sm:px-6 sm:py-6">
       <h2 className="font-serif text-2xl">Payment method</h2>
       {cardSaved ? <SavedCard brand={cardBrand} last4={cardLast4} /> : <p className="mt-3 text-sm text-muted">No card saved</p>}
-      {notice ? <p className="mt-3 break-words text-[13px] leading-5 text-clay" role="status">{notice}</p> : null}
+      {visibleNotice ? <p className="mt-3 break-words text-[13px] leading-5 text-clay" role="status">{visibleNotice}</p> : null}
       <form action={beginBillingSetup} className="mt-4 grid min-w-0 gap-3">
         <fieldset className="min-w-0">
           <legend className="sr-only">Payment method</legend>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={`grid gap-3 ${paypalChoice ? "sm:grid-cols-2" : ""}`}>
             <MethodChoice
               name="Credit or debit card"
               detail="Save a card for future payments."
@@ -53,13 +55,15 @@ export function BillingMethodForm({
               checked={method === "card"}
               onSelect={() => setMethod("card")}
             />
-            <MethodChoice
-              name="PayPal"
-              detail="Manual payments only."
-              value="paypal"
-              checked={method === "paypal"}
-              onSelect={() => setMethod("paypal")}
-            />
+            {paypalChoice ? (
+              <MethodChoice
+                name="PayPal"
+                detail="Manual payments only."
+                value="paypal"
+                checked={method === "paypal"}
+                onSelect={() => setMethod("paypal")}
+              />
+            ) : null}
           </div>
         </fieldset>
         {method === "card" && !cardSaved ? <RenewalConsent sentence="I authorize Twigigi to charge this card for listing renewals and unpaid quote fees in the same currency." /> : null}

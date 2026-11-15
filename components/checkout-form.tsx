@@ -121,12 +121,6 @@ export function CheckoutForm({
       {variantLabel ? <p className="text-sm text-muted">{variantLabel}</p> : null}
       {formError ? <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{formError}</p> : null}
 
-      {mode === "file" ? (
-        <p className="rounded-xl bg-paper-deep px-3 py-2 text-sm text-muted">
-          You pay the seller with PayPal or a card. The file is emailed as soon as the payment is confirmed. It is not shown on the public page.
-        </p>
-      ) : null}
-
       {(mode !== "buy" && mode !== "file") || requireName ? (
         <Field label="Name" name="name" required error={fieldErrors?.name}>
           <input name="name" autoComplete="name" aria-required="true" defaultValue={defaultName} className={inputClass} />
