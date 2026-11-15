@@ -9,14 +9,13 @@ const LINKS = [
   ["/dashboard/quotes", "Quotes"],
   ["/dashboard/twigs", "Twigs"],
   ["/dashboard/payments", "Payments"],
-  ["/dashboard/settings", "Settings"],
 ];
 
-export function SellerNav({ attention = 0 }: { attention?: number }) {
+export function SellerNav({ attention = 0, profileHref }: { attention?: number; profileHref: string }) {
   const path = usePathname();
   return (
     <nav className="mt-4 flex gap-4 overflow-x-auto border-b border-line text-sm">
-      {LINKS.map(([href, label]) => {
+      {[...LINKS, [profileHref, "Public profile"]].map(([href, label]) => {
         const current = href === "/dashboard"
           ? path === "/dashboard"
           : href === "/dashboard/twigs"

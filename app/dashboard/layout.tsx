@@ -20,7 +20,7 @@ async function Header() {
 async function Sections() {
   const user = await requireSeller();
   const attention = listOrders(user.id).filter((order) => sellerAttention(order)).length;
-  return <SellerNav attention={attention} />;
+  return <SellerNav attention={attention} profileHref={`/${user.publicId}`} />;
 }
 
 export default function Layout({ children }: { children: React.ReactNode }) {

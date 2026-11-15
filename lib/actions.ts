@@ -17,7 +17,7 @@ import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSe
 import { productTag, sellerTag } from "@/lib/catalog";
 import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
 import { acceptNote, notifyBuyer, readyNote } from "@/lib/order-notices";
-import { fulfillmentDone, shipsToBuyer } from "@/lib/order-flow";
+import { fulfillmentDone, sellerBulkActions, shipsToBuyer, type SellerBulkAction } from "@/lib/order-flow";
 import { parseFileLinks } from "@/lib/files";
 import { resolveUpload, uploadDirectory } from "@/lib/uploads";
 import {
@@ -2250,6 +2250,46 @@ export async function markOrderProgress(_prev: FormState, formData: FormData): P
     readyNote(order, place),
   );
   return { next: sent ? back : `${back}?mail=0` };
+}
+
+export async function bulkSellerOrders(formData: FormData) {
+  const user = await requireSeller();
+  const action = text(formData, "action");
+  const allowed: SellerBulkAction[] = ["confirm-payment", "accept", "ready"];
+  const ids = [...new Set(formData.getAll("id").filter((item): item is string => typeof item === "string" && item.length > 0))].slice(0, 100);
+  let updated = 0;
+  let skipped = 0;
+  if (!allowed.includes(action as SellerBulkAction)) {
+    redirect("/dashboard/orders?bulk=0&skipped=0");
+  }
+  for (const id of ids) {
+    const order = getOrder(id);
+    if (!order || order.sellerId !== user.id || !sellerBulkActions(order).includes(action as SellerBulkAction)) {
+      skipped += 1;
+      continue;
+    }
+    const data = new FormData();
+    data.set("id", id);
+    if (action === "confirm-payment") {
+      const wasPaid = order.paymentStatus === "paid" || order.status === "paid";
+      await confirmOrderPayment({}, data);
+      const after = getOrder(id);
+      const paid = after?.paymentStatus === "paid" || after?.status === "paid";
+      if (!wasPaid && paid) updated += 1;
+      else skipped += 1;
+    } else if (action === "accept") {
+      data.set("decision", "accept");
+      await reviewSellerOrder({}, data);
+      updated += getOrder(id)?.reviewState === "accepted" ? 1 : 0;
+      if (getOrder(id)?.reviewState !== "accepted") skipped += 1;
+    } else {
+      data.set("state", "ready");
+      await markOrderProgress({}, data);
+      if (getOrder(id)?.fulfillmentState === "ready") updated += 1;
+      else skipped += 1;
+    }
+  }
+  redirect(`/dashboard/orders?bulk=${updated}&skipped=${skipped}`);
 }
 
 export async function changeOrderPayment(formData: FormData) {

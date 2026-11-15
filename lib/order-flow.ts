@@ -17,6 +17,28 @@ export function shipsToBuyer(fulfillment: string) {
   return fulfillment === "delivery" || fulfillment === "shipping";
 }
 
+export type SellerBulkAction = "confirm-payment" | "accept" | "ready";
+
+export function sellerBulkActions(order: {
+  status: string;
+  reviewState: string;
+  paymentStatus: string;
+  fulfillment: string;
+  fulfillmentState: string;
+  buyerPayment: string;
+  pickupConfirmedAt?: string | null;
+}): SellerBulkAction[] {
+  if (order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined") return [];
+  const actions: SellerBulkAction[] = [];
+  if (order.reviewState === "requested") actions.push("accept");
+  const paid = order.paymentStatus === "paid" || order.status === "paid";
+  const confirmed = order.reviewState === "accepted";
+  if (confirmed && paymentNeedsConfirm(order.buyerPayment) && !paid && order.fulfillment !== "digital") actions.push("confirm-payment");
+  const canReady = confirmed && (!paymentNeedsConfirm(order.buyerPayment) || paid) && !fulfillmentDone(order.fulfillmentState) && order.fulfillment === "pickup";
+  if (canReady && !(isCashMethod(order.buyerPayment) && !order.pickupConfirmedAt)) actions.push("ready");
+  return actions;
+}
+
 export function sellerAttention(order: {
   status: string;
   reviewState: string;

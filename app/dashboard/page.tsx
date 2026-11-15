@@ -27,9 +27,7 @@ async function DashboardBody() {
     <main className="page-frame pb-16">
       <div className="mt-6">
         <h1 className="font-serif text-4xl">Overview</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-          {fresh ? "Create a Twig, then share the link." : "Manage your orders and Twigs."}
-        </p>
+        {fresh ? <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Create a Twig, then share the link.</p> : null}
       </div>
 
       {fresh ? (

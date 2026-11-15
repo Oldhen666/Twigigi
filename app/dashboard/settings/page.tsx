@@ -3,16 +3,11 @@ import { Suspense } from "react";
 import { requireSeller } from "@/lib/auth";
 
 async function SettingsScreen() {
-  const user = await requireSeller();
+  await requireSeller();
   return (
     <main className="page-frame pb-16">
       <h1 className="mt-6 font-serif text-4xl">Settings</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Your public page and Pay Twigigi.</p>
       <div className="mt-6 max-w-xl space-y-3 text-sm">
-        <Link href={`/${user.publicId}`} className="block rounded-3xl border border-line bg-card px-4 py-4">
-          <span className="font-medium">View public profile</span>
-          <span className="mt-1 block text-muted">The page buyers see.</span>
-        </Link>
         <Link href="/dashboard/payments?tab=receipts" className="block rounded-3xl border border-line bg-card px-4 py-4">
           <span className="font-medium">Pay Twigigi</span>
           <span className="mt-1 block text-muted">Saved card, renewal, unpaid balance, and bills.</span>

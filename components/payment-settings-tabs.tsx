@@ -17,17 +17,26 @@ export function PaymentSettingsTabs({
 
   return (
     <div className="mt-8">
-      <label className="block max-w-md">
-        <span className="sr-only">Payments section</span>
-        <select
-          value={tab}
-          onChange={(event) => setTab(event.target.value === "receipts" ? "receipts" : "receiving")}
-          className={`h-12 w-full rounded-xl border border-line bg-card px-3 text-base font-medium text-ink ${focusClass}`}
+      <div role="tablist" aria-label="Payments section" className="grid max-w-xl grid-cols-2 gap-1 rounded-full border border-line bg-card p-1">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "receiving"}
+          onClick={() => setTab("receiving")}
+          className={`min-w-0 rounded-full px-3 py-2 text-center text-sm font-medium leading-5 ${focusClass} ${tab === "receiving" ? "bg-forest text-card" : "text-ink"}`}
         >
-          <option value="receiving">Setup payment for your customer</option>
-          <option value="receipts">Pay Twigigi</option>
-        </select>
-      </label>
+          Setup payment for your customer
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "receipts"}
+          onClick={() => setTab("receipts")}
+          className={`min-w-0 rounded-full px-3 py-2 text-center text-sm font-medium leading-5 ${focusClass} ${tab === "receipts" ? "bg-forest text-card" : "text-ink"}`}
+        >
+          Pay Twigigi
+        </button>
+      </div>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
         {tab === "receiving" ? "Choose how buyers pay you." : "Manage your listing fees and payment method."}
       </p>

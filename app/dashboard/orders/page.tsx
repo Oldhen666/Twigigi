@@ -1,12 +1,27 @@
 import Link from "next/link";
-import { Suspense } from "react";
 import { SellerOrders } from "@/components/seller-orders";
 import { requireSeller } from "@/lib/auth";
 import { listOrders } from "@/lib/db";
 import { formatDate, formatMoney, orderHeading } from "@/lib/format";
-import { orderStage, sellerAttention } from "@/lib/order-flow";
+import { orderStage, sellerAttention, sellerBulkActions } from "@/lib/order-flow";
 
-async function OrdersScreen() {
+function bulkNotice(bulk: string | string[] | undefined, skipped: string | string[] | undefined) {
+  if (typeof bulk !== "string") return "";
+  const updated = Number(bulk);
+  const left = Number(typeof skipped === "string" ? skipped : "0");
+  if (!Number.isInteger(updated) || updated < 0 || !Number.isInteger(left) || left < 0) return "";
+  if (updated === 0) return left > 0 ? "No orders were changed. The action does not apply to the selection." : "";
+  const changed = updated === 1 ? "Updated 1 order." : `Updated ${updated} orders.`;
+  return left > 0 ? `${changed} ${left === 1 ? "1 was" : `${left} were`} left unchanged.` : changed;
+}
+
+async function OrdersScreen({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const notice = bulkNotice(params.bulk, params.skipped);
   const user = await requireSeller();
   const orders = listOrders(user.id);
   const needs = orders.filter((order) => sellerAttention(order)).length;
@@ -21,6 +36,7 @@ async function OrdersScreen() {
     attention: sellerAttention(order),
     when: formatDate(order.createdAt, order.productLocation),
     createdAt: order.createdAt,
+    actions: sellerBulkActions(order),
   }));
   return (
     <main className="page-frame pb-16">
@@ -36,6 +52,7 @@ async function OrdersScreen() {
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
             {needs === 0 ? "You have orders, and nothing needs you right now." : needs === 1 ? "1 order needs you." : `${needs} orders need you.`}
           </p>
+          {notice ? <p className="mt-3 text-sm" role="status">{notice}</p> : null}
           <SellerOrders orders={rows} />
         </>
       )}
@@ -43,12 +60,12 @@ async function OrdersScreen() {
   );
 }
 
-export default function Page() {
-  return (
-    <Suspense fallback={<p className="px-5 text-muted">Loading orders…</p>}>
-      <OrdersScreen />
-    </Suspense>
-  );
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return <OrdersScreen searchParams={searchParams} />;
 }
 
 export const metadata = { title: "Orders", robots: { index: false, follow: false } };

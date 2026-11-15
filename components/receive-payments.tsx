@@ -73,6 +73,9 @@ export function ReceivePayments({
           </select>
         </label>
       </div>
+      <Link href="/dashboard/help#bank" className={`${focusClass} inline-block text-sm text-muted underline decoration-1 underline-offset-4`}>
+        How seller payments go to your bank account
+      </Link>
       {savedLine ? <p className="text-sm font-medium" role="status">{savedLine}</p> : null}
 
       <section className="rounded-3xl border border-line bg-card p-4 sm:p-5">
@@ -184,7 +187,6 @@ function StripeCard({
         <p className="text-sm font-medium">{status}</p>
       </div>
       <p className="mt-1 text-sm font-medium text-muted">Digital files only · Optional</p>
-      <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">Buyers pay by card. Payments go to your Stripe account.</p>
       {stripeMessage === "setup" ? <p className="mt-3 text-sm text-clay" role="status">Stripe is not set up on this server yet.</p> : null}
       {stripeMessage === "error" ? <p className="mt-3 text-sm text-clay" role="status">{stripeReason || "Stripe could not open the connection page."}</p> : null}
       {stripeReady ? null : (
@@ -193,7 +195,6 @@ function StripeCard({
           <SubmitButton label={stripeStarted ? "Continue Stripe setup" : "Connect Stripe"} pendingLabel="Opening Stripe…" />
         </form>
       )}
-      <p className="mt-3 text-sm leading-6 text-muted">You can set this up later. Stripe processing fees apply.</p>
     </section>
   );
 }
@@ -209,7 +210,6 @@ function AccountFieldCard({ kind, value }: { kind: "interac" | "venmo" | "zelle"
         <h2 className="font-serif text-2xl">{copy.title}</h2>
         <p className="text-sm font-medium">{value ? "Saved" : "Not set up"}</p>
       </div>
-      <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">{copy.scope}</p>
       {showForm ? (
         <form action={savePayoutDetails} className="mt-4 grid gap-3" noValidate>
           <input type="hidden" name="which" value={kind} />
@@ -264,7 +264,6 @@ function AccountFieldCard({ kind, value }: { kind: "interac" | "venmo" | "zelle"
           </div>
         </div>
       )}
-      {copy.limit ? <p className="mt-3 text-sm leading-6 text-muted">{copy.limit}</p> : null}
     </section>
   );
 }
@@ -280,8 +279,6 @@ function fieldCopy(kind: "interac" | "venmo" | "zelle" | "paypal" | "paypal-file
   if (kind === "interac") {
     return {
       title: "Interac e-Transfer",
-      scope: "Canadian Buy now Twigs. Save stores this email for new Twigs. Update also writes it onto existing ones.",
-      limit: "",
       save: "",
       apply: true,
     };
@@ -289,8 +286,6 @@ function fieldCopy(kind: "interac" | "venmo" | "zelle" | "paypal" | "paypal-file
   if (kind === "venmo") {
     return {
       title: "Venmo",
-      scope: "US Buy now Twigs. Save stores this username for new Twigs. Update also writes it onto existing ones.",
-      limit: "",
       save: "",
       apply: true,
     };
@@ -298,8 +293,6 @@ function fieldCopy(kind: "interac" | "venmo" | "zelle" | "paypal" | "paypal-file
   if (kind === "paypal") {
     return {
       title: "PayPal",
-      scope: "Buy now Twigs. Save stores this PayPal.Me link for new Twigs. Update also writes it onto existing ones.",
-      limit: "",
       save: "",
       apply: true,
     };
@@ -307,16 +300,12 @@ function fieldCopy(kind: "interac" | "venmo" | "zelle" | "paypal" | "paypal-file
   if (kind === "paypal-file") {
     return {
       title: "PayPal",
-      scope: "Digital file Twigs. Save stores this email for new Twigs. Update also writes it onto existing ones.",
-      limit: "",
       save: "",
       apply: true,
     };
   }
   return {
     title: "Zelle",
-    scope: "Saved on your account for your records.",
-    limit: "Buyer checkout does not offer Zelle. US listings use Venmo, PayPal, or cash set on each Twig.",
     save: "Save Zelle",
     apply: false,
   };

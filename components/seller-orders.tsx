@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { inputClass } from "@/components/ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useFormStatus } from "react-dom";
+import { bulkSellerOrders } from "@/lib/actions";
+import { buttonClass, inputClass } from "@/components/ui";
+import type { SellerBulkAction } from "@/lib/order-flow";
 
 export type SellerOrderRow = {
   id: string;
@@ -15,6 +18,13 @@ export type SellerOrderRow = {
   attention: string;
   when: string;
   createdAt: string;
+  actions: SellerBulkAction[];
+};
+
+const BULK_LABELS: Record<SellerBulkAction, string> = {
+  "confirm-payment": "Confirm payment",
+  accept: "Accept order",
+  ready: "Mark ready for pickup",
 };
 
 const selectClass = `${inputClass} h-10 text-sm`;
@@ -23,6 +33,8 @@ export function SellerOrders({ orders }: { orders: SellerOrderRow[] }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState("needs");
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [action, setAction] = useState("");
   const stages = useMemo(() => [...new Set(orders.map((order) => order.stage))].sort((left, right) => left.localeCompare(right)), [orders]);
   const visible = useMemo(() => {
     const matched = orders.filter((order) => matchesFilter(order, filter) && matchesQuery(order, query));
@@ -31,6 +43,29 @@ export function SellerOrders({ orders }: { orders: SellerOrderRow[] }) {
   const grouped = query.trim() === "" && filter === "all" && sort === "needs";
   const needs = grouped ? visible.filter((order) => order.attention) : [];
   const rest = grouped ? visible.filter((order) => !order.attention) : [];
+  const visibleIds = visible.map((order) => order.id);
+  const selectedCount = visibleIds.filter((id) => selected.has(id)).length;
+  const allVisible = visibleIds.length > 0 && selectedCount === visibleIds.length;
+  const available = useMemo(() => {
+    const actions = new Set<SellerBulkAction>();
+    for (const order of visible) {
+      if (!selected.has(order.id)) continue;
+      for (const item of order.actions) actions.add(item);
+    }
+    return actions;
+  }, [visible, selected]);
+  useEffect(() => {
+    if (action && !available.has(action as SellerBulkAction)) setAction("");
+  }, [action, available]);
+
+  function toggleOrder(id: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <>
@@ -59,43 +94,144 @@ export function SellerOrders({ orders }: { orders: SellerOrderRow[] }) {
           <option value="amount">Highest amount</option>
         </select>
       </div>
+      {visible.length > 0 ? (
+        <BulkBar
+          visibleIds={visibleIds}
+          allVisible={allVisible}
+          selectedCount={selectedCount}
+          selected={selected}
+          action={action}
+          available={available}
+          onToggleVisible={() => {
+            setSelected((current) => {
+              const next = new Set(current);
+              if (allVisible) {
+                for (const id of visibleIds) next.delete(id);
+              } else {
+                for (const id of visibleIds) next.add(id);
+              }
+              return next;
+            });
+          }}
+          onAction={setAction}
+        />
+      ) : null}
       {visible.length === 0 ? <p className="mt-8 text-sm text-muted">No orders match.</p> : null}
       {grouped ? (
         <>
           {needs.length > 0 ? (
             <section className="mt-6">
               <h2 className="text-sm font-medium">Needs you</h2>
-              <OrderList orders={needs} className="mt-3" />
+              <OrderList orders={needs} className="mt-3" selected={selected} onToggle={toggleOrder} />
             </section>
           ) : null}
           {rest.length > 0 ? (
             <section className="mt-6">
               {needs.length > 0 ? <h2 className="text-sm font-medium">All other orders</h2> : null}
-              <OrderList orders={rest} className={needs.length > 0 ? "mt-3" : "mt-6"} />
+              <OrderList orders={rest} className={needs.length > 0 ? "mt-3" : "mt-6"} selected={selected} onToggle={toggleOrder} />
             </section>
           ) : null}
         </>
       ) : visible.length > 0 ? (
-        <OrderList orders={visible} className="mt-6" />
+        <OrderList orders={visible} className="mt-6" selected={selected} onToggle={toggleOrder} />
       ) : null}
     </>
   );
 }
 
-function OrderList({ orders, className }: { orders: SellerOrderRow[]; className: string }) {
+function BulkBar({
+  visibleIds,
+  allVisible,
+  selectedCount,
+  selected,
+  action,
+  available,
+  onToggleVisible,
+  onAction,
+}: {
+  visibleIds: string[];
+  allVisible: boolean;
+  selectedCount: number;
+  selected: Set<string>;
+  action: string;
+  available: Set<SellerBulkAction>;
+  onToggleVisible: () => void;
+  onAction: (value: string) => void;
+}) {
+  const allRef = useRef<HTMLInputElement>(null);
+  const chosen = visibleIds.filter((id) => selected.has(id));
+  useEffect(() => {
+    if (allRef.current) allRef.current.indeterminate = selectedCount > 0 && !allVisible;
+  }, [allVisible, selectedCount]);
+  return (
+    <div className="mt-4 rounded-2xl border border-line bg-card px-4 py-3">
+      <label className="flex items-center gap-3 text-sm">
+        <input
+          ref={allRef}
+          type="checkbox"
+          checked={allVisible}
+          onChange={onToggleVisible}
+          aria-label="Select visible orders"
+          className="h-5 w-5 shrink-0 accent-forest"
+        />
+        <span>{selectedCount === 1 ? "1 selected" : `${selectedCount} selected`}</span>
+      </label>
+      <form action={bulkSellerOrders} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,16rem)_auto] sm:items-center">
+        {chosen.map((id) => <input key={id} type="hidden" name="id" value={id} />)}
+        <select aria-label="Bulk action" name="action" value={action} onChange={(event) => onAction(event.target.value)} className={selectClass} disabled={selectedCount === 0}>
+          <option value="">{selectedCount === 0 ? "Select orders first" : available.size === 0 ? "No bulk action for this selection" : "Choose an action"}</option>
+          {([...available] as SellerBulkAction[]).map((item) => (
+            <option key={item} value={item}>{BULK_LABELS[item]}</option>
+          ))}
+        </select>
+        <ApplyButton disabled={selectedCount === 0 || !action} />
+      </form>
+      <p className="mt-2 text-[13px] leading-5 text-muted">Orders that do not match the action stay unchanged.</p>
+    </div>
+  );
+}
+
+function ApplyButton({ disabled }: { disabled: boolean }) {
+  const { pending } = useFormStatus();
+  return (
+    <button disabled={disabled || pending} className={`${buttonClass} h-10 w-full px-4 text-sm sm:w-fit`}>
+      {pending ? "Updating…" : "Apply"}
+    </button>
+  );
+}
+
+function OrderList({
+  orders,
+  className,
+  selected,
+  onToggle,
+}: {
+  orders: SellerOrderRow[];
+  className: string;
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+}) {
   return (
     <ul className={`space-y-3 ${className}`}>
-      {orders.map((order) => <OrderRow key={order.id} order={order} />)}
+      {orders.map((order) => <OrderRow key={order.id} order={order} checked={selected.has(order.id)} onToggle={onToggle} />)}
     </ul>
   );
 }
 
-function OrderRow({ order }: { order: SellerOrderRow }) {
+function OrderRow({ order, checked, onToggle }: { order: SellerOrderRow; checked: boolean; onToggle: (id: string) => void }) {
+  const label = order.publicRef || order.buyerName;
   return (
-    <li>
-      <Link href={`/dashboard/orders/${order.id}`} className="block rounded-2xl border border-line bg-card p-4 text-sm">
-        <p className="font-medium">{order.publicRef || order.buyerName}</p>
-        <p className="text-muted">{order.heading} · {order.buyerName}</p>
+    <li className="flex items-start gap-3 rounded-2xl border border-line bg-card p-4 text-sm">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={() => onToggle(order.id)}
+        aria-label={`Select ${label}`}
+        className="mt-0.5 h-5 w-5 shrink-0 accent-forest"
+      />
+      <Link href={`/dashboard/orders/${order.id}`} className="min-w-0 flex-1">
+        <p className="font-medium">{label}</p>
+        <p className="break-words text-muted">{order.heading} · {order.buyerName}</p>
         <p className="mt-1">{order.amount} · {order.stage}</p>
         {order.attention ? <p className="mt-1 font-medium text-forest">{order.attention}</p> : null}
         <p className="text-muted">{order.when}</p>
