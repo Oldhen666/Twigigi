@@ -51,3 +51,10 @@ export async function getPublicSeller(username: string) {
 export function staticProductParams() {
   return listPublishedParams();
 }
+
+export function listedParams(match: (cta: string) => boolean) {
+  const rows = staticProductParams()
+    .filter((item) => match(item.cta))
+    .map(({ username, product }) => ({ username, product }));
+  return rows.length > 0 ? rows : [{ username: "_", product: "_" }];
+}

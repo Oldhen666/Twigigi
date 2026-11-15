@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { placeOrder } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
-import { getPublicProduct, requireLiveTwig, staticProductParams } from "@/lib/catalog";
+import { getPublicProduct, listedParams, requireLiveTwig } from "@/lib/catalog";
 import { findUserById, getProductById } from "@/lib/db";
 import { digitalPayMethods } from "@/lib/payments";
 import { sellerPath } from "@/lib/seller-route";
@@ -13,9 +13,7 @@ import { formatMoney, fulfillmentOptions } from "@/lib/format";
 import { resolveSelection } from "@/lib/variants";
 
 export function generateStaticParams() {
-  return staticProductParams()
-    .filter((item) => item.cta === "buy" || item.cta === "file")
-    .map(({ username, product }) => ({ username, product }));
+  return listedParams((cta) => cta === "buy" || cta === "file");
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ username: string; product: string }> }) {

@@ -2,15 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { sendMessage } from "@/lib/actions";
-import { getPublicProduct, requireLiveTwig, staticProductParams } from "@/lib/catalog";
+import { getPublicProduct, listedParams, requireLiveTwig } from "@/lib/catalog";
 import { sellerPath } from "@/lib/seller-route";
 import { CheckoutForm } from "@/components/checkout-form";
 import { ProductFallback, Stage } from "@/components/stage";
 
 export function generateStaticParams() {
-  return staticProductParams()
-    .filter((item) => item.cta === "contact")
-    .map(({ username, product }) => ({ username, product }));
+  return listedParams((cta) => cta === "contact");
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ username: string; product: string }> }) {
