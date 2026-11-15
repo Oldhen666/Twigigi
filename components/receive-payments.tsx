@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
-import { savePayoutDetails, startStripeConnect } from "@/lib/actions";
+import { openStripePayout, savePayoutDetails, startStripeConnect } from "@/lib/actions";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { readPayoutSaved, type SavedField } from "@/lib/payments";
 
@@ -73,9 +73,6 @@ export function ReceivePayments({
           </select>
         </label>
       </div>
-      <Link href="/dashboard/help#bank" className={`${focusClass} inline-block text-sm text-muted underline decoration-1 underline-offset-4`}>
-        How seller payments go to your bank account
-      </Link>
       {savedLine ? <p className="text-sm font-medium" role="status">{savedLine}</p> : null}
 
       <section className="rounded-3xl border border-line bg-card p-4 sm:p-5">
@@ -189,7 +186,11 @@ function StripeCard({
       <p className="mt-1 text-sm font-medium text-muted">Digital files only · Optional</p>
       {stripeMessage === "setup" ? <p className="mt-3 text-sm text-clay" role="status">Stripe is not set up on this server yet.</p> : null}
       {stripeMessage === "error" ? <p className="mt-3 text-sm text-clay" role="status">{stripeReason || "Stripe could not open the connection page."}</p> : null}
-      {stripeReady ? null : (
+      {stripeReady ? (
+        <form action={openStripePayout} className="mt-4">
+          <SubmitButton label="Change payout card" pendingLabel="Opening Stripe…" />
+        </form>
+      ) : (
         <form action={startStripeConnect} className="mt-4">
           <input type="hidden" name="country" value={country} />
           <SubmitButton label={stripeStarted ? "Continue Stripe setup" : "Connect Stripe"} pendingLabel="Opening Stripe…" />
@@ -232,10 +233,15 @@ function AccountFieldCard({ kind, value }: { kind: "interac" | "venmo" | "zelle"
             </label>
           ) : null}
           {kind === "paypal" ? (
-            <label>
-              <span className={labelClass}>PayPal.Me link</span>
-              <input name="paypal" defaultValue={value} placeholder="https://paypal.me/yourname" inputMode="url" autoComplete="off" className={`${inputClass} ${focusClass}`} />
-            </label>
+            <div>
+              <div className="mb-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <label htmlFor="payout-paypal-me" className="text-sm font-medium">PayPal.Me link</label>
+                <a href="https://www.paypal.com/paypalme/" target="_blank" rel="noreferrer" className={`${focusClass} text-sm text-forest underline-offset-2 hover:underline`}>
+                  Did not have a paypal.me?
+                </a>
+              </div>
+              <input id="payout-paypal-me" name="paypal" defaultValue={value} placeholder="https://paypal.me/yourname" inputMode="url" autoComplete="off" className={`${inputClass} ${focusClass}`} />
+            </div>
           ) : null}
           {kind === "paypal-file" ? (
             <label>

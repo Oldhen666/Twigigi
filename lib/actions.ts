@@ -158,7 +158,7 @@ import { billingCurrency, isBillingMethod, listingFeeCents, listingFeeCurrency, 
 import { BILLING_CONSENT_VERSION, cardCanRenew } from "@/lib/billing-auth";
 import { autoChargeEnabled } from "@/lib/renewal-engine";
 import { normalizeQuoteForm } from "@/lib/quote-form";
-import { cancelFeeIntent, createBillingSetupSession, createDigitalStripeCheckout, createStripeConnectLink, getStripe, publicStripeError, retrieveFeeIntent } from "@/lib/stripe";
+import { cancelFeeIntent, createBillingSetupSession, createDigitalStripeCheckout, createStripeConnectLink, createStripePayoutLink, getStripe, publicStripeError, retrieveFeeIntent } from "@/lib/stripe";
 import { DIGITAL_FILE_CATEGORY, categoryProblem, resolveCategory } from "@/lib/categories";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
 
@@ -1402,6 +1402,20 @@ export async function startStripeConnect(formData: FormData) {
   }
 }
 
+export async function openStripePayout() {
+  const user = await requireSeller();
+  if (!user.stripeAccountId) redirect("/dashboard/payments");
+  try {
+    const linked = await createStripePayoutLink(user.stripeAccountId);
+    if (!linked) redirect("/dashboard/payments?stripe=setup");
+    if (!linked.url) redirect(`/dashboard/payments?stripe=error&reason=${encodeURIComponent(linked.message || "Stripe could not open the payout page.")}`);
+    redirect(linked.url);
+  } catch (error) {
+    unstable_rethrow(error);
+    redirect("/dashboard/payments?stripe=error");
+  }
+}
+
 export async function beginBillingSetup(formData: FormData) {
   const user = await requireSeller();
   const method = text(formData, "method") === "paypal" ? "paypal" : "card";
@@ -2545,6 +2559,15 @@ export async function updateAccountUsername(_prev: FormState, formData: FormData
   const user = await requireUser();
   const claimed = claimPublicUsername(user.id, text(formData, "username"));
   if (claimed.fieldErrors || claimed.error) return claimed;
+  updateTag(sellerTag(user.publicId.toLowerCase()));
+  return { next: safeNext(text(formData, "next")) };
+}
+
+export async function updateAccountDisplayName(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireUser();
+  const parsed = signupSchema.shape.displayName.safeParse(text(formData, "displayName"));
+  if (!parsed.success) return { fieldErrors: { displayName: "Enter your name." } };
+  updateDisplayName(user.id, parsed.data);
   updateTag(sellerTag(user.publicId.toLowerCase()));
   return { next: safeNext(text(formData, "next")) };
 }

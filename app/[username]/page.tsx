@@ -10,6 +10,7 @@ import { SellerBio } from "@/components/seller-bio";
 import { SellerListings } from "@/components/seller-listings";
 import { listingStillPaid } from "@/lib/billing";
 import { getCurrentUser, getImpersonation } from "@/lib/auth";
+import { DisplayNameForm } from "@/components/display-name-form";
 import { UsernameForm } from "@/components/username-form";
 import { filterLiveTwigs, getPublicSeller, staticProductParams } from "@/lib/catalog";
 import { sellerPath } from "@/lib/seller-route";
@@ -61,7 +62,7 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
-              <h1 className="text-xl font-semibold">{seller.displayName}</h1>
+              {owner && account ? <DisplayNameForm name={account.displayName} next={pagePath} /> : <h1 className="text-xl font-semibold">{seller.displayName}</h1>}
               {owner ? null : account ? (
                 <form action={toggleFollowSeller}>
                   <input type="hidden" name="seller" value={seller.publicId} />
@@ -112,6 +113,7 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
             location: product.location,
             priceLabel: product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request",
             ctaLabel: ctaCopy(product.cta).label,
+            ctaHref: ctaCopy(product.cta).href,
             image: product.images[0] ?? "",
             inactive: product.status === "deactivated",
             editHref: owner ? `/dashboard/products/${product.id}` : "",

@@ -14,6 +14,7 @@ export type SellerCard = {
   location: string;
   priceLabel: string;
   ctaLabel: string;
+  ctaHref: string;
   image: string;
   inactive?: boolean;
   editHref?: string;
@@ -138,7 +139,11 @@ export function SellerListings({ username, listings }: { username: string; listi
                   {href ? <Link href={href}>{product.title}</Link> : product.title}
                 </h2>
                 <p className="mt-1 text-sm text-muted">{product.priceLabel}</p>
-                <p className="mt-2 text-sm font-medium text-forest">{product.ctaLabel}</p>
+                {href ? (
+                  <Link href={`${href}/${product.ctaHref}`} className="mt-2 inline-flex text-sm font-medium text-forest underline-offset-2 hover:underline">{product.ctaLabel}</Link>
+                ) : (
+                  <p className="mt-2 text-sm font-medium text-forest">{product.ctaLabel}</p>
+                )}
                 {product.inactive ? <p className="mt-2 text-sm text-muted">Inactive</p> : null}
                 {product.editHref || product.manage ? (
                   <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">

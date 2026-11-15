@@ -39,9 +39,6 @@ export function SellerOrders({ orders }: { orders: SellerOrderRow[] }) {
     const matched = orders.filter((order) => matchesFilter(order, filter) && matchesQuery(order, query));
     return sortRows(matched, sort);
   }, [orders, filter, query, sort]);
-  const grouped = query.trim() === "" && filter === "all" && sort === "needs";
-  const needs = grouped ? visible.filter((order) => order.attention) : [];
-  const rest = grouped ? visible.filter((order) => !order.attention) : [];
   const visibleIds = visible.map((order) => order.id);
   const selectedCount = visibleIds.filter((id) => selected.has(id)).length;
   const allVisible = visibleIds.length > 0 && selectedCount === visibleIds.length;
@@ -113,25 +110,9 @@ export function SellerOrders({ orders }: { orders: SellerOrderRow[] }) {
           onAction={setAction}
         />
       ) : null}
-      {visible.length === 0 ? <p className="mt-8 text-sm text-muted">No orders match.</p> : null}
-      {grouped ? (
-        <>
-          {needs.length > 0 ? (
-            <section className="mt-6">
-              <h2 className="text-sm font-medium">Needs you</h2>
-              <OrderList orders={needs} className="mt-3" selected={selected} onToggle={toggleOrder} />
-            </section>
-          ) : null}
-          {rest.length > 0 ? (
-            <section className="mt-6">
-              {needs.length > 0 ? <h2 className="text-sm font-medium">All other orders</h2> : null}
-              <OrderList orders={rest} className={needs.length > 0 ? "mt-3" : "mt-6"} selected={selected} onToggle={toggleOrder} />
-            </section>
-          ) : null}
-        </>
-      ) : visible.length > 0 ? (
+      {visible.length === 0 ? <p className="mt-8 text-sm text-muted">No orders match.</p> : (
         <OrderList orders={visible} className="mt-6" selected={selected} onToggle={toggleOrder} />
-      ) : null}
+      )}
     </>
   );
 }
@@ -255,6 +236,9 @@ function matchesQuery(order: SellerOrderRow, query: string) {
 
 function sortRows(orders: SellerOrderRow[], sort: string) {
   const copy = [...orders];
+  if (sort === "needs") {
+    return copy.sort((left, right) => Number(Boolean(right.attention)) - Number(Boolean(left.attention)) || right.createdAt.localeCompare(left.createdAt));
+  }
   if (sort === "oldest") return copy.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   if (sort === "number") return copy.sort((left, right) => right.publicRef.localeCompare(left.publicRef));
   if (sort === "amount") return copy.sort((left, right) => right.amountCents - left.amountCents || right.createdAt.localeCompare(left.createdAt));

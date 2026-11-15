@@ -119,6 +119,35 @@ export async function createStripeConnectLink(input: { accountId: string; email:
   }
 }
 
+export async function createStripePayoutLink(accountId: string) {
+  const stripe = getStripe();
+  if (!stripe || !accountId) return null;
+  try {
+    const link = await stripe.accounts.createLoginLink(accountId);
+    if (link.url) return { url: link.url, message: "" };
+  } catch (error) {
+    console.error("Stripe payout login failed.", error instanceof Error ? error.message : "");
+  }
+  try {
+    const link = await stripe.v2.core.accountLinks.create({
+      account: accountId,
+      use_case: {
+        type: "account_update",
+        account_update: {
+          refresh_url: `${appUrl()}/dashboard/payments?stripe=refresh`,
+          return_url: `${appUrl()}/dashboard/payments?stripe=return`,
+        },
+      },
+    }, { apiVersion: CONNECT_API_VERSION });
+    if (!link.url) return { url: "", message: "Stripe did not open the payout page." };
+    return { url: link.url, message: "" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Stripe could not open the payout page.";
+    console.error("Stripe payout update failed.", message);
+    return { url: "", message: connectFailureMessage(message) };
+  }
+}
+
 export function publicStripeError(raw: string) {
   return raw
     .replace(/\brk_(?:live|test)_[A-Za-z0-9]+/g, "the Stripe key")

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 const focusClass = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest";
@@ -25,7 +26,7 @@ export function PaymentSettingsTabs({
           onClick={() => setTab("receiving")}
           className={`min-w-0 rounded-full px-3 py-2 text-center text-sm font-medium leading-5 ${focusClass} ${tab === "receiving" ? "bg-forest text-card" : "text-ink"}`}
         >
-          Setup payment for your customer
+          Get paid
         </button>
         <button
           type="button"
@@ -37,8 +38,17 @@ export function PaymentSettingsTabs({
           Pay Twigigi
         </button>
       </div>
-      <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
-        {tab === "receiving" ? "Choose how buyers pay you." : "Manage your listing fees and payment method."}
+      <p className="mt-3 flex max-w-2xl flex-wrap items-baseline gap-x-3 gap-y-1 text-sm leading-6 text-muted">
+        {tab === "receiving" ? (
+          <>
+            <span>Choose how buyers pay you.</span>
+            <Link href="/dashboard/help#bank" className={`${focusClass} underline decoration-1 underline-offset-4`}>
+              How you get paid →
+            </Link>
+          </>
+        ) : (
+          "Manage your listing fees and payment method."
+        )}
       </p>
       <div className="mt-4">{tab === "receiving" ? receiving : receipts}</div>
     </div>
