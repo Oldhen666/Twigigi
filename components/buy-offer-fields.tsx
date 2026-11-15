@@ -7,7 +7,7 @@ import type { Product, ProductOption, ProductVariant } from "@/lib/types";
 import { MAX_VALUES, OPTION_NAMES, normalizeVariants, variantLabel } from "@/lib/variants";
 import { inputClass, labelClass } from "@/components/ui";
 import { CA_PROVINCES, US_STATES, joinLocation, lookupCurrentPlace, lookupIpPlace, splitLocation } from "@/lib/places";
-import { parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile, paypalMeName, venmoProfileUrl, venmoUsernameFrom } from "@/lib/payments";
+import { isCashMethod, parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile, paypalMeName, venmoProfileUrl, venmoUsernameFrom } from "@/lib/payments";
 
 export type PaymentDefaults = {
   interac: string;
@@ -127,7 +127,16 @@ export function BuyOfferFields({
       const next = current.filter((id) => allowed.has(id));
       return next.length === current.length ? current : next;
     });
-  }, [payCountry]);
+  }, [payCountry, digital]);
+  useEffect(() => {
+    if (pickup || digital) return;
+    setMethods((current) => {
+      const next = current.filter((id) => !isCashMethod(id));
+      if (next.length === current.length) return current;
+      poke.current = true;
+      return next;
+    });
+  }, [pickup, digital]);
   useEffect(() => {
     if (!poke.current) return;
     poke.current = false;
@@ -183,6 +192,7 @@ export function BuyOfferFields({
   }, []);
 
   function toggleMethod(id: string) {
+    if (!pickup && isCashMethod(id)) return;
     const turningOn = !methods.includes(id);
     poke.current = true;
     if (id === "card") pokeCard.current = true;
@@ -485,6 +495,7 @@ export function BuyOfferFields({
           venmoError={errors?.venmoUsername}
           paypalError={digital ? errors?.paypalEmail : errors?.paypalMe}
           stripeReady={stripeReady}
+          pickup={pickup}
           onToggle={toggleMethod}
           onCardUrl={setCardUrl}
           onInteracEmail={setInteracEmail}
@@ -522,6 +533,7 @@ function PaymentChoices({
   venmoError,
   paypalError,
   stripeReady = false,
+  pickup = true,
   onToggle,
   onCardUrl,
   onInteracEmail,
@@ -552,6 +564,7 @@ function PaymentChoices({
   venmoError?: string;
   paypalError?: string;
   stripeReady?: boolean;
+  pickup?: boolean;
   onToggle: (id: string) => void;
   onCardUrl: (value: string) => void;
   onInteracEmail: (value: string) => void;
@@ -607,10 +620,18 @@ function PaymentChoices({
   return (
     <div className="mt-4 space-y-3">
       {choices.length === 0 ? <p className="text-sm text-muted">Choose a country above to see payment methods.</p> : null}
-      {choices.map((method) => (
+      {choices.map((method) => {
+        const cashLocked = !pickup && isCashMethod(method.id);
+        return (
         <div key={method.id}>
-          <label className="flex items-center gap-3 text-base">
-            <input type="checkbox" checked={methods.includes(method.id)} onChange={() => onToggle(method.id)} className="h-5 w-5 accent-forest" />
+          <label className={`flex items-center gap-3 text-base ${cashLocked ? "cursor-not-allowed text-muted" : ""}`}>
+            <input
+              type="checkbox"
+              checked={!cashLocked && methods.includes(method.id)}
+              disabled={cashLocked}
+              onChange={() => onToggle(method.id)}
+              className="h-5 w-5 accent-forest disabled:cursor-not-allowed disabled:opacity-40"
+            />
             {method.label}
           </label>
           {method.id === "interac" && interacOn ? (
@@ -704,7 +725,8 @@ function PaymentChoices({
             </div>
           ) : null}
         </div>
-      ))}
+        );
+      })}
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       <input ref={methodsRef} type="hidden" name="paymentMethods" value={JSON.stringify(methods)} />
       {interacOn ? null : (

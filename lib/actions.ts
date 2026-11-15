@@ -595,6 +595,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   }
   const payCountry = splitLocation(cta === "file" ? "" : location).country;
   let paymentMethods = cta === "file" ? [] : priced ? parsePaymentMethods(text(formData, "paymentMethods"), payCountry) : [];
+  if (cta === "buy" && !pickupEnabled) paymentMethods = paymentMethods.filter((id) => !isCashMethod(id));
   let cardPaymentUrl = text(formData, "cardPaymentUrl").trim().slice(0, 500);
   const interacEmail = text(formData, "interacEmail").trim().slice(0, 80);
   const interacQuestion = text(formData, "interacQuestion").trim().slice(0, 120);

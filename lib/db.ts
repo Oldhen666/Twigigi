@@ -2908,14 +2908,14 @@ export function toggleFavorite(userId: string, productId: string) {
 
 export function listFavorites(userId: string) {
   return many(
-    `SELECT p.*, u.username, u.public_id, u.display_name
+    `SELECT p.*, u.username, u.public_id, u.display_name, f.created_at AS saved_at
      FROM favorites f
      JOIN products p ON p.id = f.product_id
      JOIN users u ON u.id = p.user_id
      WHERE f.user_id = ?
      ORDER BY f.created_at DESC`,
     userId,
-  ).map(mapPublic);
+  ).map((row) => ({ ...mapPublic(row), savedAt: str(row.saved_at) }));
 }
 
 export function isFollowing(followerId: string, sellerId: string) {
@@ -2938,7 +2938,8 @@ export function toggleFollow(followerId: string, sellerId: string) {
 
 export function listFollowing(followerId: string) {
   return many(
-    `SELECT u.username, u.public_id, u.display_name
+    `SELECT u.username, u.public_id, u.display_name, f.created_at AS followed_at,
+            (SELECT COUNT(*) FROM products p WHERE p.user_id = u.id AND p.status = 'published') AS listings
      FROM follows f
      JOIN users u ON u.id = f.seller_id
      WHERE f.follower_id = ?
@@ -2948,6 +2949,8 @@ export function listFollowing(followerId: string) {
     username: str(row.username),
     publicId: str(row.public_id),
     displayName: str(row.display_name),
+    followedAt: str(row.followed_at),
+    listings: num(row.listings),
   }));
 }
 

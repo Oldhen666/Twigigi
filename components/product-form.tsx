@@ -320,6 +320,9 @@ export function ProductForm({
       if (cta === "file") return null;
       return cta === "buy" ? placeProblem(value) : value.length >= 2 ? null : "Add a public location, such as a city.";
     }
+    if (name === "contentRights") {
+      return rightsConfirmed(form) ? null : "Confirm that you own or have permission to use the content in this listing.";
+    }
     if (name === "paymentMethods") {
       if (cta === "file") return null;
       if (cta !== "buy") return null;
@@ -522,12 +525,13 @@ export function ProductForm({
       return;
     }
     if (intent === "publish") {
-      const box = formRef.current?.querySelector<HTMLInputElement>('input[name="contentRights"]');
-      if (!box?.checked) {
+      const form = formRef.current;
+      if (!form || !rightsConfirmed(form)) {
         event.preventDefault();
         setLive((current) => ({ ...current, contentRights: "Confirm that you own or have permission to use the content in this listing." }));
         return;
       }
+      setLive((current) => (current.contentRights ? { ...current, contentRights: "" } : current));
     }
     if (needsAccount && !accountOpen) {
       event.preventDefault();
@@ -941,24 +945,26 @@ export function ProductForm({
             </li>
           ))}
         </ul>
-        <button
-          type="button"
-          aria-label="Add photos"
-          onClick={() => setPhotoOpen(true)}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(event) => {
-            event.preventDefault();
-            setDragging(false);
-            addImageFiles(Array.from(event.dataTransfer.files));
-          }}
-          className={`grid h-16 w-full place-items-center rounded-2xl border border-dashed bg-white text-4xl leading-none text-ink ${dragging ? "border-forest bg-moss" : "border-line"}`}
-        >
-          +
-        </button>
+        {photos.length < 6 ? (
+          <button
+            type="button"
+            aria-label="Add photos"
+            onClick={() => setPhotoOpen(true)}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              addImageFiles(Array.from(event.dataTransfer.files));
+            }}
+            className={`grid h-16 w-full place-items-center rounded-2xl border border-dashed bg-white text-4xl leading-none text-ink ${dragging ? "border-forest bg-moss" : "border-line"}`}
+          >
+            +
+          </button>
+        ) : null}
         <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={onFiles} className="sr-only" />
         <input ref={cameraInput} type="file" accept="image/*" capture="environment" onChange={onFiles} className="sr-only" />
         <p className="text-sm text-muted">
@@ -982,6 +988,7 @@ export function ProductForm({
           <Section title="Order email">
             <Field label="Email for new orders" error={visibleErrors.contactEmail}>
               <input name="contactEmail" type="email" defaultValue={emailValue(draft, product, defaultEmail)} placeholder="name@email.com (email)" className={inputClass} />
+              <span className="mt-1.5 block text-sm font-normal text-muted">We’ll notify you at this email address whenever a customer places an order.</span>
             </Field>
           </Section>
         </div>
@@ -1109,6 +1116,12 @@ export function ProductForm({
 }
 
 const ACCOUNT_FIELDS = new Set(["displayName", "username", "email", "password"]);
+
+function rightsConfirmed(form: HTMLFormElement) {
+  const field = form.elements.namedItem("contentRights");
+  const boxes = field instanceof RadioNodeList ? [...field] : field instanceof HTMLInputElement ? [field] : [];
+  return boxes.some((item) => item instanceof HTMLInputElement && item.checked);
+}
 
 function restoreDraft(form: HTMLFormElement, draft: NewPageDraft) {
   form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input[name], textarea[name], select[name]").forEach((field) => {

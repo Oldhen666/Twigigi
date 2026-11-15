@@ -6,9 +6,9 @@ import { buttonClass } from "@/components/ui";
 import type { Cta } from "@/lib/types";
 
 const OPTIONS = [
-  { id: "buy", title: "Buy now", detail: "They pay you directly." },
-  { id: "file", title: "Digital file", detail: "They pay your PayPal or Stripe. Twigigi emails the file after the payment is confirmed." },
-  { id: "quote", title: "Get a quote", detail: "They send their details. You reply with a price." },
+  { id: "buy", title: "Buy now", detail: "Sell physical products with local pickup or shipping. Make buying quick and easy." },
+  { id: "file", title: "Digital file", detail: "Sell digital products and share download links online." },
+  { id: "quote", title: "Get a quote", detail: "Collect customer details and quote requests so you can respond with a price." },
 ] as const;
 
 export function RespondChoice({ signedIn }: { signedIn: boolean }) {
