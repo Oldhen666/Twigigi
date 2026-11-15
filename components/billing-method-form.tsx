@@ -14,37 +14,33 @@ export function BillingMethodForm({
   notice,
   autoRenew,
   autoPay,
-  cardLabel,
-  chargesOn,
+  cardBrand,
+  cardLast4,
 }: {
   saved: "" | "card" | "paypal" | "stripe";
   ready: boolean;
   notice: string;
   autoRenew: boolean;
   autoPay: boolean;
-  cardLabel: string;
-  chargesOn: boolean;
+  cardBrand: string;
+  cardLast4: string;
 }) {
   const [method, setMethod] = useState<"card" | "paypal">(saved === "paypal" ? "paypal" : "card");
-  const cardSaved = Boolean(cardLabel) || (ready && (saved === "card" || saved === "stripe"));
+  const cardSaved = Boolean(cardLast4) || (ready && (saved === "card" || saved === "stripe"));
   const paypalSelected = method === "paypal" || saved === "paypal";
-  const switchOn = autoPay && autoRenew && chargesOn && saved !== "paypal";
+  const switchOn = autoPay && autoRenew && saved !== "paypal";
   const blocked = paypalSelected
     ? "Not available for PayPal."
-    : !chargesOn
-      ? "Automatic charging is not available yet."
-      : !cardSaved || !autoRenew
-        ? "Save a card before this can be turned on."
-        : "";
+    : !cardSaved || !autoRenew
+      ? "Save a card before this can be turned on."
+      : "";
   const canToggle = switchOn || !blocked;
   const switchLabel = switchOn ? "On" : canToggle ? "Off" : "Unavailable";
 
   return (
     <section className="min-w-0 overflow-x-clip rounded-2xl border border-line bg-card px-4 py-4 shadow-none sm:px-6 sm:py-6">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="font-serif text-2xl">Payment method</h2>
-        <span className="max-w-[60%] truncate rounded-full bg-paper-deep px-2.5 py-0.5 text-[13px] font-normal text-ink">{cardSaved ? cardLabel || "Card saved" : "Not added"}</span>
-      </div>
+      <h2 className="font-serif text-2xl">Payment method</h2>
+      {cardSaved ? <SavedCard brand={cardBrand} last4={cardLast4} /> : <p className="mt-3 text-sm text-muted">No card saved</p>}
       {notice ? <p className="mt-3 break-words text-[13px] leading-5 text-clay" role="status">{notice}</p> : null}
       <form action={beginBillingSetup} className="mt-4 grid min-w-0 gap-3">
         <fieldset className="min-w-0">
@@ -66,12 +62,11 @@ export function BillingMethodForm({
             />
           </div>
         </fieldset>
-        {method === "card" ? <RenewalConsent sentence="I authorize Twigigi to charge this card for listing renewals and unpaid quote fees in the same currency." /> : null}
+        {method === "card" && !cardSaved ? <RenewalConsent sentence="I authorize Twigigi to charge this card for listing renewals and unpaid quote fees in the same currency." /> : null}
         <SubmitButton
-          label={method === "paypal" ? "Continue with PayPal" : cardSaved ? "Change" : "Add card"}
+          label={method === "paypal" ? "Continue with PayPal" : cardSaved ? "Change" : "Add card for next payment"}
           pendingLabel={method === "paypal" ? "Opening PayPal…" : "Opening Stripe…"}
         />
-        {method === "card" ? <p className="text-[13px] leading-5 text-muted">Adding a card does not charge you now.</p> : null}
       </form>
       <form action={setAutomaticPayment} className="mt-4 border-t border-line pt-4">
         <div className="flex items-center justify-between gap-3">
@@ -96,6 +91,18 @@ export function BillingMethodForm({
         {!switchOn && !blocked ? <div className="mt-3"><RenewalConsent sentence="I authorize Twigigi to charge this card for listing renewals and unpaid quote fees in the same currency." /></div> : null}
       </form>
     </section>
+  );
+}
+
+function SavedCard({ brand, last4 }: { brand: string; last4: string }) {
+  const name = brand ? brand.charAt(0).toUpperCase() + brand.slice(1).toLowerCase() : "Card";
+  return (
+    <div className="mt-4 rounded-2xl border border-line bg-paper px-4 py-3">
+      <p className="text-[11px] font-medium tracking-[0.14em] text-muted uppercase">Saved card</p>
+      <p className="mt-2 text-[15px] font-medium">{name}</p>
+      <p className="font-sans text-lg tracking-[0.18em] tabular-nums">{last4 ? `···· ${last4}` : "Card saved"}</p>
+      <p className="mt-1 text-sm text-muted">For Twigigi fees</p>
+    </div>
   );
 }
 

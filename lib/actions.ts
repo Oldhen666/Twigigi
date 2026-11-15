@@ -156,7 +156,6 @@ import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { ensureVisitor } from "@/lib/visitor";
 import { billingCurrency, isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid, quoteWindow, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { BILLING_CONSENT_VERSION, cardCanRenew } from "@/lib/billing-auth";
-import { autoChargeEnabled } from "@/lib/renewal-engine";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { cancelFeeIntent, createBillingSetupSession, createDigitalStripeCheckout, createStripeConnectLink, createStripePayoutLink, getStripe, publicStripeError, retrieveFeeIntent } from "@/lib/stripe";
 import { DIGITAL_FILE_CATEGORY, categoryProblem, resolveCategory } from "@/lib/categories";
@@ -1425,10 +1424,17 @@ export async function beginBillingSetup(formData: FormData) {
       const url = await beginPaypalBillingAgreement();
       redirect(url);
     }
-    if (text(formData, "consent") !== "yes") {
+    const cardSaved = cardCanRenew({
+      method: user.billingMethod,
+      ready: user.billingReady,
+      authStatus: user.billingAuthStatus,
+      paymentMethodId: user.billingPmId,
+      consentVersion: user.billingConsentVersion,
+    });
+    if (!cardSaved && text(formData, "consent") !== "yes") {
       redirect("/dashboard/payments?tab=receipts&billing=error&reason=Check%20the%20automatic%20renewal%20agreement%20before%20saving%20a%20card.");
     }
-    if (!recordBillingConsent(user.id, BILLING_CONSENT_VERSION)) {
+    if (!cardSaved && !recordBillingConsent(user.id, BILLING_CONSENT_VERSION)) {
       redirect("/dashboard/payments?tab=receipts&billing=error");
     }
     const session = await createBillingSetupSession({ customerId: user.stripeCustomerId, email: user.email, userId: user.id, consentVersion: BILLING_CONSENT_VERSION });
@@ -1456,9 +1462,6 @@ export async function setAutomaticPayment(formData: FormData) {
   if (text(formData, "enabled") !== "1") {
     setBillingAutoPay(user.id, false);
     redirect("/dashboard/payments?tab=receipts&billing=manual");
-  }
-  if (!autoChargeEnabled()) {
-    redirect("/dashboard/payments?tab=receipts&billing=error&reason=Automatic%20charging%20is%20not%20available%20yet.");
   }
   if (user.billingMethod === "paypal") {
     redirect("/dashboard/payments?tab=receipts&billing=error&reason=PayPal%20is%20manual%20payments%20only.");

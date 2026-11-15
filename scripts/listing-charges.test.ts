@@ -8,6 +8,7 @@ function listing(overrides: Partial<ListingChargeSource> = {}): ListingChargeSou
   return {
     id: "prd_a",
     title: "Planter",
+    cta: "buy",
     currency: "CAD",
     feeExempt: false,
     paidUntil: "",
@@ -32,68 +33,58 @@ function bill(overrides: Partial<ListingChargeBill> = {}): ListingChargeBill {
   };
 }
 
-test("a Twig with no created fee shows 0 instead of the catalog price", () => {
+test("a Twig with no created fee and no period shows no next fee", () => {
   const [currency] = listingChargeView({ listings: [listing()], bills: [] });
+  const row = currency.rows[0];
   assert.equal(currency.balanceCents, 0);
-  assert.equal(currency.next?.key, "unscheduled");
-  assert.equal(currency.next?.rows[0].listingCents, 0);
-  assert.equal(currency.next?.rows[0].quoteCents, 0);
-  assert.equal(currency.next?.rows[0].totalCents, 0);
-  assert.equal(currency.next?.rows[0].status, "Not billed");
+  assert.equal(row.nextFeeCents, 0);
+  assert.equal(row.quoteCents, 0);
+  assert.equal(row.expiry, "");
+  assert.equal(row.status, "Not scheduled");
 });
 
-test("a waived listing is labeled Waived and adds nothing to the total", () => {
+test("a waived listing with no open bill is labeled Waived", () => {
   const [currency] = listingChargeView({ listings: [listing({ feeExempt: true })], bills: [] });
-  const row = currency.next?.rows[0];
-  assert.equal(row?.listingWaived, true);
-  assert.equal(row?.listingCents, 0);
-  assert.equal(row?.totalCents, 0);
-  assert.equal(row?.status, "Waived");
+  const row = currency.rows[0];
+  assert.equal(row.nextFeeWaived, true);
+  assert.equal(row.nextFeeCents, 0);
+  assert.equal(row.status, "Waived");
 });
 
-test("one batch adds unpaid listing and quote fees and leaves paid fees out", () => {
-  const quotes = [1, 2, 3].map((index) => bill({
-    productId: "prd_a",
-    kind: "quote",
-    amountCents: 25,
-    status: "pending",
-    dueAt: "",
-  }));
+test("the next fee is the earliest unpaid listing bill, and quotes stay on that Twig", () => {
+  const quotes = [1, 2, 3].map(() => bill({ kind: "quote", amountCents: 25, status: "pending", dueAt: "" }));
   const bills = [
     bill({ dueAt: "2026-12-15", periodKey: "2026-12-15" }),
     bill({ amountCents: 149, status: "paid", dueAt: "2026-11-15", periodKey: "2026-11-15" }),
     ...quotes,
   ];
-  const [currency] = listingChargeView({ listings: [listing()], bills });
-  const row = currency.next?.rows[0];
-  assert.equal(currency.next?.key, "2026-12-15");
-  assert.equal(row?.listingCents, 149);
-  assert.equal(row?.quoteCents, 75);
-  assert.equal(row?.quoteCount, 3);
-  assert.equal(row?.totalCents, 224);
-  assert.equal(row?.status, "Unpaid");
+  const [currency] = listingChargeView({ listings: [listing({ cta: "quote" })], bills });
+  const row = currency.rows[0];
+  assert.equal(row.nextFeeCents, 149);
+  assert.equal(row.expiry, "Dec 15, 2026");
+  assert.equal(row.quoteCents, 75);
+  assert.equal(row.quoteCount, 3);
+  assert.equal(row.status, "Unpaid");
   assert.equal(currency.balanceCents, 224);
   assert.equal(currency.balanceCents, outstandingCents(bills, "CAD"));
 });
 
-test("different due dates stay in separate batches", () => {
+test("only the earliest unpaid listing fee is the next fee", () => {
   const bills = [
     bill({ dueAt: billingInstant("2026-12-28"), periodKey: "2026-12-28" }),
     bill({ dueAt: billingInstant("2026-12-15"), periodKey: "2026-12-15" }),
   ];
   const [currency] = listingChargeView({ listings: [listing()], bills });
-  assert.equal(currency.next?.key, "2026-12-15");
-  assert.equal(currency.next?.totalCents, 149);
-  assert.equal(currency.others[0]?.key, "2026-12-28");
-  assert.equal(currency.others[0]?.totalCents, 149);
+  assert.equal(currency.rows[0].nextFeeCents, 149);
+  assert.equal(currency.rows[0].expiry, "Dec 15, 2026");
   assert.equal(currency.balanceCents, 298);
 });
 
-test("quote fees follow the earliest unpaid listing batch and currencies stay separate", () => {
+test("quote fees stay with their Twig and currencies stay separate", () => {
   const listings = [
-    listing({ id: "prd_a", title: "Cedar", currency: "CAD" }),
-    listing({ id: "prd_b", title: "Bench", currency: "CAD" }),
-    listing({ id: "prd_c", title: "File", currency: "USD" }),
+    listing({ id: "prd_a", title: "Cedar", cta: "buy", currency: "CAD" }),
+    listing({ id: "prd_b", title: "Bench", cta: "quote", currency: "CAD" }),
+    listing({ id: "prd_c", title: "File", cta: "file", currency: "USD" }),
   ];
   const bills = [
     bill({ productId: "prd_a", dueAt: "2026-12-15", periodKey: "2026-12-15" }),
@@ -104,41 +95,39 @@ test("quote fees follow the earliest unpaid listing batch and currencies stay se
   const view = listingChargeView({ listings, bills });
   const cad = view.find((row) => row.currency === "CAD");
   const usd = view.find((row) => row.currency === "USD");
-  const nextQuotes = cad?.next?.rows.find((row) => row.productId === "prd_b");
-  const later = cad?.others.find((batch) => batch.key === "2026-12-28")?.rows.find((row) => row.productId === "prd_b");
-  assert.equal(nextQuotes?.quoteCents, 25);
-  assert.equal(nextQuotes?.quoteCount, 1);
-  assert.equal(nextQuotes?.listingCents, 0);
-  assert.equal(nextQuotes?.totalCents, 25);
-  assert.equal(later?.listingCents, 149);
-  assert.equal(later?.quoteCents, 0);
+  const bench = cad?.rows.find((row) => row.productId === "prd_b");
+  assert.equal(bench?.nextFeeCents, 149);
+  assert.equal(bench?.quoteCents, 25);
+  assert.equal(bench?.quoteCount, 1);
+  assert.equal(cad?.rows.find((row) => row.productId === "prd_a")?.quoteCount, 0);
   assert.equal(usd?.balanceCents, 149);
   assert.equal(cad?.balanceCents, 149 + 149 + 25);
 });
 
-test("a future billing date with no bill stays at 0 while an unscheduled quote remains in the balance", () => {
+test("a scheduled period shows the upcoming listing fee before the bill exists", () => {
   const listings = [listing({
+    cta: "quote",
     billingStatus: "active",
     anchorDay: 15,
     paidUntil: billingInstant("2026-12-15"),
   })];
   const bills = [bill({ kind: "quote", amountCents: 25, status: "pending" })];
   const [currency] = listingChargeView({ listings, bills });
-  assert.equal(currency.next?.key, "2026-12-15");
-  assert.equal(currency.next?.totalCents, 0);
-  assert.equal(currency.next?.rows[0].listingCents, 0);
-  assert.equal(currency.others[0]?.key, "unscheduled");
-  assert.equal(currency.others[0]?.totalCents, 25);
+  const row = currency.rows[0];
+  assert.equal(row.nextFeeCents, 149);
+  assert.equal(row.expiry, "Dec 15, 2026");
+  assert.equal(row.quoteCents, 25);
+  assert.equal(row.quoteCount, 1);
   assert.equal(currency.balanceCents, 25);
 });
 
-test("a processing fee stays due and a paid fee does not", () => {
+test("a processing fee is the next fee and a paid fee is not", () => {
   const bills = [
     bill({ status: "processing", dueAt: "2026-12-15", periodKey: "2026-12-15" }),
     bill({ status: "paid", amountCents: 149, dueAt: "2026-11-15" }),
   ];
   const [currency] = listingChargeView({ listings: [listing()], bills });
-  assert.equal(currency.next?.rows[0].status, "Processing");
-  assert.equal(currency.next?.totalCents, 149);
+  assert.equal(currency.rows[0].status, "Processing");
+  assert.equal(currency.rows[0].nextFeeCents, 149);
   assert.equal(currency.balanceCents, 149);
 });

@@ -10,6 +10,7 @@ function parentFor(path: string) {
   if (clean === "/admin" || clean.startsWith("/admin/")) return "/dashboard";
   if (/^\/dashboard\/orders\/.+/.test(clean)) return "/dashboard/orders";
   if (/^\/dashboard\/quotes\/.+/.test(clean)) return "/dashboard/quotes";
+  if (/^\/dashboard\/payments\/.+/.test(clean)) return "/dashboard/payments?tab=receipts";
   if (clean.startsWith("/dashboard/")) return "/dashboard";
   if (clean === "/forgot" || clean === "/reset") return "/login";
   if (

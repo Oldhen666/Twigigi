@@ -15,7 +15,6 @@ import { listAttentionCollections, listBillingListings, listSellerBills, markCar
 import { collectSellerFees } from "@/lib/seller-fees";
 import { outstandingCents } from "@/lib/fee-collection";
 import { billingYear } from "@/lib/format";
-import { autoChargeEnabled } from "@/lib/renewal-engine";
 import { billingSetupCustomer, refreshStripeConnect } from "@/lib/stripe";
 
 function chargeName(iso: string) {
@@ -50,6 +49,7 @@ export default async function Page({
   let cardLast4 = user.billingCardLast4;
   let consentVersion = user.billingConsentVersion;
   let paymentMethodId = user.billingPmId;
+  let autoPay = user.billingAutoPay;
   const sessionId = typeof params.session_id === "string" ? params.session_id : "";
   if (params.billing === "return" && sessionId) {
     const verdict = await billingSetupCustomer(sessionId, user.id);
@@ -68,6 +68,7 @@ export default async function Page({
       cardLast4 = verdict.last4;
       consentVersion = BILLING_CONSENT_VERSION;
       paymentMethodId = verdict.paymentMethodId;
+      autoPay = true;
     } else if (verdict.status === "action_required") {
       markCardActionRequired(user.id, verdict.customerId);
       billingReady = false;
@@ -77,8 +78,6 @@ export default async function Page({
     }
   }
   const autoRenew = cardCanRenew({ method: billingMethod, ready: billingReady, authStatus, paymentMethodId, consentVersion });
-  const cardLabel = cardBrand && cardLast4 ? `${cardBrand} ···· ${cardLast4}` : "";
-  const chargesOn = autoChargeEnabled();
   const settlement = await collectSellerFees({ ...user, billingReady, billingMethod, stripeCustomerId });
   const bills = listSellerBills(user.id);
   const billingListings = listBillingListings(user.id);
@@ -87,6 +86,7 @@ export default async function Page({
     listings: billingListings.map((product) => ({
       id: product.id,
       title: product.title,
+      cta: product.cta,
       currency: product.billingCurrency || listingFeeCurrency(product.cta, product.location),
       feeExempt: product.feeExempt,
       paidUntil: product.paidUntil,
@@ -241,7 +241,7 @@ export default async function Page({
                 <button className={`${buttonClass} w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest sm:w-fit`}>Pay {platformFee(settlement.open[0].dueCents, settlement.open[0].currency)} now</button>
               </form>
             ) : null}
-            <BillingMethodForm saved={billingMethod} ready={billingReady} notice={billingNotice} autoRenew={autoRenew} autoPay={user.billingAutoPay} cardLabel={cardLabel} chargesOn={chargesOn} />
+            <BillingMethodForm saved={billingMethod} ready={billingReady} notice={billingNotice} autoRenew={autoRenew} autoPay={autoPay} cardBrand={cardBrand} cardLast4={cardLast4} />
 
             <details id="fee-details" className="group rounded-2xl border border-line bg-card px-4 py-4 sm:px-6 sm:py-6">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest [&::-webkit-details-marker]:hidden">

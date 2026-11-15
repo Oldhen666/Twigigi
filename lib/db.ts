@@ -1968,7 +1968,8 @@ export function saveCardAuthorization(userId: string, input: { customerId: strin
   db.prepare(
     `UPDATE users
      SET billing_method = 'card', billing_ready = 1, stripe_customer_id = ?, billing_pm_id = ?,
-         billing_card_brand = ?, billing_card_last4 = ?, billing_auth_status = 'authorized'
+         billing_card_brand = ?, billing_card_last4 = ?, billing_auth_status = 'authorized',
+         billing_auto_pay = 1
      WHERE id = ?`,
   ).run(input.customerId, input.paymentMethodId, brand, last4, userId);
   return true;

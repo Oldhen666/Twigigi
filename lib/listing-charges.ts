@@ -1,3 +1,4 @@
+import { listingFeeCents } from "./billing";
 import { businessDate, dateKey, formatBillingDate } from "./billing-calendar";
 
 const UNPAID = new Set(["pending", "accrued", "due", "recorded", "processing"]);
@@ -16,6 +17,7 @@ export type ListingChargeBill = {
 export type ListingChargeSource = {
   id: string;
   title: string;
+  cta: string;
   currency: string;
   feeExempt: boolean;
   paidUntil: string;
@@ -27,28 +29,20 @@ export type ListingChargeSource = {
 export type ListingChargeRow = {
   productId: string;
   title: string;
+  cta: string;
   currency: string;
-  listingCents: number;
-  listingWaived: boolean;
+  nextFeeCents: number;
+  nextFeeWaived: boolean;
+  expiry: string;
   quoteCents: number;
   quoteCount: number;
-  totalCents: number;
-  billingDate: string;
-  status: "Unpaid" | "Processing" | "Waived" | "Not billed";
-};
-
-export type ListingChargeBatch = {
-  key: string;
-  billingDate: string;
-  rows: ListingChargeRow[];
-  totalCents: number;
+  status: "Unpaid" | "Processing" | "Waived" | "Not scheduled";
 };
 
 export type ListingChargeCurrency = {
   currency: string;
   balanceCents: number;
-  next: ListingChargeBatch | null;
-  others: ListingChargeBatch[];
+  rows: ListingChargeRow[];
 };
 
 function batchKeyFrom(value: string) {
@@ -68,10 +62,8 @@ function scheduled(listing: ListingChargeSource) {
   return batchKeyFrom(listing.paidUntil);
 }
 
-function rowStatus(charges: ListingChargeBill[], listingCents: number, waived: boolean): ListingChargeRow["status"] {
-  if (charges.length === 0 || (listingCents === 0 && charges.every((bill) => bill.kind !== "quote"))) return waived ? "Waived" : "Not billed";
-  if (charges.every((bill) => bill.status === "processing")) return "Processing";
-  return "Unpaid";
+function dueKey(bill: ListingChargeBill) {
+  return batchKeyFrom(bill.dueAt) || batchKeyFrom(bill.periodKey);
 }
 
 export function listingChargeView(input: { listings: ListingChargeSource[]; bills: ListingChargeBill[] }): ListingChargeCurrency[] {
@@ -84,82 +76,55 @@ export function listingChargeView(input: { listings: ListingChargeSource[]; bill
 function buildCurrency(currency: string, listings: ListingChargeSource[], bills: ListingChargeBill[]): ListingChargeCurrency {
   const ownListings = listings.filter((listing) => listing.currency === currency);
   const ownBills = bills.filter((bill) => bill.currency === currency);
-  const balanceCents = ownBills.filter(unpaid).reduce((sum, bill) => sum + bill.amountCents, 0);
-  const listingBills = ownBills.filter((bill) => bill.kind === "listing" && unpaid(bill));
-  const quoteBills = ownBills.filter((bill) => bill.kind === "quote" && unpaid(bill));
-  const payableDates = listingBills
-    .map((bill) => batchKeyFrom(bill.dueAt) || batchKeyFrom(bill.periodKey))
-    .filter(Boolean)
-    .sort();
-  const quoteBatch = payableDates[0] || "unscheduled";
-  const drafts = new Map<string, Map<string, { listing: ListingChargeBill[]; quotes: ListingChargeBill[] }>>();
-
-  const ensure = (batch: string, productId: string) => {
-    const rows = drafts.get(batch) || new Map<string, { listing: ListingChargeBill[]; quotes: ListingChargeBill[] }>();
-    const current = rows.get(productId) || { listing: [], quotes: [] };
-    rows.set(productId, current);
-    drafts.set(batch, rows);
-    return current;
-  };
-
-  for (const bill of listingBills) {
-    ensure(batchKeyFrom(bill.dueAt) || batchKeyFrom(bill.periodKey) || "unscheduled", bill.productId).listing.push(bill);
-  }
-  for (const bill of quoteBills) ensure(quoteBatch, bill.productId).quotes.push(bill);
-  for (const listing of ownListings) {
-    const date = scheduled(listing);
-    if (date) ensure(date, listing.id);
-  }
-  for (const listing of ownListings) {
-    const present = [...drafts.values()].some((rows) => rows.has(listing.id));
-    if (!present) ensure("unscheduled", listing.id);
-  }
-
-  const batches = [...drafts.entries()]
-    .map(([key, rows]) => {
-      const built = [...rows.entries()]
-        .map(([productId, draft]) => toRow(currency, key, productId, draft, ownListings, ownBills))
-        .sort((left, right) => left.title.localeCompare(right.title));
-      return {
-        key,
-        billingDate: key === "unscheduled" ? "" : formatBillingDate(key),
-        rows: built,
-        totalCents: built.reduce((sum, row) => sum + row.totalCents, 0),
-      };
-    })
-    .filter((batch) => batch.rows.length > 0)
-    .sort((left, right) => (left.key === "unscheduled" ? 1 : right.key === "unscheduled" ? -1 : left.key.localeCompare(right.key)));
-  const next = batches.find((batch) => batch.key !== "unscheduled") || batches[0] || null;
+  const ids = new Set(ownListings.map((listing) => listing.id));
+  for (const bill of ownBills) ids.add(bill.productId);
+  const rows = [...ids]
+    .map((id) => toRow(currency, id, ownListings, ownBills))
+    .sort((left, right) => left.title.localeCompare(right.title));
   return {
     currency,
-    balanceCents,
-    next,
-    others: next ? batches.filter((batch) => batch !== next) : [],
+    balanceCents: ownBills.filter(unpaid).reduce((sum, bill) => sum + bill.amountCents, 0),
+    rows,
   };
 }
 
-function toRow(
-  currency: string,
-  batch: string,
-  productId: string,
-  draft: { listing: ListingChargeBill[]; quotes: ListingChargeBill[] },
-  listings: ListingChargeSource[],
-  bills: ListingChargeBill[],
-): ListingChargeRow {
+function toRow(currency: string, productId: string, listings: ListingChargeSource[], bills: ListingChargeBill[]): ListingChargeRow {
   const listing = listings.find((item) => item.id === productId);
-  const listingCents = draft.listing.reduce((sum, bill) => sum + bill.amountCents, 0);
-  const quoteCents = draft.quotes.reduce((sum, bill) => sum + bill.amountCents, 0);
-  const waived = Boolean(listing?.feeExempt) && listingCents === 0;
+  const title = listing?.title || bills.find((bill) => bill.productId === productId)?.title || "Removed Twig";
+  const cta = listing?.cta || "";
+  const listingBills = bills
+    .filter((bill) => bill.productId === productId && bill.kind === "listing" && unpaid(bill))
+    .sort((left, right) => dueKey(left).localeCompare(dueKey(right)));
+  const quotes = bills.filter((bill) => bill.productId === productId && bill.kind === "quote" && unpaid(bill));
+  const nextBill = listingBills[0];
+  const upcoming = listing ? scheduled(listing) : "";
+  const waived = Boolean(listing?.feeExempt) && !nextBill;
+  const nextFeeCents = nextBill
+    ? nextBill.amountCents
+    : waived || !listing
+      ? 0
+      : upcoming
+        ? listingFeeCents(listing.cta, false)
+        : 0;
+  const expiryKey = nextBill ? dueKey(nextBill) : upcoming;
+  const processing = Boolean(nextBill && listingBills.filter((bill) => dueKey(bill) === dueKey(nextBill)).every((bill) => bill.status === "processing"));
+  const status: ListingChargeRow["status"] = waived
+    ? "Waived"
+    : processing
+      ? "Processing"
+      : nextFeeCents > 0
+        ? "Unpaid"
+        : "Not scheduled";
   return {
     productId,
-    title: listing?.title || bills.find((bill) => bill.productId === productId)?.title || "Removed Twig",
+    title,
+    cta,
     currency,
-    listingCents,
-    listingWaived: waived,
-    quoteCents,
-    quoteCount: draft.quotes.length,
-    totalCents: listingCents + quoteCents,
-    billingDate: batch === "unscheduled" ? "" : formatBillingDate(batch),
-    status: rowStatus([...draft.listing, ...draft.quotes], listingCents, waived),
+    nextFeeCents,
+    nextFeeWaived: waived,
+    expiry: expiryKey ? formatBillingDate(expiryKey) : "",
+    quoteCents: quotes.reduce((sum, bill) => sum + bill.amountCents, 0),
+    quoteCount: quotes.length,
+    status,
   };
 }
