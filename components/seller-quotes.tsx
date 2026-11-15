@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ghostClass, inputClass, labelClass } from "@/components/ui";
 
 export type SellerQuoteRow = {
@@ -34,6 +34,7 @@ type Sort = (typeof SORTS)[number]["value"];
 export function SellerQuotes({ quotes }: { quotes: SellerQuoteRow[] }) {
   const [productId, setProductId] = useState("");
   const [sort, setSort] = useState<Sort>("newest");
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const products = useMemo(() => {
     const seen = new Map<string, string>();
     for (const quote of quotes) seen.set(quote.productId, quote.productTitle);
@@ -49,6 +50,18 @@ export function SellerQuotes({ quotes }: { quotes: SellerQuoteRow[] }) {
     });
     return rows;
   }, [quotes, productId, sort]);
+  const shownIds = shown.map((quote) => quote.id);
+  const selectedCount = shownIds.filter((id) => selected.has(id)).length;
+  const allVisible = shownIds.length > 0 && selectedCount === shownIds.length;
+
+  function toggleQuote(id: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <>
@@ -70,26 +83,74 @@ export function SellerQuotes({ quotes }: { quotes: SellerQuoteRow[] }) {
             ))}
           </select>
         </label>
-        <button type="button" onClick={() => downloadQuotes(shown)} disabled={shown.length === 0} className={`${ghostClass} w-full sm:w-fit`}>
-          Export Excel
+        <button type="button" onClick={() => downloadQuotes(shown.filter((quote) => selected.has(quote.id)))} disabled={selectedCount === 0} className={`${ghostClass} w-full sm:w-fit disabled:bg-paper-deep disabled:text-muted`}>
+          Export selected
         </button>
       </div>
       {shown.length === 0 ? (
         <p className="mt-6 text-sm text-muted">No quotes for this Twig.</p>
       ) : (
-        <ul className="mt-6 space-y-3">
-          {shown.map((quote) => (
-            <li key={quote.id}>
-              <Link href={`/dashboard/quotes/${quote.id}`} className="block rounded-2xl border border-line bg-card p-4 text-sm">
-                <p className="font-medium">{quote.name}</p>
-                <p className="text-muted">{quote.productTitle} · qty {quote.quantity}</p>
-                <p className="mt-1 text-muted">{quote.status} · {quote.submitted} · {feeLabel(quote)}</p>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <>
+          <SelectVisible allVisible={allVisible} selectedCount={selectedCount} onToggle={() => {
+            setSelected((current) => {
+              const next = new Set(current);
+              if (allVisible) {
+                for (const id of shownIds) next.delete(id);
+              } else {
+                for (const id of shownIds) next.add(id);
+              }
+              return next;
+            });
+          }} />
+          <ul className="mt-3 space-y-3">
+            {shown.map((quote) => (
+              <li key={quote.id} className="flex items-start gap-3 rounded-2xl border border-line bg-card p-4 text-sm">
+                <input
+                  type="checkbox"
+                  checked={selected.has(quote.id)}
+                  onChange={() => toggleQuote(quote.id)}
+                  aria-label={`Select ${quote.name}`}
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-forest"
+                />
+                <Link href={`/dashboard/quotes/${quote.id}`} className="min-w-0 flex-1">
+                  <p className="font-medium">{quote.name}</p>
+                  <p className="text-muted">{quote.productTitle} · qty {quote.quantity}</p>
+                  <p className="mt-1 text-muted">{quote.status} · {quote.submitted} · {feeLabel(quote)}</p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </>
+  );
+}
+
+function SelectVisible({
+  allVisible,
+  selectedCount,
+  onToggle,
+}: {
+  allVisible: boolean;
+  selectedCount: number;
+  onToggle: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = selectedCount > 0 && !allVisible;
+  }, [allVisible, selectedCount]);
+  return (
+    <label className="mt-6 flex items-center gap-3 text-sm">
+      <input
+        ref={ref}
+        type="checkbox"
+        checked={allVisible}
+        onChange={onToggle}
+        aria-label="Select visible quotes"
+        className="h-5 w-5 shrink-0 accent-forest"
+      />
+      <span>{selectedCount === 0 ? "Select all" : selectedCount === 1 ? "1 selected" : `${selectedCount} selected`}</span>
+    </label>
   );
 }
 

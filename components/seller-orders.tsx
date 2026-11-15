@@ -35,7 +35,6 @@ export function SellerOrders({ orders }: { orders: SellerOrderRow[] }) {
   const [sort, setSort] = useState("needs");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [action, setAction] = useState("");
-  const stages = useMemo(() => [...new Set(orders.map((order) => order.stage))].sort((left, right) => left.localeCompare(right)), [orders]);
   const visible = useMemo(() => {
     const matched = orders.filter((order) => matchesFilter(order, filter) && matchesQuery(order, query));
     return sortRows(matched, sort);
@@ -69,7 +68,7 @@ export function SellerOrders({ orders }: { orders: SellerOrderRow[] }) {
 
   return (
     <>
-      <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_11rem_11rem]">
+      <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_16rem_12rem]">
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -80,11 +79,9 @@ export function SellerOrders({ orders }: { orders: SellerOrderRow[] }) {
         <select aria-label="Filter" value={filter} onChange={(event) => setFilter(event.target.value)} className={selectClass}>
           <option value="all">All orders</option>
           <option value="needs">Needs you</option>
-          {stages.map((stage) => (
-            <option key={stage} value={stage}>
-              {stage}
-            </option>
-          ))}
+          <option value="waiting">Waiting on buyer</option>
+          <option value="completed">Completed</option>
+          <option value="canceled">Canceled</option>
         </select>
         <select aria-label="Sort" value={sort} onChange={(event) => setSort(event.target.value)} className={selectClass}>
           <option value="needs">Needs you first</option>
@@ -165,7 +162,8 @@ function BulkBar({
   }, [allVisible, selectedCount]);
   return (
     <div className="mt-4 rounded-2xl border border-line bg-card px-4 py-3">
-      <label className="flex items-center gap-3 text-sm">
+      <h2 className="text-sm font-medium">Bulk action</h2>
+      <label className="mt-3 flex items-center gap-3 text-sm">
         <input
           ref={allRef}
           type="checkbox"
@@ -179,14 +177,13 @@ function BulkBar({
       <form action={bulkSellerOrders} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,16rem)_auto] sm:items-center">
         {chosen.map((id) => <input key={id} type="hidden" name="id" value={id} />)}
         <select aria-label="Bulk action" name="action" value={action} onChange={(event) => onAction(event.target.value)} className={selectClass} disabled={selectedCount === 0}>
-          <option value="">{selectedCount === 0 ? "Select orders first" : available.size === 0 ? "No bulk action for this selection" : "Choose an action"}</option>
+          <option value="">{selectedCount === 0 ? "Select orders first" : available.size === 0 ? "No bulk action for this selection" : "Select all"}</option>
           {([...available] as SellerBulkAction[]).map((item) => (
             <option key={item} value={item}>{BULK_LABELS[item]}</option>
           ))}
         </select>
         <ApplyButton disabled={selectedCount === 0 || !action} />
       </form>
-      <p className="mt-2 text-[13px] leading-5 text-muted">Orders that do not match the action stay unchanged.</p>
     </div>
   );
 }
@@ -243,7 +240,10 @@ function OrderRow({ order, checked, onToggle }: { order: SellerOrderRow; checked
 function matchesFilter(order: SellerOrderRow, filter: string) {
   if (filter === "all") return true;
   if (filter === "needs") return Boolean(order.attention);
-  return order.stage === filter;
+  if (filter === "waiting") return !order.attention && order.stage !== "Completed" && order.stage !== "Canceled";
+  if (filter === "completed") return order.stage === "Completed";
+  if (filter === "canceled") return order.stage === "Canceled";
+  return true;
 }
 
 function matchesQuery(order: SellerOrderRow, query: string) {

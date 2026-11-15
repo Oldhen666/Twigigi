@@ -52,7 +52,7 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
         <p className="text-sm text-muted">Seller profile</p>
       </header>
       <div className="mt-3">
-        <BackButton />
+        <BackButton href={owner ? "/dashboard" : ""} />
       </div>
       <section className="mt-6 rounded-3xl border border-line bg-card p-4 sm:p-5">
         <div className="flex gap-4">
