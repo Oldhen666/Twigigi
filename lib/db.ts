@@ -3212,8 +3212,8 @@ export function listBrowseHistory(userId: string) {
 export function listAllProducts() {
   settleDeactivations();
   return many(
-    `SELECT p.*, u.username, u.public_id, u.display_name FROM products p JOIN users u ON u.id = p.user_id ORDER BY p.updated_at DESC`,
-  ).map((row) => ({ ...mapProduct(row), username: str(row.username), publicId: str(row.public_id), displayName: str(row.display_name) }));
+    `SELECT p.*, u.username, u.public_id, u.display_name, u.email FROM products p JOIN users u ON u.id = p.user_id ORDER BY p.updated_at DESC`,
+  ).map((row) => ({ ...mapProduct(row), username: str(row.username), publicId: str(row.public_id), displayName: str(row.display_name), email: str(row.email) }));
 }
 
 export type StoredLedgerEntry = {

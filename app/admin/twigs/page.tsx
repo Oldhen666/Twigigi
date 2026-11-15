@@ -27,7 +27,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       if (fee === "free" && !product.feeExempt) return false;
       if (fee === "waived" && !product.quoteFeeExempt) return false;
       if (fee === "standard" && (product.feeExempt || product.quoteFeeExempt)) return false;
-      return includesText(q, [product.title, product.displayName, product.username, product.slug]);
+      return includesText(q, [product.title, product.displayName, product.username, product.email, product.slug]);
     }),
     (product) => (sort === "title" ? product.title : sort === "seller" ? product.displayName : product.updatedAt),
     sort === "updated" ? "desc" : "asc",
@@ -40,6 +40,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       <AdminListTools
         path="/admin/twigs"
         q={q}
+        placeholder="Title, email, or username"
         shown={products.length}
         total={all.length}
         sort={sort}

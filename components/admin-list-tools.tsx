@@ -8,6 +8,7 @@ export function AdminListTools({
   sorts,
   shown,
   total,
+  placeholder = "Search",
 }: {
   path: string;
   q: string;
@@ -16,12 +17,13 @@ export function AdminListTools({
   sorts: { value: string; label: string }[];
   shown: number;
   total: number;
+  placeholder?: string;
 }) {
   return (
     <form action={path} method="get" className="mt-5 flex flex-wrap items-end gap-2">
       <label className="min-w-52 flex-1">
         <span className="mb-1 block text-xs uppercase tracking-wide text-muted">Search</span>
-        <input name="q" defaultValue={q} placeholder="Search" className="h-10 w-full rounded-xl border border-line bg-white px-3 text-sm" />
+        <input name="q" defaultValue={q} placeholder={placeholder} className="h-10 w-full rounded-xl border border-line bg-white px-3 text-sm" />
       </label>
       {filters.map((filter) => (
         <label key={filter.name}>
