@@ -29,6 +29,7 @@ export type SellerCard = {
   categoryKind: string;
   categoryGroup: string;
   category: string;
+  demo?: boolean;
 };
 
 const selectClass = `${inputClass} h-10 text-sm`;
@@ -132,7 +133,7 @@ export function SellerListings({ username, listings }: { username: string; listi
                 <div className="relative aspect-[4/3] bg-paper-deep">{photo}</div>
               )}
               <div className="p-4">
-                <p className="text-[11px] font-medium tracking-[0.14em] text-muted uppercase">{product.categoryKind === "service" ? "Service" : "Product"}</p>
+                <p className="text-[11px] font-medium tracking-[0.14em] text-muted uppercase">{product.categoryKind === "service" ? "Service" : "Product"}{product.demo ? " · Demo" : ""}</p>
                 <h2 className="mt-1 text-base font-semibold">
                   {href ? <Link href={href}>{product.title}</Link> : product.title}
                 </h2>

@@ -163,6 +163,7 @@ export type Product = ProductInput & {
   billingCurrency: string;
   feeExempt: boolean;
   quoteFeeExempt: boolean;
+  demo: boolean;
   moderationStatus: "" | "restricted";
   rightsConfirmed: boolean;
   rightsConfirmedAt: string | null;

@@ -26,6 +26,7 @@ import {
   createUser,
   clearDeactivatesAt,
   clearDeactivatedAt,
+  adminDeleteProduct,
   deleteProduct,
   duplicateProduct,
   confirmListingRights,
@@ -2640,6 +2641,19 @@ export async function duplicateTwig(formData: FormData) {
   const seller = findUserById(product.userId);
   if (seller) updateTag(sellerTag(seller.publicId));
   if (copy && seller) updateTag(productTag(seller.publicId, copy.slug));
+  redirect("/admin/twigs");
+}
+
+export async function adminDeleteTwig(formData: FormData) {
+  await requireAdmin();
+  const product = getProductById(text(formData, "id"));
+  if (!product) redirect("/admin/twigs");
+  const seller = findUserById(product.userId);
+  if (!adminDeleteProduct(product.id)) redirect("/admin/twigs");
+  if (seller) {
+    updateTag(productTag(seller.publicId, product.slug));
+    updateTag(sellerTag(seller.publicId));
+  }
   redirect("/admin/twigs");
 }
 

@@ -121,6 +121,7 @@ export async function ProductView({
         <div className="px-5 pt-4">
           {product.cta === "file" ? null : <p className="text-xs uppercase tracking-[0.16em] text-muted">{product.location}</p>}
           <h1 className="mt-2 font-serif text-4xl leading-tight">{product.title}</h1>
+          {product.demo ? <p className="mt-2 text-sm text-muted">Demo</p> : null}
           {categoryLink ? (
             <p className="mt-2 text-sm text-muted">
               <Link href={categoryHref(categoryLink.kind)} className="underline-offset-2 hover:underline">

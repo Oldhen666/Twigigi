@@ -149,6 +149,7 @@ export default async function Page({
                   </div>
                   <div className="p-4">
                     <h2 className="font-serif text-2xl">{product.title}</h2>
+                    {product.demo ? <p className="mt-1 text-sm text-muted">Demo</p> : null}
                     <p className="mt-1 text-sm text-forest">{categoryLabel(product.categoryKind, product.categoryGroup, product.category)}</p>
                     <p className="mt-1 text-sm text-muted">{product.location}</p>
                     <p className="mt-2 font-serif text-xl text-forest">

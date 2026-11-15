@@ -71,7 +71,10 @@ export function TwigCard({
           ) : (
             <h3 className="min-w-0 font-medium leading-5">{product.title}</h3>
           )}
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${live && !ending ? "bg-moss text-forest" : "bg-paper-deep text-muted"}`}>{badge}</span>
+          <span className="flex shrink-0 items-center gap-1">
+            {product.demo ? <span className="rounded-full bg-paper-deep px-2 py-0.5 text-xs text-muted">Demo</span> : null}
+            <span className={`rounded-full px-2 py-0.5 text-xs ${live && !ending ? "bg-moss text-forest" : "bg-paper-deep text-muted"}`}>{badge}</span>
+          </span>
         </div>
         <p className="mt-1 text-sm text-muted">{price} · {views}</p>
         <p className="mt-1 text-sm text-muted">

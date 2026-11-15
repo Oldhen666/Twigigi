@@ -119,6 +119,7 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
             categoryKind: product.categoryKind || (product.cta === "buy" || product.cta === "file" ? "product" : "service"),
             categoryGroup: product.categoryGroup,
             category: product.category,
+            demo: product.demo,
           }))}
         />
       )}

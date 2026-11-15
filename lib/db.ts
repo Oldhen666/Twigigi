@@ -337,6 +337,7 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "billing_version", "billing_version INTEGER NOT NULL DEFAULT 0");
   add("products", "billing_anchor_day", "billing_anchor_day INTEGER NOT NULL DEFAULT 0");
   add("products", "fee_exempt", "fee_exempt INTEGER NOT NULL DEFAULT 0");
+  add("products", "demo", "demo INTEGER NOT NULL DEFAULT 0");
   add("products", "quote_fee_exempt", "quote_fee_exempt INTEGER NOT NULL DEFAULT 0");
   add("users", "role", "role TEXT NOT NULL DEFAULT 'seller'");
   add("users", "billing_method", "billing_method TEXT NOT NULL DEFAULT ''");
@@ -958,6 +959,7 @@ function mapProduct(row: Row): Product {
     billingCurrency: str(row.billing_currency),
     feeExempt: num(row.fee_exempt) === 1,
     quoteFeeExempt: num(row.quote_fee_exempt) === 1,
+    demo: num(row.demo) === 1,
     moderationStatus: str(row.moderation_status) === "restricted" ? "restricted" : "",
     rightsConfirmed: num(row.rights_confirmed) === 1,
     rightsConfirmedAt: row.rights_confirmed_at ? str(row.rights_confirmed_at) : null,
@@ -2491,6 +2493,13 @@ export function deleteProduct(id: string, userId: string) {
   if (!owned) return false;
   clearProductRows(id);
   return removeProductRow(id, userId);
+}
+
+export function adminDeleteProduct(id: string) {
+  const row = one("SELECT id FROM products WHERE id = ?", id);
+  if (!row) return false;
+  clearProductRows(id);
+  return removeProductRow(id);
 }
 
 export function sellerProducts(userId: string) {
@@ -4368,6 +4377,64 @@ function ensureAvaDemoDetails() {
   );
 }
 
+function ensureCurrentDemoTwigs() {
+  const ids = ["prd_cedar", "prd_bench", "prd_wreath", "prd_consult"];
+  const mark = db.prepare("UPDATE products SET demo = 1 WHERE id = ? AND user_id = 'usr_ava'");
+  for (const id of ids) mark.run(id);
+  db.prepare(
+    `UPDATE products SET
+      cta = 'buy',
+      category_kind = 'product',
+      category_group = 'garden-outdoor',
+      category = 'planters-gardening',
+      payment_methods = ?,
+      interac_email = 'ava@twigigi.demo',
+      zelle_contact = '',
+      seller_contact_mode = 'email',
+      seller_contact = 'ava@twigigi.demo',
+      pickup_enabled = 1
+     WHERE id = 'prd_cedar' AND user_id = 'usr_ava'`,
+  ).run(JSON.stringify(["interac", "cash_pickup"]));
+  db.prepare(
+    `UPDATE products SET
+      interac_question = 'What city is pickup in?',
+      interac_password = 'Edmonton'
+     WHERE id = 'prd_cedar' AND user_id = 'usr_ava' AND interac_question = ''`,
+  ).run();
+  db.prepare(
+    `UPDATE products SET
+      cta = 'quote',
+      category_kind = 'service',
+      category_group = 'lawn-outdoor-services',
+      category = 'landscaping',
+      onsite_enabled = 1,
+      pickup_enabled = 0,
+      delivery_enabled = 0,
+      shipping_enabled = 0,
+      payment_methods = '[]',
+      zelle_contact = '',
+      seller_contact_mode = 'email',
+      seller_contact = 'ava@twigigi.demo',
+      quote_fee_exempt = 1
+     WHERE id = 'prd_bench' AND user_id = 'usr_ava'`,
+  ).run();
+  db.prepare(
+    `UPDATE products SET
+      seller_contact_mode = 'email',
+      seller_contact = 'ava@twigigi.demo',
+      zelle_contact = ''
+     WHERE id IN ('prd_wreath', 'prd_consult') AND user_id = 'usr_ava'`,
+  ).run();
+  db.prepare(
+    `UPDATE products SET billing_status = 'legacy_review', auto_renew = 0
+     WHERE user_id = 'usr_ava' AND demo = 1 AND status = 'published' AND fee_exempt = 0
+       AND NOT EXISTS (
+         SELECT 1 FROM twig_bills
+         WHERE twig_bills.product_id = products.id AND kind = 'listing' AND status = 'paid'
+       )`,
+  ).run();
+}
+
 function ensureDemoCategories() {
   const rows = [
     ["prd_cedar", "product", "garden-outdoor", "planters-gardening"],
@@ -4438,4 +4505,5 @@ ensureLandscapeDemo();
 ensureDemoReviews();
 ensureDemoCategories();
 ensureAvaDemoDetails();
+ensureCurrentDemoTwigs();
 ensurePublicIds();
