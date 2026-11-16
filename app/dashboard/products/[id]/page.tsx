@@ -40,7 +40,7 @@ async function Editor({
           A live Twig cannot be deleted. Deactivate it from the dashboard first.
         </p>
       ) : null}
-      <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} cta={product.cta} stripeReady={owner.stripeChargesEnabled} paymentDefaults={{ interac: owner.payoutInterac, venmo: owner.payoutVenmo, paypalMe: owner.payoutPaypalMe, paypalEmail: owner.payoutPaypalEmail }} />
+      <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} cta={product.cta} stripeReady={owner.stripeChargesEnabled} paymentDefaults={{ interac: owner.payoutInterac, venmo: owner.payoutVenmo, paypalMe: owner.payoutPaypalMe, paypalEmail: owner.payoutPaypalEmail }} initialStep={query.step === "2" ? 2 : query.step === "3" ? 3 : 1} />
       {product.status === "published" ? (
         <p className="mt-6 text-sm text-muted">
           This Twig is live, so it cannot be deleted. Deactivate it from the dashboard. The page becomes inactive. Turn it back on before the next charge date and you will not be charged again. If you do not reactivate, it is permanently deleted 30 days after it deactivates.

@@ -835,7 +835,9 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   }
   if (input.status === "published") redirect(`/${owner.publicId}/${slug}`);
   if (existing?.status === "published") redirect(`/dashboard/products/${savedProductId}?saved=1`);
-  return { saved: true, productId: savedProductId, slug, images, savedAt: Date.now() };
+  const requestedStep = text(formData, "editorStep");
+  const editorStep = requestedStep === "2" || requestedStep === "3" ? requestedStep : "1";
+  redirect(`/dashboard/products/${savedProductId}?saved=1&step=${editorStep}`);
 }
 
 function dropProduct(user: { id: string; publicId: string }, product: { id: string; userId: string; status: string; slug: string }) {

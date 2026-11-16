@@ -43,6 +43,7 @@ export function ProductForm({
   guest = false,
   stripeReady = false,
   paymentDefaults,
+  initialStep = 1,
 }: {
   action: Action;
   product?: Product;
@@ -52,6 +53,7 @@ export function ProductForm({
   guest?: boolean;
   stripeReady?: boolean;
   paymentDefaults?: PaymentDefaults;
+  initialStep?: 1 | 2 | 3;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const refreshRef = useRef<(form: HTMLFormElement) => void>(() => {});
@@ -71,7 +73,7 @@ export function ProductForm({
   }, {} as FormState);
   const [photos, setPhotos] = useState<ListingPhoto[]>(() => (product?.images ?? []).map((src) => ({ id: src, kind: "kept" as const, src })));
   const [framing, setFraming] = useState<FrameRequest | null>(null);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(initialStep);
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<PagePreviewDraft | null>(null);
   const [draft, setDraft] = useState<NewPageDraft | null>(null);
@@ -857,6 +859,7 @@ export function ProductForm({
       {savedId ? <input type="hidden" name="id" value={savedId} /> : null}
       {savedSlug ? <input type="hidden" name="slug" value={savedSlug} /> : null}
       <input type="hidden" name="cta" value={cta} />
+      <input type="hidden" name="editorStep" value={step} />
       {photos.map((photo) => (
         <input key={`slot-${photo.id}`} type="hidden" name="photoSlot" value={photo.kind === "kept" ? photo.src : "file"} />
       ))}
