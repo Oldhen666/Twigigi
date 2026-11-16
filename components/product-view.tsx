@@ -13,6 +13,7 @@ import { Logo } from "@/components/logo";
 import { BackButton } from "@/components/back-button";
 import { PayMethods } from "@/components/pay-methods";
 import { ReportListing } from "@/components/report-listing";
+import { RichDescription } from "@/components/rich-description";
 import { Stars } from "@/components/stars";
 import { toggleLikeAction, toggleSaved } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
@@ -23,6 +24,7 @@ import { categoryHref, categoryLabel, resolveCategory } from "@/lib/categories";
 import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
 import { sellerPath } from "@/lib/seller-route";
 import { storedUpload } from "@/lib/uploads";
+import { descriptionPlain } from "@/lib/rich-text";
 
 export async function ProductView({
   params,
@@ -67,7 +69,7 @@ export async function ProductView({
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.title,
-    description: product.description,
+    description: descriptionPlain(product.description),
     category: category || undefined,
     image: product.images.map((item) => `${appUrl()}${item}`),
     url: canonical,
@@ -218,7 +220,7 @@ export async function ProductView({
         </div>
         )}
         <div className="space-y-5 px-5 py-5">
-          <p className="whitespace-pre-wrap text-[15px] leading-7">{product.description}</p>
+          <RichDescription text={product.description} />
           {reviews.length > 0 && reviewAverage != null ? (
             <section>
               <div className="flex items-start justify-between gap-4">

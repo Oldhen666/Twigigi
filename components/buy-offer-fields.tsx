@@ -575,6 +575,14 @@ function PaymentChoices({
   onPaypalEmail: (value: string) => void;
 }) {
   const choices = paymentsForCountry(country);
+  const [methodEpoch, setMethodEpoch] = useState(0);
+  useEffect(() => {
+    const form = methodsRef.current?.form;
+    if (!form) return;
+    const onReset = () => window.setTimeout(() => setMethodEpoch((epoch) => epoch + 1), 0);
+    form.addEventListener("reset", onReset);
+    return () => form.removeEventListener("reset", onReset);
+  }, [methodsRef]);
   if (digital) {
     return (
       <div className="mt-4 space-y-3">
@@ -626,6 +634,7 @@ function PaymentChoices({
         <div key={method.id}>
           <label className={`flex items-center gap-3 text-base ${cashLocked ? "cursor-not-allowed text-muted" : ""}`}>
             <input
+              key={`${method.id}-${methodEpoch}`}
               type="checkbox"
               checked={!cashLocked && methods.includes(method.id)}
               disabled={cashLocked}

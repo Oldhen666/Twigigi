@@ -19,6 +19,7 @@ import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
 import { acceptNote, notifyBuyer, readyNote } from "@/lib/order-notices";
 import { fulfillmentDone, sellerBulkActions, shipsToBuyer, type SellerBulkAction } from "@/lib/order-flow";
 import { parseFileLinks } from "@/lib/files";
+import { descriptionPlain, storedDescription } from "@/lib/rich-text";
 import { resolveUpload, uploadDirectory } from "@/lib/uploads";
 import {
   cancelUnpaidDigitalOrder,
@@ -496,7 +497,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const intent = text(formData, "intent") === "publish" ? "publish" : "draft";
   const errors: Record<string, string> = {};
   const title = text(formData, "title").trim();
-  const description = text(formData, "description").trim();
+  const description = storedDescription(text(formData, "description"));
+  const descriptionLength = descriptionPlain(description).length;
   const location = text(formData, "location").trim();
   const ctaValue = text(formData, "cta");
   const cta: Cta = ctaValue === "buy" || ctaValue === "contact" || ctaValue === "file" ? ctaValue : "quote";
@@ -522,10 +524,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   if (cta !== "contact" && cta !== "file" && !chosenCategory) {
     errors.category = categoryProblem(categoryKindInput, text(formData, "categoryGroup"), text(formData, "category"), allowService) ?? "Choose a category.";
   }
-  if (description.length > 2000) {
-    errors.description = `Keep the description under 2,000 characters (${description.length.toLocaleString("en-US")} so far).`;
-  } else if (description.length < 10) {
-    const remaining = 10 - description.length;
+  if (descriptionLength > 2000) {
+    errors.description = `Keep the description under 2,000 characters (${descriptionLength.toLocaleString("en-US")} so far).`;
+  } else if (descriptionLength < 10) {
+    const remaining = 10 - descriptionLength;
     errors.description =
       remaining === 10
         ? "Add a short description of at least 10 characters."
@@ -789,8 +791,11 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       if (input.status === "published" && existing.status === "deactivated") clearDeactivatedAt(existing.id, owner.id);
     } else insertProduct(savedProductId, owner.id, input);
     if (input.status === "published") confirmListingRights(savedProductId, owner.id, TERMS_VERSION, IP_POLICY_VERSION);
-  } catch {
-    return { error: "Could not save this Twig. Try a different link name.", ...sessionStamp };
+  } catch (error) {
+    console.error("saveProduct failed", error);
+    const message = error instanceof Error ? error.message : "";
+    if (/UNIQUE/i.test(message)) return { error: "Could not save this Twig. Try a different link name.", ...sessionStamp };
+    return { error: "Could not save this Twig.", ...sessionStamp };
   }
 
   if (existing && existing.paypalMe !== input.paypalMe) {

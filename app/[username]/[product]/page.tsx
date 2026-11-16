@@ -5,6 +5,7 @@ import { ProductFallback } from "@/components/stage";
 import { getPublicProduct, requireLiveTwig, staticProductParams } from "@/lib/catalog";
 import { sellerPath } from "@/lib/seller-route";
 import { formatMoney } from "@/lib/format";
+import { descriptionPlain } from "@/lib/rich-text";
 
 export function generateStaticParams() {
   return staticProductParams().map(({ username, product }) => ({ username, product }));
@@ -19,7 +20,7 @@ export async function generateMetadata({
   const publicId = sellerPath(username, `/${product}`);
   const item = publicId ? await requireLiveTwig(await getPublicProduct(publicId, product)) : null;
   if (!item) return { title: "Twig" };
-  const description = item.description.slice(0, 180);
+  const description = descriptionPlain(item.description).slice(0, 180);
   const price = item.priceCents != null ? formatMoney(item.priceCents, item.currency) : null;
   const socialTitle = price ? `${item.title} · ${price}` : item.title;
   return {

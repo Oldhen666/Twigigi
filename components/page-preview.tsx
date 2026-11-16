@@ -1,3 +1,4 @@
+import { RichDescription } from "@/components/rich-description";
 import { categoryLabel } from "@/lib/categories";
 import { ctaCopy, formatMoney, pickupDetail, videoEmbed } from "@/lib/format";
 import { normalizeQuoteForm } from "@/lib/quote-form";
@@ -112,7 +113,7 @@ export function PagePreview({ draft }: { draft: PagePreviewDraft }) {
           <div className="flex h-14 items-center justify-center rounded-2xl bg-forest text-lg text-card">{draft.ctaLabel}</div>
         </div>
         <div className="space-y-4 px-5 py-5">
-          {draft.description ? <p className="whitespace-pre-wrap text-[15px] leading-7">{draft.description}</p> : <p className="text-sm text-muted">No description yet.</p>}
+          {draft.description ? <RichDescription text={draft.description} /> : <p className="text-sm text-muted">No description yet.</p>}
           {embed ? (
             <div className="relative aspect-video overflow-hidden rounded-2xl bg-paper-deep">
               <iframe src={embed} title="Video preview" className="absolute inset-0 h-full w-full" allowFullScreen />

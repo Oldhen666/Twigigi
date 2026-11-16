@@ -11,11 +11,13 @@ import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/component
 import { PhotoFrame } from "@/components/photo-frame";
 import { PublishAccount } from "@/components/publish-account";
 import { QuoteFormFields } from "@/components/quote-form-fields";
+import { DescriptionEditor } from "@/components/description-editor";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { categoryProblem } from "@/lib/categories";
 import { parseFileLinks } from "@/lib/files";
 import { PROVINCES, joinLocation, lookupCurrentPlace, placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameProblem } from "@/lib/payments";
+import { descriptionPlain } from "@/lib/rich-text";
 
 type Action = (state: FormState, formData: FormData) => Promise<FormState>;
 
@@ -287,9 +289,10 @@ export function ProductForm({
       return categoryProblem(kind, fieldValue(form, "categoryGroup"), value, cta === "buy" || cta === "quote");
     }
     if (name === "description") {
-      if (value.length > 2000) return `Keep the description under 2,000 characters (${value.length.toLocaleString("en-US")} so far).`;
-      if (value.length < 10) {
-        const remaining = 10 - value.length;
+      const visible = descriptionPlain(value);
+      if (visible.length > 2000) return `Keep the description under 2,000 characters (${visible.length.toLocaleString("en-US")} so far).`;
+      if (visible.length < 10) {
+        const remaining = 10 - visible.length;
         return remaining === 10
           ? "Add a short description of at least 10 characters."
           : `Add ${remaining} more character${remaining === 1 ? "" : "s"} (at least 10).`;
@@ -916,9 +919,18 @@ export function ProductForm({
             </Field>
           </>
         )}
-        <Field label="Short description" required error={visibleErrors.description}>
-          <textarea name="description" rows={9} defaultValue={textValue(draft, "description", product?.description)} placeholder={file ? "What the buyer is getting:\n- File types, such as STL, 3MF, or STEP\n- Layer height, material, supports\n(at least 10 characters)" : "Description for your product/service:\n-Size / Dimensions\n-Material\n-Color\n-Capacity\n-Weight\n-What's included\n(at least 10 characters)"} className={`${inputClass} h-auto py-3`} />
-        </Field>
+        <div>
+          <span className={labelClass}>
+            Short description
+            <span className="text-danger"> *</span>
+            <span className="ml-1 font-normal text-muted"> Required</span>
+          </span>
+          <DescriptionEditor
+            value={textValue(draft, "description", product?.description)}
+            placeholder={file ? "What the buyer is getting:\n- File types, such as STL, 3MF, or STEP\n- Layer height, material, supports\n(at least 10 characters)" : "Description for your product/service:\n-Size / Dimensions\n-Material\n-Color\n-Capacity\n-Weight\n-What's included\n(at least 10 characters)"}
+          />
+          {visibleErrors.description ? <span className="mt-1 block text-sm text-danger">{visibleErrors.description}</span> : null}
+        </div>
         <Field label="Video link" error={visibleErrors.videoUrl}>
           <input name="videoUrl" defaultValue={textValue(draft, "videoUrl", product?.videoUrl ?? "")} placeholder="https://youtu.be/… (http or https)" className={inputClass} />
         </Field>
