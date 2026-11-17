@@ -4,12 +4,14 @@ import { useState } from "react";
 import { PickupCalendar } from "@/components/pickup-calendar";
 import { formatPickupChoice } from "@/lib/pickup";
 
-export function PickupAgreementReminder({ place, agreed = false }: { place: string; agreed?: boolean }) {
+export function PickupAgreementReminder({ place, when = "", agreed = false }: { place: string; when?: string; agreed?: boolean }) {
   return (
-    <div className="rounded-2xl bg-paper-deep px-3 py-3 leading-6">
-      <p>{agreed ? "This pickup time and location are confirmed." : "Once you agree, confirm the pickup time and location."}</p>
-      <p className="mt-1">{place ? `Location: ${place}` : "This Twig does not have a pickup address yet."}</p>
-      {agreed ? null : <p className="mt-1 text-muted">The location comes from the listing. It is filled in when the time is confirmed.</p>}
+    <div className="rounded-2xl bg-paper-deep px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Pickup time</p>
+      <p className="mt-1 text-base font-medium leading-6">{when || "Choose a time below"}</p>
+      <p className="mt-3 text-xs font-medium uppercase tracking-[0.14em] text-muted">Pickup location</p>
+      <p className="mt-1 text-base font-medium leading-6">{place || "No pickup address on this Twig"}</p>
+      <p className="mt-3 text-sm leading-6 text-muted">{agreed ? "This time and location are confirmed." : "Confirm this time and this location together."}</p>
     </div>
   );
 }

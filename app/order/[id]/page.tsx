@@ -110,10 +110,8 @@ async function OrderView({
     ? ""
     : awaitingBuyerPickup
       ? order.pickupOptions.length > 1
-        ? "Choose one of the suggested times, or ask for another time. Then confirm the time and location."
-        : pickupAt
-          ? `Confirm the pickup time and location for ${pickupAt}.`
-          : "Confirm the pickup time and location the seller suggested."
+        ? "Choose a time below, then confirm it with the location."
+        : "Confirm the time and location below."
       : cashPickup && !pickupConfirmed
         ? "Waiting for the seller to confirm your pickup time."
       : cashPickup && !readyForPickup
@@ -176,8 +174,8 @@ async function OrderView({
                   <p className="font-medium text-forest">Payment confirmed</p>
                 ) : (
                   <div className="space-y-3">
-                    {place ? <p className="flex items-center gap-2"><PinIcon /><span className="text-ink">{place}</span></p> : null}
-                    {whenLabel ? <p className="flex items-center gap-2"><CalendarIcon /><span className="text-ink">{whenLabel}</span></p> : null}
+                    {place ? <p className="flex items-start gap-2"><PinIcon /><span><span className="block text-xs uppercase tracking-[0.14em]">Pickup location</span><span className="font-medium text-ink">{place}</span></span></p> : null}
+                    {whenLabel ? <p className="flex items-start gap-2"><CalendarIcon /><span><span className="block text-xs uppercase tracking-[0.14em]">Pickup time</span><span className="font-medium text-ink">{parsePickupChoice(order.pickupWindow) ? formatPickupChoice(order.pickupWindow) : whenLabel}</span></span></p> : null}
                     {order.deliveryNote ? <p>Delivery instructions: {order.deliveryNote}</p> : null}
                     {order.buyerNote ? <p>Note to seller: {order.buyerNote}</p> : null}
                   </div>
@@ -223,6 +221,7 @@ async function OrderView({
                   confirmed={Boolean(order.pickupConfirmedAt)}
                   ready={readyForPickup}
                   place={order.pickupPlace || listingPickupPlace(product?.pickupNote ?? "", order.productLocation || product?.location || "")}
+                  when={parsePickupChoice(order.pickupWindow) ? formatPickupChoice(order.pickupWindow) : ""}
                   notes={order.pickupMessages}
                   schedules={buyerSchedules}
                   summary={buyerPickupSummary}
@@ -524,6 +523,7 @@ function BuyerPickupAgreement({
   confirmed,
   ready,
   place,
+  when,
   notes,
   schedules,
   summary,
@@ -534,6 +534,7 @@ function BuyerPickupAgreement({
   confirmed: boolean;
   ready: boolean;
   place: string;
+  when: string;
   notes: { by: "buyer" | "seller"; body: string; createdAt: string }[];
   schedules: string[];
   summary: string[];
@@ -541,7 +542,7 @@ function BuyerPickupAgreement({
   const choosing = !confirmed && !ready && proposedBy === "seller";
   return (
     <div className="mt-4 space-y-3 text-left text-sm">
-      <PickupAgreementReminder place={place} agreed={confirmed} />
+      <PickupAgreementReminder place={place} when={options.length > 0 ? "" : when} agreed={confirmed} />
       {choosing && options.length > 0 ? (
         <ReloadForm action={confirmBuyerPickup} className="space-y-2">
           <input type="hidden" name="id" value={orderId} />

@@ -272,7 +272,7 @@ function CashPickupSeller({
               <button className={`${buttonClass} w-full`}>Mark ready for pickup</button>
             </ReloadForm>
           ) : null}
-          {!completed ? <PickupAgreementReminder place={place} agreed={Boolean(order.pickupConfirmedAt)} /> : null}
+          {!completed ? <PickupAgreementReminder place={place} when={offered.length > 0 && !order.pickupConfirmedAt ? "" : order.pickupWindow ? when : ""} agreed={Boolean(order.pickupConfirmedAt)} /> : null}
           {offered.length > 0 && !order.pickupConfirmedAt ? (
             <ul className="space-y-1">
               {offered.map((time) => <li key={time}>{time}</li>)}
