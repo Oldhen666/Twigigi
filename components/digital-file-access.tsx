@@ -28,6 +28,7 @@ export function DigitalFileAccess({
   interactionId,
   productTitle,
   reviewed,
+  held = false,
 }: {
   orderId: string;
   orderNumber: string;
@@ -41,17 +42,18 @@ export function DigitalFileAccess({
   interactionId: string;
   productTitle: string;
   reviewed: boolean;
+  held?: boolean;
 }) {
   const [help, setHelp] = useState(helpSent || Boolean(issue));
-  const primary = links[0] ?? "";
+  const primary = held ? "" : links[0] ?? "";
   const host = fileHost(primary);
 
   return (
     <div className="mt-4 space-y-4">
       <section className="rounded-3xl border border-line bg-white px-4 py-4">
-        <h2 className="font-semibold">Your file is ready</h2>
-        <p className="mt-1 text-sm text-muted">Your seller has provided access to your digital file.</p>
-        {primary ? (
+        <h2 className="font-semibold">{held ? "File access is restricted" : "Your file is ready"}</h2>
+        <p className="mt-1 text-sm text-muted">{held ? "Twigigi is not providing this file link. This does not delete a copy you already downloaded, or a file hosted outside Twigigi." : "Your seller has provided access to your digital file."}</p>
+        {held ? null : primary ? (
           <div className="mt-4 rounded-2xl border border-line bg-paper-deep px-4 py-3">
             <div>
               <p className="font-medium">{host}</p>
@@ -75,7 +77,7 @@ export function DigitalFileAccess({
             Open your file
           </a>
         ) : null}
-        {links.slice(1).map((link, index) => (
+        {held ? null : links.slice(1).map((link, index) => (
           <a key={link} href={link} target="_blank" rel="noreferrer" className={`${ghostClass} mt-2 w-full`}>
             Open file {index + 2}
           </a>

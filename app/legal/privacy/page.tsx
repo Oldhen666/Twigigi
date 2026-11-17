@@ -15,6 +15,7 @@ export default function Page() {
       </LegalSection>
       <LegalSection title="How it is used">
         <p>Twigigi uses this information to operate accounts, show listings, deliver order and quote notices, review reports, keep the platform secure, and record acceptance of the Terms and this policy. Payment details you enter for a seller, such as an Interac address, are shown to buyers as part of that listing. Twigigi does not sell personal information as a product.</p>
+        <p>A copyright report or review request is shown to administrators. Twigigi does not show the reporter’s private contact details to the seller, or the seller’s private account details to the reporter, except what is needed to identify the listing and review the claim.</p>
         <p>The other person in an order, quote, or message receives the contact details needed for that exchange. A service provider that hosts the platform, sends email, or processes a Twigigi subscription may handle the information required for that task.</p>
       </LegalSection>
       <LegalSection title="How long it is kept">

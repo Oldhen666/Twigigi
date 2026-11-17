@@ -1,3 +1,4 @@
+import { twigigiFileHeld } from "@/lib/copyright";
 import { findUserById, getOrder, getProductById, markFileSent, recordDirectFilePayment, recordSellerPaypalPayment } from "@/lib/db";
 import { appUrl, formatMoney } from "@/lib/format";
 import { sendOrderEmail } from "@/lib/mail";
@@ -43,6 +44,8 @@ export async function deliverPaidFile(orderId: string) {
   if (!order || order.fileLinks.length === 0) return false;
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   if (!paid) return false;
+  const product = getProductById(order.productId);
+  if (twigigiFileHeld(product, product ? findUserById(product.userId) : findUserById(order.sellerId))) return false;
   const lines = [
     "Your file from Twigigi is ready.",
     "",

@@ -166,6 +166,8 @@ export default async function Page({
         <p>Sellers retain ownership of their original listing content.</p>
         <p>By uploading content, sellers grant Twigigi a non-exclusive, worldwide, royalty-free license to host, display, reproduce, and technically process that content as necessary to operate, maintain, and promote their listings and the Platform.</p>
         <p>Sellers represent that they have the rights necessary to provide this license.</p>
+        <h3 className="font-medium text-ink">Seller Responsibility for Intellectual Property Claims</h3>
+        <p>To the extent permitted by applicable law, you agree to indemnify and hold harmless Twigigi, its operating entity, and their officers and employees from third-party claims, damages, liabilities, and reasonable legal costs arising from your infringement of intellectual property rights or breach of the ownership and authorization commitments above. This obligation does not extend to losses caused by Twigigi’s own unlawful conduct.</p>
         <p>Users may not copy or exploit Twigigi&apos;s software, branding, or proprietary materials without authorization.</p>
       </LegalSection>
 

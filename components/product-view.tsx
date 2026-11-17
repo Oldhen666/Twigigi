@@ -16,6 +16,7 @@ import { ReportListing } from "@/components/report-listing";
 import { RichDescription } from "@/components/rich-description";
 import { Stars } from "@/components/stars";
 import { toggleLikeAction, toggleSaved } from "@/lib/actions";
+import { twigigiFileHeld } from "@/lib/copyright";
 import { getCurrentUser } from "@/lib/auth";
 import { findUserById, getProductById, isFavorite, isGuestLiked, isLiked, likeCount, listProductReviews, sellerReviewSummary, soldCount } from "@/lib/db";
 import { digitalPayMethods } from "@/lib/payments";
@@ -47,6 +48,7 @@ export async function ProductView({
   const rating = sellerReviewSummary(product.userId);
   const reviewAverage = reviews.length ? reviews.reduce((sum, review) => sum + review.overall, 0) / reviews.length : null;
   const fileSeller = product.cta === "file" ? findUserById(product.userId) : null;
+  const fileHeld = product.cta === "file" && twigigiFileHeld(product, fileSeller);
   const fileMethods = product.cta === "file" ? digitalPayMethods({ paypalEmail: getProductById(product.id)?.paypalEmail ?? "", stripeReady: Boolean(fileSeller?.stripeChargesEnabled) }) : [];
   const ownTwig = account?.publicId === product.publicId;
 
@@ -164,6 +166,7 @@ export async function ProductView({
               quantityAvailable={product.quantityAvailable}
               cartPublicId={product.cta === "buy" ? product.publicId : ""}
               productId={product.id}
+              held={fileHeld}
             >
               {options.length > 0 ? (
                 <ul className="mt-3 flex flex-wrap gap-2">
@@ -205,6 +208,8 @@ export async function ProductView({
         <div className="sticky bottom-0 z-10 mt-4 border-t border-line bg-card/95 px-4 py-3 backdrop-blur">
           {soldOut ? (
             <span className="flex h-14 items-center justify-center rounded-2xl bg-paper-deep text-lg text-muted">Sold out</span>
+          ) : fileHeld ? (
+            <span className="flex h-14 items-center justify-center rounded-2xl bg-paper-deep text-lg text-muted">This file is not available</span>
           ) : product.cta === "buy" && product.priceCents != null ? (
             <AddToCart
               publicId={product.publicId}

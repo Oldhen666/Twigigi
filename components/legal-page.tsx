@@ -35,6 +35,7 @@ export function LegalLinks() {
     ["/legal/terms", "Terms of Service"],
     ["/legal/privacy", "Privacy Policy"],
     ["/legal/intellectual-property", "Intellectual Property"],
+    ["/legal/copyright", "Copyright Policy"],
     ["/legal/prohibited-items", "Prohibited Items"],
     ["/legal/report-infringement", "Report Infringement"],
   ];

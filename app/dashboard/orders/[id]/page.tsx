@@ -5,7 +5,7 @@ import { requireSeller } from "@/lib/auth";
 import { getOrder, getProductById } from "@/lib/db";
 import { formatMoney, orderHeading, pickupTimes } from "@/lib/format";
 import { timeZoneForLocation } from "@/lib/places";
-import { formatPickupChoice } from "@/lib/pickup";
+import { formatPickupChoice, listingPickupPlace } from "@/lib/pickup";
 import { CopyText } from "@/components/copy-text";
 import { buttonClass } from "@/components/ui";
 import { OrderPaymentFacts } from "@/components/order-payment-facts";
@@ -93,6 +93,7 @@ async function OrderScreen({
           {fileNote === "sent" ? <p className="mt-2 text-forest">The file link and password were emailed to {order.email}.</p> : null}
           {fileNote === "mail" ? <p className="mt-2 text-danger">The email could not be sent. Check the mail settings, then try again.</p> : null}
           {fileNote === "wait" ? <p className="mt-2 text-danger">Confirm the payment before emailing the file.</p> : null}
+          {fileNote === "held" ? <p className="mt-2 text-danger">Twigigi is not sending this file link while access is restricted.</p> : null}
           {(order.reviewState === "accepted" && (order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled")) ? (
             <ReloadForm action={sendOrderFile} className="mt-3">
               <input type="hidden" name="id" value={order.id} />
@@ -111,6 +112,7 @@ async function OrderScreen({
         mail={mail}
         pickupSchedules={pickupSchedules}
         pickupSummary={pickupSummary}
+        pickupPlace={listingPickupPlace(product?.pickupNote ?? "", order.productLocation || product?.location || "")}
       />
     </main>
   );

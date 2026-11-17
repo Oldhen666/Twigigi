@@ -131,9 +131,9 @@ export function DescriptionEditor({ value, placeholder }: { value: string; place
             className="sr-only"
           />
         </label>
-        <ToolButton label="Bulleted list" onClick={() => run("insertUnorderedList")}>•</ToolButton>
-        <ToolButton label="Numbered list" onClick={() => run("insertOrderedList")}>1.</ToolButton>
-        <ToolButton label="Clear formatting" onClick={() => run("removeFormat")}>Clear</ToolButton>
+        <ToolButton label="Bulleted list" onClick={() => run("insertUnorderedList")}><BulletListIcon /></ToolButton>
+        <ToolButton label="Numbered list" onClick={() => run("insertOrderedList")}><NumberedListIcon /></ToolButton>
+        <ToolButton label="Clear formatting" onClick={() => run("removeFormat")}><ClearFormatIcon /></ToolButton>
       </div>
       <div
         ref={editorRef}
@@ -150,6 +150,52 @@ export function DescriptionEditor({ value, placeholder }: { value: string; place
       />
       <textarea ref={fieldRef} name="description" defaultValue={value} className="sr-only" tabIndex={-1} aria-hidden="true" />
     </div>
+  );
+}
+
+function Icon({ children }: { children: ReactNode }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
+
+function BulletListIcon() {
+  return (
+    <Icon>
+      <path d="M9 6h12" />
+      <path d="M9 12h12" />
+      <path d="M9 18h12" />
+      <circle cx="4" cy="6" r="1" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="18" r="1" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+function NumberedListIcon() {
+  return (
+    <Icon>
+      <path d="M11 6h10" />
+      <path d="M11 12h10" />
+      <path d="M11 18h10" />
+      <path d="M4 6h1v4" />
+      <path d="M4 10h2" />
+      <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" />
+    </Icon>
+  );
+}
+
+function ClearFormatIcon() {
+  return (
+    <Icon>
+      <path d="M4 7V4h16v3" />
+      <path d="M9 20h6" />
+      <path d="m12 4-4 16" />
+      <path d="m16 14 4 4" />
+      <path d="m20 14-4 4" />
+    </Icon>
   );
 }
 

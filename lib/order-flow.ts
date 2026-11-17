@@ -205,7 +205,7 @@ export function orderStage(order: StageOrder & { pickupConfirmedAt?: string | nu
 
 export type PlacementStep = { title: string; detail: string; state: "done" | "current" | "upcoming" };
 
-export function buyerPlacement(order: StageOrder & { displayName: string; pickupConfirmedAt?: string | null; pickupProposedBy?: "" | "buyer" | "seller" }) {
+export function buyerPlacement(order: StageOrder & { displayName: string; pickupConfirmedAt?: string | null; pickupProposedBy?: "" | "buyer" | "seller"; pickupOptions?: string[] }) {
   const cash = isCashMethod(order.buyerPayment);
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   const verifying = order.paymentStatus === "verifying";
@@ -293,13 +293,14 @@ export function buyerPlacement(order: StageOrder & { displayName: string; pickup
       };
     }
     if (order.pickupProposedBy === "seller" && !order.pickupConfirmedAt && !ready) {
+      const several = (order.pickupOptions?.length ?? 0) > 1;
       return {
         title: "Confirm pickup time",
         badge: "Confirm pickup",
-        intro: `${order.displayName} suggested a new pickup time.`,
+        intro: several ? `${order.displayName} suggested other pickup times.` : `${order.displayName} suggested a new pickup time.`,
         steps: [
           step("Order placed", "Twigigi created this order right away.", "done"),
-          step("Confirm pickup", "Confirm the new time so the seller can prepare it.", "current"),
+          step("Confirm pickup", several ? "Choose a time, or ask for another one. Then confirm the time and location." : "Confirm the time and location so the seller can prepare it.", "current"),
           step("Complete", doneNote, "upcoming"),
         ],
       };

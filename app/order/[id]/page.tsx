@@ -13,11 +13,13 @@ import { ReviewSeller } from "@/components/review-seller";
 import { Stage } from "@/components/stage";
 import { buttonClass } from "@/components/ui";
 import { ReloadForm } from "@/components/reload-form";
-import { acceptSellerChange, changeOrderPayment, confirmBuyerPickup, confirmReceipt, payDigitalFile } from "@/lib/actions";
+import { acceptSellerChange, changeOrderPayment, confirmBuyerPickup, confirmReceipt, leavePickupNote, payDigitalFile, requestAnotherPickup } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { findUserById, getInteractionBySource, getOrder, getProductById, hasReview } from "@/lib/db";
-import { formatDate, formatMoney, orderHeading } from "@/lib/format";
-import { formatPickupChoice, formatClockMinutes, parsePickupChoice } from "@/lib/pickup";
+import { twigigiFileHeld } from "@/lib/copyright";
+import { formatDate, formatMoney, orderHeading, pickupTimes } from "@/lib/format";
+import { AnotherPickupTime, PickupAgreementReminder } from "@/components/pickup-arrangement";
+import { formatPickupChoice, formatClockMinutes, listingPickupPlace, parsePickupChoice } from "@/lib/pickup";
 import { buyerOrderCopy, buyerPlacement, fulfillmentDone } from "@/lib/order-flow";
 import { buyerPayUrl, digitalPayMethods, isCashMethod, methodLabel, methodsForFulfillment, safeEmail, safePhone } from "@/lib/payments";
 import { confirmStripeSession } from "@/lib/stripe";
@@ -45,6 +47,7 @@ async function OrderView({
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   const canceled = order.status === "canceled" || order.reviewState === "declined";
   const digital = product?.cta === "file" || order.fulfillment === "digital";
+  const fileHeld = digital && twigigiFileHeld(product, fileSeller ?? seller);
   const filePage = digital && paid && (order.fileLinks.length > 0 || Boolean(order.fileSentAt));
   const payFulfillment = order.fulfillment === "delivery" || order.fulfillment === "shipping" ? order.fulfillment : "pickup";
   const offeredPayments = !digital && product ? methodsForFulfillment(product.paymentMethods, payFulfillment) : [];
@@ -63,7 +66,7 @@ async function OrderView({
       : order.fulfillment === "delivery"
         ? "Local delivery"
         : "Shipping";
-  const place = order.fulfillment === "pickup" ? product?.pickupNote.trim() ?? "" : order.address;
+  const place = order.fulfillment === "pickup" ? (order.pickupPlace || product?.pickupNote.trim() || "") : order.address
   const when = order.fulfillment === "pickup" ? pickupWhen(order.pickupWindow, product?.pickupTime ?? "") : "";
   const trackHref = account
     ? "/orders"
@@ -98,13 +101,19 @@ async function OrderView({
   const readyForPickup = delivered || order.fulfillmentState === "ready";
   const pickupConfirmed = Boolean(order.pickupConfirmedAt) || readyForPickup;
   const awaitingBuyerPickup = cashPickup && !canceled && !readyForPickup && !order.pickupConfirmedAt && order.pickupProposedBy === "seller";
+  const scheduleIds = [...new Set((order.lines.length > 0 ? order.lines.map((line) => line.productId) : [order.productId]).filter(Boolean))];
+  const buyerSchedules = scheduleIds.map((productId) => (productId === product?.id ? product?.pickupTime : getProductById(productId)?.pickupTime) ?? "");
+  const buyerScheduleLists = buyerSchedules.map((schedule) => pickupTimes(schedule));
+  const buyerPickupSummary = buyerScheduleLists.every((list) => list.join("|") === (buyerScheduleLists[0]?.join("|") ?? "")) ? buyerScheduleLists[0] ?? [] : [];
   const currentStep = placement?.steps.find((step) => step.state === "current");
   const nextLine = !placement
     ? ""
     : awaitingBuyerPickup
-      ? pickupAt
-        ? `Confirm pickup for ${pickupAt}.`
-        : "Confirm the pickup time the seller suggested."
+      ? order.pickupOptions.length > 1
+        ? "Choose one of the suggested times, or ask for another time. Then confirm the time and location."
+        : pickupAt
+          ? `Confirm the pickup time and location for ${pickupAt}.`
+          : "Confirm the pickup time and location the seller suggested."
       : cashPickup && !pickupConfirmed
         ? "Waiting for the seller to confirm your pickup time."
       : cashPickup && !readyForPickup
@@ -181,8 +190,9 @@ async function OrderView({
               <DigitalFileAccess
                 orderId={order.id}
                 orderNumber={orderNumber}
-                links={order.fileLinks}
-                password={order.filePassword}
+                links={fileHeld ? [] : order.fileLinks}
+                password={fileHeld ? "" : order.filePassword}
+                held={fileHeld}
                 accessConfirmed={Boolean(order.buyerReceivedAt)}
                 issue={order.fileIssue}
                 helpSent={query.file === "help"}
@@ -205,11 +215,18 @@ async function OrderView({
                 ))}
               </ol>
               {nextLine ? <p className="mt-4 text-center text-sm text-muted">{nextLine}</p> : null}
-              {awaitingBuyerPickup ? (
-                <ReloadForm action={confirmBuyerPickup} className="mt-4">
-                  <input type="hidden" name="id" value={order.id} />
-                  <button className={`${buttonClass} w-full`}>Confirm this time</button>
-                </ReloadForm>
+              {cashPickup && !canceled && !delivered ? (
+                <BuyerPickupAgreement
+                  orderId={order.id}
+                  options={order.pickupOptions}
+                  proposedBy={order.pickupProposedBy}
+                  confirmed={Boolean(order.pickupConfirmedAt)}
+                  ready={readyForPickup}
+                  place={order.pickupPlace || listingPickupPlace(product?.pickupNote ?? "", order.productLocation || product?.location || "")}
+                  notes={order.pickupMessages}
+                  schedules={buyerSchedules}
+                  summary={buyerPickupSummary}
+                />
               ) : null}
             </section>
 
@@ -379,8 +396,9 @@ async function OrderView({
           <DigitalFileAccess
             orderId={order.id}
             orderNumber={orderNumber}
-            links={order.fileLinks}
-            password={order.filePassword}
+            links={fileHeld ? [] : order.fileLinks}
+            password={fileHeld ? "" : order.filePassword}
+            held={fileHeld}
             accessConfirmed={Boolean(order.buyerReceivedAt)}
             issue={order.fileIssue}
             helpSent={query.file === "help"}
@@ -496,6 +514,83 @@ export default function Page({
     <Suspense fallback={<p className="p-8 text-muted">Loading order…</p>}>
       <OrderView params={params} searchParams={searchParams} />
     </Suspense>
+  );
+}
+
+function BuyerPickupAgreement({
+  orderId,
+  options,
+  proposedBy,
+  confirmed,
+  ready,
+  place,
+  notes,
+  schedules,
+  summary,
+}: {
+  orderId: string;
+  options: string[];
+  proposedBy: "" | "buyer" | "seller";
+  confirmed: boolean;
+  ready: boolean;
+  place: string;
+  notes: { by: "buyer" | "seller"; body: string; createdAt: string }[];
+  schedules: string[];
+  summary: string[];
+}) {
+  const choosing = !confirmed && !ready && proposedBy === "seller";
+  return (
+    <div className="mt-4 space-y-3 text-left text-sm">
+      <PickupAgreementReminder place={place} agreed={confirmed} />
+      {choosing && options.length > 0 ? (
+        <ReloadForm action={confirmBuyerPickup} className="space-y-2">
+          <input type="hidden" name="id" value={orderId} />
+          {options.map((time) => (
+            <label key={time} className="flex items-center gap-2 rounded-2xl border border-line px-3 py-2">
+              <input type="radio" name="pickupTime" value={time} />
+              <span>{formatPickupChoice(time)}</span>
+            </label>
+          ))}
+          <textarea name="note" rows={2} maxLength={500} placeholder="Note for the seller" className="w-full rounded-2xl border border-line px-3 py-2" />
+          <button className={`${buttonClass} w-full`}>Confirm this time and location</button>
+        </ReloadForm>
+      ) : null}
+      {choosing && options.length === 0 ? (
+        <ReloadForm action={confirmBuyerPickup} className="space-y-2">
+          <input type="hidden" name="id" value={orderId} />
+          <textarea name="note" rows={2} maxLength={500} placeholder="Note for the seller" className="w-full rounded-2xl border border-line px-3 py-2" />
+          <button className={`${buttonClass} w-full`}>Confirm this time and location</button>
+        </ReloadForm>
+      ) : null}
+      {choosing ? (
+        <details className="rounded-2xl border border-line px-4 py-3">
+          <summary className="cursor-pointer font-medium">Another time</summary>
+          <ReloadForm action={requestAnotherPickup} className="mt-3 space-y-2">
+            <input type="hidden" name="id" value={orderId} />
+            <AnotherPickupTime schedules={schedules} summary={summary} />
+            <button className={`${buttonClass} w-full`}>Send this time</button>
+          </ReloadForm>
+        </details>
+      ) : null}
+      <div className="rounded-2xl border border-line px-4 py-3">
+        <p className="font-medium">Notes</p>
+        {notes.length > 0 ? (
+          <ul className="mt-2 space-y-2">
+            {notes.map((note, index) => (
+              <li key={`${note.createdAt}-${index}`}>
+                <p className="text-xs uppercase tracking-[0.14em] text-muted">{note.by === "seller" ? "Seller" : "You"}</p>
+                <p className="whitespace-pre-wrap">{note.body}</p>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="mt-1 text-muted">Leave a note if none of the times work, or if the location needs a comment.</p>}
+        <ReloadForm action={leavePickupNote} className="mt-3 space-y-2">
+          <input type="hidden" name="id" value={orderId} />
+          <textarea name="note" rows={2} maxLength={500} placeholder="Note for the seller" className="w-full rounded-2xl border border-line px-3 py-2" />
+          <button className="w-full rounded-full border border-line px-4 py-2">Send note</button>
+        </ReloadForm>
+      </div>
+    </div>
   );
 }
 

@@ -14,7 +14,9 @@ const LINKS = [
   ["Payouts", "/admin/payouts"],
   ["Disputes", "/admin/disputes"],
   ["Reports", "/admin/reports"],
+  ["Appeals", "/admin/appeals"],
   ["Sellers", "/admin/sellers"],
+
 ];
 
 async function Header() {

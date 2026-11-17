@@ -20,7 +20,7 @@ export default function Page() {
         <p>If Twigigi confirms an account holder’s identity or business, that is an identity or business confirmation only. It is not a statement that a product is authentic.</p>
       </LegalSection>
       <LegalSection title="Reports">
-        <p>If you believe a listing infringes a right you own or are authorized to enforce, submit a <Link href="/legal/report-infringement" className="text-forest">report of intellectual property infringement</Link>. A report is a request for review. Twigigi does not delete a listing merely because a report was submitted.</p>
+        <p>If you believe a listing infringes a right you own or are authorized to enforce, submit a <Link href="/legal/report-infringement" className="text-forest">report of intellectual property infringement</Link>. A report is a request for review. Twigigi does not delete a listing merely because a report was submitted. Digital file listings are also covered by the <Link href="/legal/copyright" className="text-forest">Copyright Policy</Link>.</p>
         <p>Twigigi may investigate a report and may restrict, disable, or remove content that it reasonably believes infringes a right or violates this policy. Twigigi may also suspend or terminate an account for repeated or serious infringement. Twigigi may reject a report that does not describe the right or the listing, or that it does not believe is substantiated.</p>
       </LegalSection>
     </LegalPage>

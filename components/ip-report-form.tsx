@@ -56,6 +56,19 @@ export function IpReportForm({
         {state.fieldErrors?.rightType ? <p className="mt-1 text-sm text-danger">{state.fieldErrors.rightType}</p> : null}
       </fieldset>
       <label className="block">
+        <span className={labelClass}>Rights holder</span>
+        <input name="rightsHolder" className={inputClass} placeholder="Name of the person or company that owns the right" />
+        {state.fieldErrors?.rightsHolder ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.rightsHolder}</span> : null}
+      </label>
+      <fieldset>
+        <legend className={labelClass}>Your relationship to the rights holder</legend>
+        <div className="mt-2 space-y-2">
+          <label className="flex items-center gap-2"><input type="radio" name="relationship" value="owner" /> I am the rights holder</label>
+          <label className="flex items-center gap-2"><input type="radio" name="relationship" value="agent" /> I am authorized to act for the rights holder</label>
+        </div>
+        {state.fieldErrors?.relationship ? <p className="mt-1 text-sm text-danger">{state.fieldErrors.relationship}</p> : null}
+      </fieldset>
+      <label className="block">
         <span className={labelClass}>Protected work or right</span>
         <textarea name="protectedWork" rows={3} className={`${inputClass} h-auto py-3`} placeholder="Describe the work, mark, design, or patent you own or represent." />
         {state.fieldErrors?.protectedWork ? <span className="mt-1 block text-sm text-danger">{state.fieldErrors.protectedWork}</span> : null}
@@ -76,7 +89,7 @@ export function IpReportForm({
       </label>
       <label className="flex items-start gap-3 text-sm">
         <input type="checkbox" name="accurate" value="yes" className="mt-1" />
-        <span>I confirm that the information in this report is accurate.</span>
+        <span>I confirm that this information is accurate, and that I am the rights holder or authorized to act for the rights holder.</span>
       </label>
       {state.fieldErrors?.accurate ? <p className="text-sm text-danger">{state.fieldErrors.accurate}</p> : null}
       <label className="block">

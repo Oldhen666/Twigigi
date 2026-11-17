@@ -19,7 +19,7 @@ import {
 } from "@/lib/ledger";
 import { MARKETPLACE_GMV_SQL, PLATFORM_REVENUE_SQL, SELLER_SALES_SQL, paymentFlowOf } from "@/lib/order-money";
 import { isCashMethod } from "@/lib/payments";
-import { parsePickupChoice } from "@/lib/pickup";
+import { listingPickupPlace, parsePickupChoice, parsePickupMessages, parsePickupOptions } from "@/lib/pickup";
 import { fulfillmentDone, orderCanComplete, paymentNeedsConfirm } from "@/lib/order-flow";
 import { readStoredFileLinks } from "@/lib/files";
 import { parseQuoteForm } from "@/lib/quote-form";
@@ -279,6 +279,9 @@ function ensureColumns(database: DatabaseSync) {
   add("orders", "pickup_window", "pickup_window TEXT NOT NULL DEFAULT ''");
   add("orders", "pickup_confirmed_at", "pickup_confirmed_at TEXT");
   add("orders", "pickup_proposed_by", "pickup_proposed_by TEXT NOT NULL DEFAULT ''");
+  add("orders", "pickup_options", "pickup_options TEXT NOT NULL DEFAULT ''");
+  add("orders", "pickup_messages", "pickup_messages TEXT NOT NULL DEFAULT ''");
+  add("orders", "pickup_place", "pickup_place TEXT NOT NULL DEFAULT ''");
   add("orders", "paypal_me", "paypal_me TEXT NOT NULL DEFAULT ''");
   add("orders", "venmo_username", "venmo_username TEXT NOT NULL DEFAULT ''");
   add("orders", "payment_frozen", "payment_frozen INTEGER NOT NULL DEFAULT 0");
@@ -520,6 +523,36 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "rights_user_id", "rights_user_id TEXT NOT NULL DEFAULT ''");
   add("products", "rights_terms_version", "rights_terms_version TEXT NOT NULL DEFAULT ''");
   add("products", "rights_ip_version", "rights_ip_version TEXT NOT NULL DEFAULT ''");
+  add("products", "rights_content_version", "rights_content_version TEXT NOT NULL DEFAULT ''");
+  add("products", "file_access", "file_access TEXT NOT NULL DEFAULT ''");
+  add("users", "publish_restricted", "publish_restricted INTEGER NOT NULL DEFAULT 0");
+  add("users", "banned", "banned INTEGER NOT NULL DEFAULT 0");
+  add("content_reports", "rights_holder", "rights_holder TEXT NOT NULL DEFAULT ''");
+  add("content_reports", "relationship", "relationship TEXT NOT NULL DEFAULT ''");
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS seller_notices (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      product_id TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      body TEXT NOT NULL,
+      deadline TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_seller_notices_user ON seller_notices(user_id, created_at);
+    CREATE TABLE IF NOT EXISTS copyright_appeals (
+      id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      product_id TEXT NOT NULL DEFAULT '',
+      statement TEXT NOT NULL,
+      evidence TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'submitted',
+      admin_note TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_copyright_appeals_status ON copyright_appeals(status, created_at);
+  `);
   database.exec(`
     CREATE TABLE IF NOT EXISTS legal_acceptances (
       id TEXT PRIMARY KEY,
@@ -967,6 +1000,8 @@ function mapProduct(row: Row): Product {
     rightsUserId: str(row.rights_user_id),
     rightsTermsVersion: str(row.rights_terms_version),
     rightsIpVersion: str(row.rights_ip_version),
+    rightsContentVersion: str(row.rights_content_version),
+    fileAccess: str(row.file_access) === "restricted" ? "restricted" : "",
   };
 }
 
@@ -1058,6 +1093,8 @@ function mapUser(row: Row): User {
     stripeChargesEnabled: num(row.stripe_charges_enabled) === 1,
     autoConfirmOrders: num(row.auto_confirm_orders) === 1,
     suspended: num(row.suspended) === 1,
+    banned: num(row.banned) === 1,
+    publishRestricted: num(row.publish_restricted) === 1,
     bio: str(row.bio),
   };
 }
@@ -1106,6 +1143,9 @@ function mapOrder(row: Row): OrderRecord {
     pickupWindow: str(row.pickup_window),
     pickupConfirmedAt: row.pickup_confirmed_at ? str(row.pickup_confirmed_at) : null,
     pickupProposedBy: row.pickup_proposed_by === "seller" || row.pickup_proposed_by === "buyer" ? row.pickup_proposed_by : "",
+    pickupOptions: parsePickupOptions(str(row.pickup_options)),
+    pickupMessages: parsePickupMessages(str(row.pickup_messages)),
+    pickupPlace: str(row.pickup_place),
     deliveryNote: str(row.delivery_note),
     buyerNote: str(row.buyer_note),
     paypalMe: str(row.paypal_me),
@@ -1338,6 +1378,97 @@ export function confirmListingRights(id: string, userId: string, termsVersion: s
   ).run(new Date().toISOString(), userId, termsVersion, ipVersion, id);
 }
 
+export function confirmDigitalRights(id: string, userId: string, termsVersion: string, policyVersion: string, contentVersion: string) {
+  db.prepare(
+    `UPDATE products
+     SET rights_confirmed = 1, rights_confirmed_at = ?, rights_user_id = ?, rights_terms_version = ?, rights_ip_version = ?, rights_content_version = ?
+     WHERE id = ?`,
+  ).run(new Date().toISOString(), userId, termsVersion, policyVersion, contentVersion, id);
+}
+
+export function setProductFileAccess(id: string, access: "" | "restricted") {
+  db.prepare("UPDATE products SET file_access = ?, updated_at = ? WHERE id = ?").run(access, new Date().toISOString(), id);
+}
+
+export function setUserPublishRestricted(id: string, restricted: boolean) {
+  db.prepare("UPDATE users SET publish_restricted = ? WHERE id = ?").run(restricted ? 1 : 0, id);
+}
+
+export function setUserBanned(id: string, banned: boolean) {
+  db.prepare("UPDATE users SET banned = ?, suspended = CASE WHEN ? = 1 THEN 1 ELSE suspended END WHERE id = ?").run(banned ? 1 : 0, banned ? 1 : 0, id);
+  if (!banned) db.prepare("UPDATE users SET suspended = 0 WHERE id = ? AND banned = 0").run(id);
+}
+
+export function insertSellerNotice(input: { userId: string; productId?: string; kind: string; body: string; deadline?: string }) {
+  db.prepare(
+    `INSERT INTO seller_notices (id, user_id, product_id, created_at, kind, body, deadline)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(`ntc_${randomBytes(9).toString("base64url")}`, input.userId, input.productId ?? "", new Date().toISOString(), input.kind, input.body, input.deadline ?? "");
+}
+
+export function listSellerNotices(userId: string) {
+  return many("SELECT * FROM seller_notices WHERE user_id = ? ORDER BY created_at DESC LIMIT 8", userId).map((row) => ({
+    id: str(row.id),
+    productId: str(row.product_id),
+    createdAt: str(row.created_at),
+    kind: str(row.kind),
+    body: str(row.body),
+    deadline: str(row.deadline),
+  }));
+}
+
+export function insertCopyrightAppeal(input: { userId: string; productId: string; statement: string; evidence: string }) {
+  const id = `apl_${randomBytes(9).toString("base64url")}`;
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO copyright_appeals (id, created_at, updated_at, user_id, product_id, statement, evidence, status, admin_note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'submitted', '')`,
+  ).run(id, now, now, input.userId, input.productId, input.statement, input.evidence);
+  return id;
+}
+
+export function listCopyrightAppeals() {
+  return many(
+    `SELECT a.*, COALESCE(u.display_name, '') AS seller_name, COALESCE(u.email, '') AS seller_email, COALESCE(p.title, '') AS product_title
+     FROM copyright_appeals a
+     LEFT JOIN users u ON u.id = a.user_id
+     LEFT JOIN products p ON p.id = a.product_id
+     ORDER BY a.created_at DESC`,
+  ).map(mapAppeal);
+}
+
+export function getCopyrightAppeal(id: string) {
+  const row = one(
+    `SELECT a.*, COALESCE(u.display_name, '') AS seller_name, COALESCE(u.email, '') AS seller_email, COALESCE(p.title, '') AS product_title
+     FROM copyright_appeals a
+     LEFT JOIN users u ON u.id = a.user_id
+     LEFT JOIN products p ON p.id = a.product_id
+     WHERE a.id = ?`,
+    id,
+  );
+  return row ? mapAppeal(row) : null;
+}
+
+function mapAppeal(row: Row) {
+  return {
+    id: str(row.id),
+    createdAt: str(row.created_at),
+    userId: str(row.user_id),
+    productId: str(row.product_id),
+    statement: str(row.statement),
+    evidence: str(row.evidence),
+    status: str(row.status),
+    adminNote: str(row.admin_note),
+    sellerName: str(row.seller_name),
+    sellerEmail: str(row.seller_email),
+    productTitle: str(row.product_title),
+  };
+}
+
+export function updateCopyrightAppeal(id: string, status: string, adminNote: string) {
+  db.prepare("UPDATE copyright_appeals SET status = ?, admin_note = ?, updated_at = ? WHERE id = ?").run(status, adminNote, new Date().toISOString(), id);
+}
+
 export function recordLegalAcceptance(userId: string, document: string, version: string) {
   const id = `acc_${randomBytes(9).toString("base64url")}`;
   db.prepare("INSERT INTO legal_acceptances (id, user_id, document, version, accepted_at) VALUES (?, ?, ?, ?, ?)").run(
@@ -1365,6 +1496,8 @@ export type ContentReportInput = {
   evidence: string;
   signature: string;
   policyVersion: string;
+  rightsHolder?: string;
+  relationship?: string;
 };
 
 export function findListingByPath(raw: string) {
@@ -1407,8 +1540,8 @@ export function insertContentReport(input: ContentReportInput) {
     `INSERT INTO content_reports (
       id, created_at, updated_at, kind, status, reporter_user_id, reporter_name, reporter_email, company,
       reason, right_type, protected_work, content_url, product_id, owner_user_id, description, evidence,
-      signature, accurate, policy_version, admin_note
-    ) VALUES (?, ?, ?, ?, 'submitted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, '')`,
+      signature, accurate, policy_version, admin_note, rights_holder, relationship
+    ) VALUES (?, ?, ?, ?, 'submitted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, '', ?, ?)`,
   ).run(
     id,
     now,
@@ -1428,6 +1561,8 @@ export function insertContentReport(input: ContentReportInput) {
     input.evidence,
     input.signature,
     input.policyVersion,
+    input.rightsHolder ?? "",
+    input.relationship ?? "",
   );
   return id;
 }
@@ -1453,6 +1588,8 @@ export type ContentReport = {
   signature: string;
   policyVersion: string;
   adminNote: string;
+  rightsHolder: string;
+  relationship: string;
   productTitle: string;
   productSlug: string;
   ownerName: string;
@@ -1483,6 +1620,8 @@ function mapReport(row: Row): ContentReport {
     signature: str(row.signature),
     policyVersion: str(row.policy_version),
     adminNote: str(row.admin_note),
+    rightsHolder: str(row.rights_holder),
+    relationship: str(row.relationship),
     productTitle: str(row.product_title),
     productSlug: str(row.product_slug),
     ownerName: str(row.owner_name),
@@ -3669,6 +3808,7 @@ export function setSellerPickupTime(id: string, sellerId: string, pickupWindow: 
     .prepare(
       `UPDATE orders SET
          pickup_window = ?,
+         pickup_options = '',
          pickup_proposed_by = 'seller',
          pickup_confirmed_at = NULL,
          fulfillment_state = CASE WHEN ? = 1 THEN '' ELSE fulfillment_state END,
@@ -3679,18 +3819,69 @@ export function setSellerPickupTime(id: string, sellerId: string, pickupWindow: 
   return result.changes > 0;
 }
 
-export function confirmBuyerPickupTime(id: string) {
+export function confirmBuyerPickupTime(id: string, choice = "") {
   const order = getOrder(id);
   if (!order || order.pickupProposedBy !== "seller" || order.pickupConfirmedAt) return false;
   if (order.fulfillment !== "pickup" || order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined") return false;
   if (order.fulfillmentState === "ready" || order.fulfillmentState === "handed") return false;
+  const window = order.pickupOptions.length > 0 ? choice : order.pickupWindow;
+  if (!parsePickupChoice(window)) return false;
+  if (order.pickupOptions.length > 0 && !order.pickupOptions.includes(window)) return false;
   const result = db
     .prepare(
-      `UPDATE orders SET pickup_confirmed_at = ?
+      `UPDATE orders SET pickup_window = ?, pickup_options = '', pickup_confirmed_at = ?, pickup_place = ?
        WHERE id = ? AND pickup_proposed_by = 'seller' AND pickup_confirmed_at IS NULL`,
     )
-    .run(new Date().toISOString(), id);
+    .run(window, new Date().toISOString(), agreedPickupPlace(order.productId), id);
   return result.changes > 0;
+}
+
+export function setSellerPickupOptions(id: string, sellerId: string, times: string[]) {
+  const order = getOrder(id);
+  if (!order || order.sellerId !== sellerId) return false;
+  if (!isCashMethod(order.buyerPayment) || order.fulfillment !== "pickup") return false;
+  if (order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined" || order.fulfillmentState === "handed" || order.fulfillmentState === "ready") return false;
+  if (order.pickupConfirmedAt) return false;
+  const unique = [...new Set(times.filter((time) => parsePickupChoice(time)))].slice(0, 6);
+  if (unique.length < 1) return false;
+  const result = db
+    .prepare(
+      `UPDATE orders SET pickup_options = ?, pickup_proposed_by = 'seller', pickup_confirmed_at = NULL
+       WHERE id = ? AND seller_id = ? AND pickup_confirmed_at IS NULL`,
+    )
+    .run(JSON.stringify(unique), id, sellerId);
+  return result.changes > 0;
+}
+
+export function requestAnotherPickupTime(id: string, pickupWindow: string) {
+  const order = getOrder(id);
+  if (!order || order.pickupProposedBy !== "seller" || order.pickupConfirmedAt) return false;
+  if (order.fulfillment !== "pickup" || order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined") return false;
+  if (order.fulfillmentState === "ready" || order.fulfillmentState === "handed") return false;
+  if (!parsePickupChoice(pickupWindow)) return false;
+  const result = db
+    .prepare(
+      `UPDATE orders SET pickup_window = ?, pickup_options = '', pickup_proposed_by = 'buyer', pickup_confirmed_at = NULL
+       WHERE id = ? AND pickup_proposed_by = 'seller' AND pickup_confirmed_at IS NULL`,
+    )
+    .run(pickupWindow, id);
+  return result.changes > 0;
+}
+
+export function addPickupMessage(id: string, by: "buyer" | "seller", body: string) {
+  const order = getOrder(id);
+  if (!order || order.fulfillment !== "pickup") return false;
+  if (order.status === "canceled" || order.status === "fulfilled" || order.reviewState === "declined") return false;
+  const text = body.trim().slice(0, 500);
+  if (text.length < 1) return false;
+  const notes = [...order.pickupMessages, { by, body: text, createdAt: new Date().toISOString() }].slice(-20);
+  const result = db.prepare("UPDATE orders SET pickup_messages = ? WHERE id = ?").run(JSON.stringify(notes), id);
+  return result.changes > 0;
+}
+
+function agreedPickupPlace(productId: string) {
+  const product = getProductById(productId);
+  return listingPickupPlace(product?.pickupNote ?? "", product?.location ?? "");
 }
 
 export function confirmCashHandover(id: string, sellerId: string, requirePaid = false) {
@@ -3775,8 +3966,11 @@ export function confirmOrderPickupTime(id: string, sellerId: string) {
   if (order.pickupProposedBy === "seller") return false;
   if (order.pickupConfirmedAt) return true;
   const result = db
-    .prepare(`UPDATE orders SET pickup_confirmed_at = ? WHERE id = ? AND seller_id = ? AND pickup_confirmed_at IS NULL`)
-    .run(new Date().toISOString(), id, sellerId);
+    .prepare(
+      `UPDATE orders SET pickup_confirmed_at = ?, pickup_place = ?, pickup_options = ''
+       WHERE id = ? AND seller_id = ? AND pickup_confirmed_at IS NULL`,
+    )
+    .run(new Date().toISOString(), agreedPickupPlace(order.productId), id, sellerId);
   return result.changes > 0;
 }
 

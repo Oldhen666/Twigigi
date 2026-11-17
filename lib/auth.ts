@@ -30,7 +30,7 @@ async function activeSession() {
   if (!user) return null;
   const actor = session.actorId && session.actorId !== session.userId ? findUserById(session.actorId) : null;
   const impersonating = Boolean(actor && !actor.suspended && actor.role === "admin");
-  if (user.suspended && !impersonating) return null;
+  if ((user.suspended || user.banned) && !impersonating) return null;
   return { user, actor: impersonating ? actor : null };
 }
 

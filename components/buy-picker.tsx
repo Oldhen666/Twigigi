@@ -19,6 +19,7 @@ export function BuyPicker({
   quantityAvailable,
   cartPublicId = "",
   productId = "",
+  held = false,
   children,
 }: {
   username: string;
@@ -32,6 +33,7 @@ export function BuyPicker({
   quantityAvailable: number | null;
   cartPublicId?: string;
   productId?: string;
+  held?: boolean;
   children?: React.ReactNode;
 }) {
   const [selected, setSelected] = useState(() => options.map((option) => option.values[0] ?? ""));
@@ -93,9 +95,9 @@ export function BuyPicker({
       </div>
       {children}
       <div className="sticky bottom-0 z-10 -mx-5 mt-4 border-t border-line bg-card/95 px-4 py-3 backdrop-blur">
-        {soldOut || unavailable ? (
+        {held || soldOut || unavailable ? (
           <span className="flex h-14 items-center justify-center rounded-2xl bg-paper-deep text-lg text-muted">
-            {soldOut ? "Sold out" : "Unavailable"}
+            {held ? "This file is not available" : soldOut ? "Sold out" : "Unavailable"}
           </span>
         ) : cartPublicId && productId ? (
           <button

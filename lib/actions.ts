@@ -31,6 +31,14 @@ import {
   deleteProduct,
   duplicateProduct,
   confirmListingRights,
+  confirmDigitalRights,
+  setProductFileAccess,
+  setUserPublishRestricted,
+  setUserBanned,
+  insertSellerNotice,
+  insertCopyrightAppeal,
+  getCopyrightAppeal,
+  updateCopyrightAppeal,
   findListingByPath,
   findUserByEmail,
   findUserByUsername,
@@ -86,6 +94,9 @@ import {
   confirmBuyerPickupTime,
   confirmCashHandover,
   setSellerPickupTime,
+  setSellerPickupOptions,
+  requestAnotherPickupTime,
+  addPickupMessage,
   rollbackOrderStatus,
   recordBuyerPayment,
   markOrderFulfillment,
@@ -152,7 +163,8 @@ import {
   SRC_COOKIE,
 } from "@/lib/format";
 import type { Cta, FormState, Fulfillment, OrderStatus, ProductInput } from "@/lib/types";
-import { IP_POLICY_VERSION, LISTING_REPORT_REASONS, PRIVACY_VERSION, REPORT_STATUSES, RIGHT_TYPES, TERMS_VERSION } from "@/lib/legal";
+import { COPYRIGHT_POLICY_VERSION, IP_POLICY_VERSION, LISTING_REPORT_REASONS, PRIVACY_VERSION, REPORT_STATUSES, RIGHT_TYPES, TERMS_VERSION } from "@/lib/legal";
+import { digitalContentVersion, digitalRightsDue, enforcementLabel, enforcementNeedsConfirm, enforcementNotice, sellerMayPublish, twigigiFileHeld, type EnforcementAction, ENFORCEMENT_ACTIONS } from "@/lib/copyright";
 import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { ensureVisitor } from "@/lib/visitor";
 import { billingCurrency, isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid, quoteWindow, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
@@ -662,9 +674,20 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     if (!z.string().email().safeParse(contactEmail).success) {
       errors.contactEmail = cta === "quote" ? "Enter a contact email." : "Enter an email for buyer replies.";
     }
-    if (text(formData, "contentRights") !== "yes") {
+    if (cta !== "file" && text(formData, "contentRights") !== "yes") {
       errors.contentRights = "Confirm that you own or have permission to use the content in this listing.";
     }
+  }
+  const fileRightsMoment = cta === "file" && (intent === "publish" || existing?.status === "published");
+  if (fileRightsMoment && digitalRightsDue({
+    confirmed: Boolean(existing?.rightsConfirmed),
+    confirmedVersion: existing?.rightsContentVersion ?? "",
+    confirmedPolicy: existing?.rightsIpVersion ?? "",
+    fileLinks: parsedLinks.links,
+    images: kept,
+    imagesChanged: files.length > 0,
+  }) && text(formData, "digitalRights") !== "yes") {
+    errors.digitalRights = "Confirm that you own this content or have permission to sell and distribute it.";
   }
 
   if (Object.keys(errors).length > 0) return { fieldErrors: errors };
@@ -684,6 +707,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   if (!owner || (id && (!existing || existing.userId !== owner.id))) {
     return { error: "That Twig was not found.", ...sessionStamp };
   }
+  if ((owner.suspended || owner.banned) && !acting && !adminEdit) return { error: "This account cannot publish.", ...sessionStamp };
+  if (intent === "publish" && !sellerMayPublish(owner) && !acting && !adminEdit) return { error: "Publishing is restricted on this account.", ...sessionStamp };
   if (cta === "file") {
     const filePaypal = safeEmail(text(formData, "paypalEmail"));
     paymentMethods = digitalPayMethods({ paypalEmail: filePaypal, stripeReady: owner.stripeChargesEnabled });
@@ -790,7 +815,11 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       if (input.status !== "published" || existing.status === "deactivated") clearDeactivatesAt(existing.id, owner.id);
       if (input.status === "published" && existing.status === "deactivated") clearDeactivatedAt(existing.id, owner.id);
     } else insertProduct(savedProductId, owner.id, input);
-    if (input.status === "published") confirmListingRights(savedProductId, owner.id, TERMS_VERSION, IP_POLICY_VERSION);
+    if (input.status === "published" && cta === "file" && text(formData, "digitalRights") === "yes") {
+      confirmDigitalRights(savedProductId, owner.id, TERMS_VERSION, COPYRIGHT_POLICY_VERSION, digitalContentVersion(parsedLinks.links, images));
+    } else if (input.status === "published" && cta !== "file") {
+      confirmListingRights(savedProductId, owner.id, TERMS_VERSION, IP_POLICY_VERSION);
+    }
   } catch (error) {
     console.error("saveProduct failed", error);
     const message = error instanceof Error ? error.message : "";
@@ -1171,6 +1200,9 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   const product = getProductById(productId);
   if (!product || !isTwigLive(product) || product.priceCents == null || (product.cta !== "buy" && product.cta !== "file")) {
     return { error: "This Twig is not available to buy." };
+  }
+  if (product.cta === "file" && twigigiFileHeld(product, findUserById(product.userId))) {
+    return { error: "This file is not available." };
   }
   if (product.cta === "file" && product.fileLinks.length === 0) return { error: "This file is not ready yet." };
   if (product.quantityAvailable === 0) return { error: "This product is sold out." };
@@ -2137,7 +2169,10 @@ export async function confirmBuyerPickup(_prev: FormState, formData: FormData): 
   if (!order) return { next: "/orders" };
   const user = await getCurrentUser();
   if (user && user.id === order.sellerId && user.email.toLowerCase() !== order.email.toLowerCase()) return { next: back };
-  if (!confirmBuyerPickupTime(id)) return { error: "That pickup time is no longer waiting for you." };
+  const choice = text(formData, "pickupTime").trim().slice(0, 16);
+  if (!confirmBuyerPickupTime(id, choice)) return { error: "Choose one of the suggested times." };
+  const note = text(formData, "note").trim().slice(0, 500);
+  if (note) addPickupMessage(id, "buyer", note);
   const next = getOrder(id);
   const product = getProductById(order.productId);
   const seller = findUserById(order.sellerId);
@@ -2148,8 +2183,10 @@ export async function confirmBuyerPickup(_prev: FormState, formData: FormData): 
       await sendOrderEmail(notify, {
         subject: `Pickup time confirmed: ${next.productTitle}`,
         text: [
-          `${next.buyerName} confirmed the pickup time for order ${next.publicRef}.`,
+          `${next.buyerName} confirmed the pickup time and location for order ${next.publicRef}.`,
           when ? `Pickup time: ${when}` : "",
+          next.pickupPlace ? `Pickup location: ${next.pickupPlace}` : "",
+          note ? `Note: ${note}` : "",
           "You can mark it ready for pickup.",
           "",
           `${appUrl()}/dashboard/orders/${next.id}`,
@@ -2158,6 +2195,57 @@ export async function confirmBuyerPickup(_prev: FormState, formData: FormData): 
       });
     }
   }
+  return { next: back };
+}
+
+export async function requestAnotherPickup(_prev: FormState, formData: FormData): Promise<FormState> {
+  const id = text(formData, "id");
+  const back = `/order/${id}`;
+  const order = getOrder(id);
+  if (!order) return { next: "/orders" };
+  const user = await getCurrentUser();
+  if (user && user.id === order.sellerId && user.email.toLowerCase() !== order.email.toLowerCase()) return { next: back };
+  const pickupWindow = text(formData, "pickupTime").trim().slice(0, 16);
+  const productIds = [...new Set((order.lines.length > 0 ? order.lines.map((line) => line.productId) : [order.productId]).filter(Boolean))];
+  const schedules = productIds.map((productId) => getProductById(productId)?.pickupTime ?? "");
+  const problem = pickupChoiceProblem(schedules, pickupWindow);
+  if (problem) return { error: problem === "The seller has not set pickup days." ? "The seller has not set pickup days." : "Choose one of the available pickup times." };
+  if (!requestAnotherPickupTime(id, pickupWindow)) return { error: "That time could not be sent." };
+  const note = text(formData, "note").trim().slice(0, 500);
+  if (note) addPickupMessage(id, "buyer", note);
+  const next = getOrder(id);
+  const product = getProductById(order.productId);
+  const seller = findUserById(order.sellerId);
+  if (next && product && seller) {
+    const notify = sellerNotifyEmails(product, seller.email);
+    if (notify.length > 0) {
+      await sendOrderEmail(notify, {
+        subject: `Another pickup time: ${next.productTitle}`,
+        text: [
+          `${next.buyerName} asked for another pickup time for order ${next.publicRef}.`,
+          `Pickup time: ${formatPickupChoice(next.pickupWindow)}`,
+          note ? `Note: ${note}` : "",
+          "Confirm this time and location, or send other times.",
+          "",
+          `${appUrl()}/dashboard/orders/${next.id}`,
+        ].filter(Boolean).join("\n"),
+        replyTo: next.email,
+      });
+    }
+  }
+  return { next: back };
+}
+
+export async function leavePickupNote(_prev: FormState, formData: FormData): Promise<FormState> {
+  const id = text(formData, "id");
+  const order = getOrder(id);
+  if (!order) return { error: "That order was not found." };
+  const user = await getCurrentUser();
+  const sellerSide = Boolean(user && user.id === order.sellerId && user.email.toLowerCase() !== order.email.toLowerCase());
+  const buyerSide = !user || Boolean(user.id === order.buyerId || user.email.toLowerCase() === order.email.toLowerCase());
+  if (!sellerSide && !buyerSide) return { error: "You cannot leave a note on this order." };
+  const back = sellerSide ? `/dashboard/orders/${id}` : `/order/${id}`;
+  if (!addPickupMessage(id, sellerSide ? "seller" : "buyer", text(formData, "note"))) return { error: "Write a short note." };
   return { next: back };
 }
 
@@ -2170,9 +2258,10 @@ export async function confirmPickupTime(_prev: FormState, formData: FormData): P
   if (!order) return { next: back };
   const when = order.pickupWindow ? formatPickupChoice(order.pickupWindow) : "";
   const sent = await notifyBuyer(order, `Pickup time confirmed: ${order.productTitle}`, [
-    `${order.displayName} confirmed the pickup time for order ${order.publicRef}.`,
+    `${order.displayName} confirmed the pickup time and location for order ${order.publicRef}.`,
     when ? `Pickup time: ${when}` : "They confirmed the pickup time.",
-  ]);
+    order.pickupPlace ? `Pickup location: ${order.pickupPlace}` : "",
+  ].filter(Boolean));
   return { next: sent ? back : `${back}?mail=0` };
 }
 
@@ -2181,30 +2270,42 @@ export async function arrangePickupTime(_prev: FormState, formData: FormData): P
   const id = text(formData, "id");
   const back = `/dashboard/orders/${id}`;
   const reschedule = text(formData, "reschedule") === "1";
+  const listed = formData.getAll("pickupTimes").map((item) => String(item).trim().slice(0, 16)).filter(Boolean);
   const pickupWindow = text(formData, "pickupTime").trim().slice(0, 16);
+  const times = reschedule ? [pickupWindow] : listed.length > 0 ? listed : pickupWindow ? [pickupWindow] : [];
   const existing = getOrder(id);
   if (!existing || existing.sellerId !== user.id) return { next: back };
   const productIds = [...new Set((existing.lines.length > 0 ? existing.lines.map((line) => line.productId) : [existing.productId]).filter(Boolean))];
   const schedules = productIds.map((productId) => getProductById(productId)?.pickupTime ?? "");
-  const problem = pickupChoiceProblem(schedules, pickupWindow);
-  if (problem) {
-    const error = problem === "The seller has not set pickup days."
-      ? "Add pickup days on the product first."
-      : problem === "Choose a time the seller offered."
-        ? "Choose one of your available pickup times."
-        : "Choose a pickup time.";
-    return { error };
+  for (const time of times) {
+    const problem = pickupChoiceProblem(schedules, time);
+    if (problem) {
+      const error = problem === "The seller has not set pickup days."
+        ? "Add pickup days on the product first."
+        : problem === "Choose a time the seller offered."
+          ? "Choose one of your available pickup times."
+          : "Choose a pickup time.";
+      return { error };
+    }
   }
-  if (!setSellerPickupTime(id, user.id, pickupWindow, reschedule)) return { error: "That pickup time could not be saved." };
+  if (times.length < 1) return { error: "Add at least one pickup time." };
+  const saved = reschedule || listed.length === 0
+    ? setSellerPickupTime(id, user.id, times[0], reschedule)
+    : setSellerPickupOptions(id, user.id, times);
+  if (!saved) return { error: "Those pickup times could not be saved." };
+  const note = text(formData, "note").trim().slice(0, 500);
+  if (note) addPickupMessage(id, "seller", note);
   const order = getOrder(id);
   if (!order) return { next: back };
-  const when = formatPickupChoice(order.pickupWindow);
-  const sent = await notifyBuyer(order, `${reschedule ? "New pickup time" : "Pickup time suggested"}: ${order.productTitle}`, [
+  const offered = order.pickupOptions.length > 0 ? order.pickupOptions : [order.pickupWindow];
+  const when = offered.map((time) => formatPickupChoice(time)).filter(Boolean);
+  const sent = await notifyBuyer(order, `${reschedule ? "New pickup time" : "Pickup times suggested"}: ${order.productTitle}`, [
     reschedule
       ? `${order.displayName} suggested a new pickup time for order ${order.publicRef}.`
-      : `${order.displayName} suggested a pickup time for order ${order.publicRef}.`,
-    when ? `Pickup time: ${when}` : "",
-    "Open the order and confirm this time.",
+      : `${order.displayName} suggested pickup times for order ${order.publicRef}.`,
+    ...when.map((time) => `Pickup time: ${time}`),
+    note ? `Note: ${note}` : "",
+    "Open the order. If none of these times work, choose another time. When you agree, confirm the pickup time and location.",
   ].filter(Boolean));
   return { next: sent ? back : `${back}?mail=0` };
 }
@@ -2733,6 +2834,8 @@ export async function sendOrderFile(_prev: FormState, formData: FormData): Promi
   if (!order || order.sellerId !== user.id) return { next: "/dashboard" };
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   if (!paid || order.fulfillment !== "digital" || order.fileLinks.length === 0) return { next: `${back}?file=wait` };
+  const listing = getProductById(order.productId);
+  if (twigigiFileHeld(listing, listing ? findUserById(listing.userId) : findUserById(order.sellerId))) return { next: `${back}?file=held` };
   const sent = await deliverPaidFile(id);
   if (!sent) return { next: `${back}?file=mail` };
   markFileSent(id, user.id);
@@ -2857,6 +2960,10 @@ export async function submitIpReport(_prev: FormState, formData: FormData): Prom
   if (name.length < 2) fieldErrors.name = "Enter your full name.";
   if (!z.string().email().safeParse(email).success) fieldErrors.email = "Enter a valid email.";
   if (!RIGHT_TYPES.some((item) => item.id === rightType)) fieldErrors.rightType = "Choose the type of right.";
+  const rightsHolder = text(formData, "rightsHolder").trim().slice(0, 160);
+  const relationship = text(formData, "relationship");
+  if (rightsHolder.length < 2) fieldErrors.rightsHolder = "Enter the rights holder's name.";
+  if (relationship !== "owner" && relationship !== "agent") fieldErrors.relationship = "Say whether you are the rights holder or authorized to act for them.";
   if (protectedWork.length < 4) fieldErrors.protectedWork = "Identify the protected work or right.";
   if (contentUrl.length < 2) fieldErrors.contentUrl = "Add the listing or content URL.";
   if (description.length < 8) fieldErrors.description = "Describe the alleged infringement.";
@@ -2880,7 +2987,9 @@ export async function submitIpReport(_prev: FormState, formData: FormData): Prom
     description,
     evidence: text(formData, "evidence").trim().slice(0, 4000),
     signature,
-    policyVersion: IP_POLICY_VERSION,
+    policyVersion: COPYRIGHT_POLICY_VERSION,
+    rightsHolder,
+    relationship,
   });
   return { saved: true };
 }
@@ -2986,6 +3095,7 @@ export async function adminSuspendAccount(formData: FormData) {
   const person = findUserById(userId);
   if (!person || person.id === admin.id || person.role === "admin") redirect(next);
   const suspend = text(formData, "suspended") === "1";
+  if (!suspend && person.banned) redirect(next);
   setUserSuspended(userId, suspend);
   insertModerationEvent({
     actorId: admin.id,
@@ -2996,4 +3106,84 @@ export async function adminSuspendAccount(formData: FormData) {
     toStatus: suspend ? "suspended" : "active",
   });
   redirect(next);
+}
+
+export async function adminCopyrightAction(formData: FormData) {
+  const admin = await requireAdmin();
+  const actionName = text(formData, "action");
+  const reportId = text(formData, "reportId");
+  const back = reportId ? `/admin/reports/${reportId}` : "/admin/reports";
+  if (!ENFORCEMENT_ACTIONS.includes(actionName as EnforcementAction)) redirect(back);
+  const reason = text(formData, "reason").trim().slice(0, 1000);
+  if (reason.length < 4) redirect(back);
+  if (enforcementNeedsConfirm(actionName) && text(formData, "confirm") !== "yes") redirect(back);
+  const product = getProductById(text(formData, "productId"));
+  const person = findUserById(text(formData, "userId") || product?.userId || "");
+  if (person && (person.id === admin.id || person.role === "admin") && ["suspend", "unsuspend", "ban", "unban", "restrict_publishing", "restore_publishing"].includes(actionName)) redirect(back);
+  const deadline = actionName === "request_documents" ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10) : null;
+  if (actionName === "restrict_listing" && product) setProductModeration(product.id, "restricted");
+  if (actionName === "restore_listing" && product) setProductModeration(product.id, "");
+  if (actionName === "restrict_files" && product) setProductFileAccess(product.id, "restricted");
+  if (actionName === "restore_files" && product) setProductFileAccess(product.id, "");
+  if (actionName === "restrict_publishing" && person) setUserPublishRestricted(person.id, true);
+  if (actionName === "restore_publishing" && person) setUserPublishRestricted(person.id, false);
+  if (actionName === "suspend" && person) setUserSuspended(person.id, true);
+  if (actionName === "unsuspend" && person && !person.banned) setUserSuspended(person.id, false);
+  if (actionName === "ban" && person) setUserBanned(person.id, true);
+  if (actionName === "unban" && person) setUserBanned(person.id, false);
+  const notice = enforcementNotice({ productTitle: product?.title ?? "", actionLabel: enforcementLabel(actionName), reason, deadline });
+  insertModerationEvent({
+    actorId: admin.id,
+    action: actionName,
+    targetKind: product ? "product" : "user",
+    targetId: product?.id || person?.id || reportId || "none",
+    note: notice,
+    toStatus: actionName,
+  });
+  if (person) {
+    insertSellerNotice({ userId: person.id, productId: product?.id, kind: actionName, body: notice, deadline: deadline ?? "" });
+    await sendOrderEmail(person.email, { subject: `Twigigi: ${enforcementLabel(actionName)}`, text: notice });
+  }
+  if (product) refreshListing(product.id);
+  redirect(back);
+}
+
+export async function submitCopyrightAppeal(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await requireUser();
+  const statement = text(formData, "statement").trim().slice(0, 4000);
+  const evidence = text(formData, "evidence").trim().slice(0, 4000);
+  const productId = text(formData, "productId");
+  const fieldErrors: Record<string, string> = {};
+  if (statement.length < 8) fieldErrors.statement = "Explain why the action should be reviewed.";
+  const product = productId ? getProductById(productId) : null;
+  if (productId && (!product || product.userId !== user.id)) fieldErrors.productId = "Choose one of your Twigs.";
+  if (Object.keys(fieldErrors).length > 0) return { fieldErrors };
+  insertCopyrightAppeal({ userId: user.id, productId: product?.id ?? "", statement, evidence });
+  insertModerationEvent({
+    actorId: user.id,
+    action: "appeal_submitted",
+    targetKind: product ? "product" : "user",
+    targetId: product?.id || user.id,
+    note: statement.slice(0, 500),
+    toStatus: "submitted",
+  });
+  return { saved: true };
+}
+
+export async function adminReviewAppeal(formData: FormData) {
+  const admin = await requireAdmin();
+  const appealId = text(formData, "id");
+  if (!getCopyrightAppeal(appealId)) redirect("/admin/appeals");
+  const status = text(formData, "status") === "reviewed" ? "reviewed" : "submitted";
+  const note = text(formData, "adminNote").trim().slice(0, 2000);
+  updateCopyrightAppeal(appealId, status, note);
+  insertModerationEvent({
+    actorId: admin.id,
+    action: "appeal_review",
+    targetKind: "appeal",
+    targetId: appealId,
+    note,
+    toStatus: status,
+  });
+  redirect(`/admin/appeals/${appealId}`);
 }

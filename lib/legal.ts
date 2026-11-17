@@ -8,6 +8,7 @@ export const SELLER_PAYMENT_RESPONSIBILITY = [
 ];
 export const PRIVACY_VERSION = "2026-10-31";
 export const IP_POLICY_VERSION = "2026-10-31";
+export const COPYRIGHT_POLICY_VERSION = "2026-11-16";
 
 export const REPORT_STATUSES = [
   "submitted",

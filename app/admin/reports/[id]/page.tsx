@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { adminRestoreReportedListing, adminSuspendAccount, adminUpdateReport } from "@/lib/actions";
+import { adminCopyrightAction, adminRestoreReportedListing, adminSuspendAccount, adminUpdateReport } from "@/lib/actions";
+import { ENFORCEMENT_ACTIONS, enforcementLabel, enforcementNeedsConfirm } from "@/lib/copyright";
 import { requireAdmin } from "@/lib/auth";
 import { findUserById, getContentReport, listModerationEvents } from "@/lib/db";
 import { formatDate } from "@/lib/format";
@@ -35,6 +36,8 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           </p>
         ) : <p className="text-muted">No Twig matched this URL. Review the address below.</p>}
         {report.reason ? <p><span className="text-muted">Reason.</span> {listingReasonLabel(report.reason)}</p> : null}
+        {report.rightsHolder ? <p><span className="text-muted">Rights holder.</span> {report.rightsHolder}</p> : null}
+        {report.relationship ? <p><span className="text-muted">Relationship.</span> {report.relationship === "agent" ? "Authorized to act for the rights holder" : "Rights holder"}</p> : null}
         {report.rightType ? <p><span className="text-muted">Right.</span> {rightTypeLabel(report.rightType)}</p> : null}
         {report.protectedWork ? <p className="whitespace-pre-wrap"><span className="text-muted">Protected work.</span> {report.protectedWork}</p> : null}
         <p className="break-all"><span className="text-muted">URL.</span> {report.contentUrl}</p>
@@ -75,6 +78,30 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
           <button className="text-sm text-forest">{owner.suspended ? "Unsuspend listing owner" : "Suspend listing owner"}</button>
         </form>
       ) : null}
+
+      <form action={adminCopyrightAction} className="mt-6 space-y-3 rounded-3xl border border-line bg-card p-5">
+        <h2 className="font-serif text-2xl">Enforcement</h2>
+        <input type="hidden" name="reportId" value={report.id} />
+        <input type="hidden" name="productId" value={report.productId ?? ""} />
+        <input type="hidden" name="userId" value={owner?.id ?? ""} />
+        <label className="block text-sm">
+          <span className="font-medium">Action</span>
+          <select name="action" className="mt-1 h-11 w-full rounded-2xl border border-line bg-white px-3">
+            {ENFORCEMENT_ACTIONS.map((action) => <option key={action} value={action}>{enforcementLabel(action)}</option>)}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="font-medium">Reason shown to the seller</span>
+          <textarea name="reason" rows={3} required minLength={4} className="mt-1 w-full rounded-2xl border border-line bg-white px-3 py-2" />
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="confirm" value="yes" className="mt-1" />
+          <span>I confirm this action. Pausing a listing, restricting files or publishing, suspending, or terminating an account will not run unless this is checked.</span>
+        </label>
+        <p className="text-xs text-muted">The seller sees the listing, action, reason, deadline when one applies, and the review link. The reporter’s email is not included. A request for documents sets a seven-day deadline.</p>
+        <button className="rounded-full bg-forest px-4 py-2 text-sm text-card">Apply</button>
+        <p className="text-xs text-muted">Actions that need the checkbox: {ENFORCEMENT_ACTIONS.filter(enforcementNeedsConfirm).map(enforcementLabel).join(", ")}.</p>
+      </form>
 
       <section className="mt-8">
         <h2 className="font-serif text-2xl">Audit trail</h2>

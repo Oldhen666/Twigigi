@@ -1,6 +1,7 @@
 import { ReloadForm } from "@/components/reload-form";
+import { PickupAgreementReminder, PickupOfferBuilder } from "@/components/pickup-arrangement";
 import { SellerPickupTime } from "@/components/seller-pickup-time";
-import { arrangePickupTime, completeOrder, confirmOrderPayment, confirmPaymentAndHandover, confirmPickupTime, markOrderProgress, reviewSellerOrder, rollbackOrder } from "@/lib/actions";
+import { arrangePickupTime, completeOrder, confirmOrderPayment, confirmPaymentAndHandover, confirmPickupTime, leavePickupNote, markOrderProgress, reviewSellerOrder, rollbackOrder } from "@/lib/actions";
 import { formatDate, formatMoney } from "@/lib/format";
 import { formatPickupChoice } from "@/lib/pickup";
 import { isCashMethod, methodLabel } from "@/lib/payments";
@@ -13,11 +14,13 @@ export function SellerOrderFlow({
   mail,
   pickupSchedules = [],
   pickupSummary = [],
+  pickupPlace = "",
 }: {
   order: OrderRecord;
   mail: string;
   pickupSchedules?: string[];
   pickupSummary?: string[];
+  pickupPlace?: string;
 }) {
   const paid = order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled";
   const prepaid = paymentNeedsConfirm(order.buyerPayment);
@@ -31,7 +34,7 @@ export function SellerOrderFlow({
   const opensAt = Number.isFinite(readyDate) ? new Date(readyDate + ORDER_COMPLETE_DAYS * 24 * 60 * 60 * 1000).toISOString() : "";
   const showInterac = order.buyerPayment === "interac" && Boolean(order.interacQuestion || order.interacPassword);
   if (isCashMethod(order.buyerPayment) && order.fulfillment === "pickup" && order.status !== "canceled" && order.reviewState !== "declined") {
-    return <CashPickupSeller order={order} mail={mail} pickupSchedules={pickupSchedules} pickupSummary={pickupSummary} />;
+    return <CashPickupSeller order={order} mail={mail} pickupSchedules={pickupSchedules} pickupSummary={pickupSummary} pickupPlace={pickupPlace} />;
   }
   if (!mail && !reviewing && !confirmed && order.reviewState !== "changes" && !showInterac && !(digital && order.fileIssue)) return null;
   return (
@@ -198,16 +201,20 @@ function CashPickupSeller({
   mail,
   pickupSchedules,
   pickupSummary,
+  pickupPlace,
 }: {
   order: OrderRecord;
   mail: string;
   pickupSchedules: string[];
   pickupSummary: string[];
+  pickupPlace: string;
 }) {
   const completed = order.status === "fulfilled" || order.fulfillmentState === "handed";
   const ready = !completed && order.fulfillmentState === "ready";
   const paid = order.paymentStatus === "paid" || order.status === "paid" || completed;
   const when = order.pickupWindow ? formatPickupChoice(order.pickupWindow) : "the requested time";
+  const place = order.pickupPlace || pickupPlace;
+  const offered = order.pickupOptions.map((time) => formatPickupChoice(time));
   const backTo = orderRollbackTarget(order);
   return (
     <section className="mt-6 rounded-2xl border border-line bg-card p-4 text-sm">
@@ -233,13 +240,15 @@ function CashPickupSeller({
                 ? "The cash is confirmed. Confirm the handover when the buyer collects the item."
                 : ready
                   ? "When the buyer collects the item, confirm that you received the cash and handed over the item."
-                  : order.pickupProposedBy === "seller" && order.pickupWindow
-                    ? `Waiting for the buyer to confirm pickup on ${when}.`
-                    : order.pickupConfirmedAt
-                      ? `Pickup is scheduled for ${when}. Notify the buyer when the item is ready.`
-                      : order.pickupWindow
-                        ? `The buyer requested pickup on ${when}. Confirm the time or arrange another one.`
-                        : "Suggest a pickup time for this order."}
+                  : order.pickupProposedBy === "seller" && offered.length > 0
+                    ? "Waiting for the buyer to choose one of these times, or to ask for another time."
+                    : order.pickupProposedBy === "seller" && order.pickupWindow
+                      ? `Waiting for the buyer to confirm pickup on ${when}.`
+                      : order.pickupConfirmedAt
+                        ? `Pickup is scheduled for ${when}. Notify the buyer when the item is ready.`
+                        : order.pickupWindow
+                          ? `The buyer requested pickup on ${when}. Confirm that time and location, or send other times.`
+                          : "Suggest one or more pickup times for this order."}
             </p>
           </div>
           {ready && paid ? (
@@ -263,22 +272,29 @@ function CashPickupSeller({
               <button className={`${buttonClass} w-full`}>Mark ready for pickup</button>
             </ReloadForm>
           ) : null}
+          {!completed ? <PickupAgreementReminder place={place} agreed={Boolean(order.pickupConfirmedAt)} /> : null}
+          {offered.length > 0 && !order.pickupConfirmedAt ? (
+            <ul className="space-y-1">
+              {offered.map((time) => <li key={time}>{time}</li>)}
+            </ul>
+          ) : null}
           {!ready && !order.pickupConfirmedAt && order.pickupWindow && order.pickupProposedBy !== "seller" ? (
             <ReloadForm action={confirmPickupTime}>
               <input type="hidden" name="id" value={order.id} />
-              <button className={`${buttonClass} w-full`}>Confirm pickup time</button>
+              <button className={`${buttonClass} w-full`}>Confirm pickup time and location</button>
             </ReloadForm>
           ) : null}
           {!ready && !order.pickupConfirmedAt ? (
-            <details className="rounded-2xl border border-line px-4 py-3">
-              <summary className="cursor-pointer font-medium">Suggest another time</summary>
+            <details className="rounded-2xl border border-line px-4 py-3" open={order.pickupProposedBy !== "seller"}>
+              <summary className="cursor-pointer font-medium">{order.pickupProposedBy === "seller" ? "Send different times" : "Suggest other times"}</summary>
               <ReloadForm action={arrangePickupTime} className="mt-3 space-y-2">
                 <input type="hidden" name="id" value={order.id} />
-                <SellerPickupTime schedules={pickupSchedules} summary={pickupSummary} value={order.pickupWindow} />
-                <button className={`${ghostClass} w-full`}>Save this time</button>
+                <PickupOfferBuilder schedules={pickupSchedules} summary={pickupSummary} />
+                <button className={`${ghostClass} w-full`}>Send these times</button>
               </ReloadForm>
             </details>
           ) : null}
+          {!completed ? <PickupNotes orderId={order.id} notes={order.pickupMessages} /> : null}
           {ready ? (
             <details className="rounded-2xl border border-line px-4 py-3">
               <summary className="cursor-pointer font-medium">Reschedule pickup</summary>
@@ -321,5 +337,28 @@ function CashPickupSeller({
         ) : null}
       </div>
     </section>
+  );
+}
+
+function PickupNotes({ orderId, notes }: { orderId: string; notes: OrderRecord["pickupMessages"] }) {
+  return (
+    <div className="rounded-2xl border border-line px-4 py-3">
+      <p className="font-medium">Notes</p>
+      {notes.length > 0 ? (
+        <ul className="mt-2 space-y-2">
+          {notes.map((note, index) => (
+            <li key={`${note.createdAt}-${index}`}>
+              <p className="text-xs uppercase tracking-[0.14em] text-muted">{note.by === "seller" ? "You" : "Buyer"}</p>
+              <p className="whitespace-pre-wrap">{note.body}</p>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="mt-1 text-muted">Leave a note if a time or the location needs a comment.</p>}
+      <ReloadForm action={leavePickupNote} className="mt-3 space-y-2">
+        <input type="hidden" name="id" value={orderId} />
+        <textarea name="note" rows={2} maxLength={500} placeholder="Note for the buyer" className="w-full rounded-2xl border border-line bg-white px-3 py-2" />
+        <button className={`${ghostClass} w-full`}>Send note</button>
+      </ReloadForm>
+    </div>
   );
 }

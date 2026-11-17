@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { placeOrder } from "@/lib/actions";
+import { twigigiFileHeld } from "@/lib/copyright";
 import { getCurrentUser } from "@/lib/auth";
 import { getPublicProduct, listedParams, requireLiveTwig } from "@/lib/catalog";
 import { findUserById, getProductById } from "@/lib/db";
@@ -54,6 +55,17 @@ async function BuyDetails({
   const initialQuantity = Number.isInteger(requested) ? Math.min(Math.max(requested, 1), Math.max(cap, 1)) : 1;
   const account = await getCurrentUser();
   const fileSeller = product.cta === "file" ? findUserById(product.userId) : null;
+  if (product.cta === "file" && twigigiFileHeld(product, fileSeller)) {
+    return (
+      <Stage>
+        <div className="bg-card px-5 py-6 sm:rounded-[28px]">
+          <Link href={`/${product.publicId}/${product.slug}`} className="text-sm text-muted">← {product.title}</Link>
+          <h1 className="mt-3 font-serif text-4xl">This file is not available</h1>
+          <p className="mt-3 text-sm leading-6 text-muted">Twigigi is not offering this file. This does not delete a file hosted outside Twigigi, or a copy already downloaded.</p>
+        </div>
+      </Stage>
+    );
+  }
   const fileMethods = product.cta === "file"
     ? digitalPayMethods({ paypalEmail: getProductById(product.id)?.paypalEmail ?? "", stripeReady: Boolean(fileSeller?.stripeChargesEnabled) })
     : product.paymentMethods;

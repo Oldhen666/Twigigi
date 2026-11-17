@@ -50,6 +50,8 @@ export type User = {
   stripeChargesEnabled: boolean;
   autoConfirmOrders: boolean;
   suspended: boolean;
+  banned: boolean;
+  publishRestricted: boolean;
   bio: string;
 };
 
@@ -165,11 +167,13 @@ export type Product = ProductInput & {
   quoteFeeExempt: boolean;
   demo: boolean;
   moderationStatus: "" | "restricted";
+  fileAccess: "" | "restricted";
   rightsConfirmed: boolean;
   rightsConfirmedAt: string | null;
   rightsUserId: string;
   rightsTermsVersion: string;
   rightsIpVersion: string;
+  rightsContentVersion: string;
 };
 
 export type PublicProduct = Product & {
@@ -219,6 +223,9 @@ export type OrderRecord = {
   pickupWindow: string;
   pickupConfirmedAt: string | null;
   pickupProposedBy: "" | "buyer" | "seller";
+  pickupOptions: string[];
+  pickupMessages: { by: "buyer" | "seller"; body: string; createdAt: string }[];
+  pickupPlace: string;
   deliveryNote: string;
   buyerNote: string;
   paypalMe: string;

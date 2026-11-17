@@ -101,6 +101,43 @@ export function formatPickupChoice(value: string) {
   return `${label}, ${formatClockMinutes(parsed.minutes)}`;
 }
 
+export type PickupMessage = { by: "buyer" | "seller"; body: string; createdAt: string };
+
+export function parsePickupOptions(raw: string) {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const times = parsed.filter((item): item is string => typeof item === "string" && Boolean(parsePickupChoice(item)));
+    return [...new Set(times)].slice(0, 6);
+  } catch {
+    return [];
+  }
+}
+
+export function parsePickupMessages(raw: string): PickupMessage[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as { by?: string; body?: string; createdAt?: string };
+      const by: PickupMessage["by"] | "" = row.by === "seller" ? "seller" : row.by === "buyer" ? "buyer" : "";
+      if (!by) return [];
+      const body = String(row.body ?? "").trim().slice(0, 500);
+      if (!body) return [];
+      return [{ by, body, createdAt: String(row.createdAt ?? "") }];
+    }).slice(-20);
+  } catch {
+    return [];
+  }
+}
+
+export function listingPickupPlace(pickupNote: string, location: string) {
+  const note = pickupNote.trim();
+  if (note) return note.slice(0, 240);
+  return location.trim().slice(0, 240);
+}
+
 export function formatClockMinutes(minutes: number) {
   const hour24 = Math.floor(minutes / 60);
   const minute = String(minutes % 60).padStart(2, "0");

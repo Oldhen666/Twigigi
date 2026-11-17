@@ -18,6 +18,7 @@ import { parseFileLinks } from "@/lib/files";
 import { PROVINCES, joinLocation, lookupCurrentPlace, placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameProblem } from "@/lib/payments";
 import { descriptionPlain } from "@/lib/rich-text";
+import { digitalRightsDue } from "@/lib/copyright";
 
 type Action = (state: FormState, formData: FormData) => Promise<FormState>;
 
@@ -114,7 +115,7 @@ export function ProductForm({
     if (productKeys.length === 0) return;
     setAccountOpen(false);
     setPreviewing(false);
-    const details = ["title", "description", "videoUrl", "images", "category", "fileLinks"].some((key) => errors[key]);
+    const details = ["title", "description", "videoUrl", "images", "category", "fileLinks", "digitalRights"].some((key) => errors[key]);
     if (quote) {
       if (details) setStep(1);
       else if (["location", "fulfillment", "contactEmail", "contactPhone", "shippingNote", "sellerContact"].some((key) => errors[key])) setStep(2);
@@ -514,6 +515,24 @@ export function ProductForm({
     }, 0);
   }
 
+  function fileRightsDue(form: HTMLFormElement) {
+    let links: string[] = [];
+    try {
+      const parsed = JSON.parse(fieldValue(form, "fileLinksJson")) as unknown;
+      if (Array.isArray(parsed)) links = parsed.filter((item): item is string => typeof item === "string");
+    } catch {
+      links = [];
+    }
+    return digitalRightsDue({
+      confirmed: Boolean(product?.rightsConfirmed),
+      confirmedVersion: product?.rightsContentVersion ?? "",
+      confirmedPolicy: product?.rightsIpVersion ?? "",
+      fileLinks: links,
+      images: photos.filter((photo) => photo.kind === "kept").map((photo) => photo.src),
+      imagesChanged: photos.some((photo) => photo.kind === "new"),
+    });
+  }
+
   function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const intent = submitter instanceof HTMLButtonElement && submitter.name === "intent" ? submitter.value : "";
@@ -529,7 +548,17 @@ export function ProductForm({
       event.preventDefault();
       return;
     }
-    if (intent === "publish") {
+    if (intent === "publish" && file) {
+      const form = formRef.current;
+      if (form && fileRightsDue(form) && !boxCheckedByName(form, "digitalRights")) {
+        event.preventDefault();
+        setPreviewing(false);
+        setStep(1);
+        setLive((current) => ({ ...current, digitalRights: "Confirm that you own this content or have permission to sell and distribute it." }));
+        return;
+      }
+      setLive((current) => (current.digitalRights ? { ...current, digitalRights: "" } : current));
+    } else if (intent === "publish") {
       const form = formRef.current;
       if (!form || !rightsConfirmed(form)) {
         event.preventDefault();
@@ -993,6 +1022,7 @@ export function ProductForm({
           links={fileLinkSeed(draft, product)}
           password={textValue(draft, "filePassword", product?.filePassword)}
           error={visibleErrors.fileLinks}
+          rightsError={visibleErrors.digitalRights}
         />
       ) : null}
       </div>
@@ -1060,7 +1090,7 @@ export function ProductForm({
 
       {previewing && preview ? <PagePreview draft={preview} /> : null}
 
-      {previewing && !reactivateOpen ? (
+      {previewing && !reactivateOpen && !file ? (
         <div className="mt-6">
           <label className="flex items-start gap-3 text-sm leading-6">
             <input type="checkbox" name="contentRights" value="yes" className="mt-1 h-4 w-4 accent-forest" />
@@ -1113,10 +1143,11 @@ export function ProductForm({
             <h2 id="reactivate-title" className="font-serif text-3xl">Reactivate this Twig</h2>
             <p className="mt-2 text-sm text-muted">This publishes the Twig again and the link works. The 30-day permanent deletion is canceled.</p>
             <label className="mt-4 flex items-start gap-3 text-sm leading-6">
-              <input type="checkbox" name="contentRights" value="yes" className="mt-1 h-4 w-4 accent-forest" />
-              <span>I confirm that I own or have permission to use the content in this listing and that my listing does not knowingly violate third-party intellectual property rights or applicable law.</span>
+              <input type="checkbox" name={file ? "digitalRights" : "contentRights"} value="yes" className="mt-1 h-4 w-4 accent-forest" />
+              <span>{file ? "I confirm that I own this content or have all permissions necessary to list, sell, and distribute it, including its preview images and any linked files." : "I confirm that I own or have permission to use the content in this listing and that my listing does not knowingly violate third-party intellectual property rights or applicable law."}</span>
             </label>
-            {visibleErrors.contentRights ? <p className="mt-2 text-sm text-danger">{visibleErrors.contentRights}</p> : null}
+            {file && visibleErrors.digitalRights ? <p className="mt-2 text-sm text-danger">{visibleErrors.digitalRights}</p> : null}
+            {!file && visibleErrors.contentRights ? <p className="mt-2 text-sm text-danger">{visibleErrors.contentRights}</p> : null}
             <button name="intent" value="publish" disabled={pending} className={`${buttonClass} mt-5 w-full`}>
               {pending ? "Saving…" : "Reactivate"}
             </button>
@@ -1131,6 +1162,12 @@ export function ProductForm({
 }
 
 const ACCOUNT_FIELDS = new Set(["displayName", "username", "email", "password"]);
+
+function boxCheckedByName(form: HTMLFormElement, name: string) {
+  const field = form.elements.namedItem(name);
+  const boxes = field instanceof RadioNodeList ? [...field] : field instanceof HTMLInputElement ? [field] : [];
+  return boxes.some((item) => item instanceof HTMLInputElement && item.checked);
+}
 
 function rightsConfirmed(form: HTMLFormElement) {
   const field = form.elements.namedItem("contentRights");
