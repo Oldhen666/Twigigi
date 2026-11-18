@@ -21,12 +21,9 @@ async function TwigsScreen() {
 
   return (
     <main className="page-frame pb-16">
-      <div className="mt-6 flex items-end justify-between gap-3">
-        <div>
-          <h1 className="font-serif text-4xl">Twigs</h1>
-          <p className="mt-2 text-sm text-muted">{live} live · {drafts} {drafts === 1 ? "draft" : "drafts"}</p>
-        </div>
-        <Link href="/start" className="inline-flex h-11 items-center rounded-full bg-forest px-5 text-sm font-medium text-card">+ New Twig</Link>
+      <div className="mt-6">
+        <h1 className="font-serif text-4xl">Twigs</h1>
+        <p className="mt-2 text-sm text-muted">{live} live · {drafts} {drafts === 1 ? "draft" : "drafts"}</p>
       </div>
       {products.length === 0 ? (
         <div className="mt-6 max-w-xl rounded-3xl border border-dashed border-line bg-card p-6">
