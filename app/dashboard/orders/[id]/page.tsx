@@ -69,6 +69,18 @@ async function OrderScreen({
           <p className="text-muted">Items {formatMoney(order.subtotalCents, order.currency)} · Shipping {order.shippingCents === 0 ? "Free" : formatMoney(order.shippingCents, order.currency)}</p>
         </div>
       ) : order.variantLabel ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
+      {order.customImages.length > 0 ? (
+        <div className="mt-4">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Buyer image</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {order.customImages.map((src) => (
+              <a key={src} href={src} target="_blank" rel="noreferrer" className="block h-24 w-24 overflow-hidden rounded-xl">
+                <img src={src} alt="Image from the buyer" className="h-full w-full object-cover" />
+              </a>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <OrderPaymentFacts order={order} cardPaymentUrl={product?.cardPaymentUrl ?? ""} />
       <p className="mt-2 text-sm text-muted">{order.quantity} {order.quantity === 1 ? "item" : "items"} · {fulfillWord}</p>
       <div className="mt-4 flex items-start justify-between gap-3">

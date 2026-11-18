@@ -354,6 +354,18 @@ async function OrderView({
               ))}
             </div>
           ) : order.variantLabel ? <p className="mt-2 text-sm text-card/70">{order.variantLabel}</p> : null}
+          {order.customImages.length > 0 ? (
+            <div className="mt-4">
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-card/70">Your image</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {order.customImages.map((src) => (
+                  <a key={src} href={src} target="_blank" rel="noreferrer" className="block h-24 w-24 overflow-hidden rounded-xl">
+                    <img src={src} alt="Image you uploaded" className="h-full w-full object-cover" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <p className="mt-3 flex items-baseline justify-between gap-3 text-sm">
             <span className="text-card/80">{itemCount === 1 ? "1 item" : `${itemCount} items`} · {fulfillmentLabel}</span>
             <span className="text-base">{formatMoney(order.totalCents || order.amountCents, order.currency)}</span>

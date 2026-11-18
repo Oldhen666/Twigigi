@@ -282,6 +282,7 @@ function ensureColumns(database: DatabaseSync) {
   add("orders", "pickup_options", "pickup_options TEXT NOT NULL DEFAULT ''");
   add("orders", "pickup_messages", "pickup_messages TEXT NOT NULL DEFAULT ''");
   add("orders", "pickup_place", "pickup_place TEXT NOT NULL DEFAULT ''");
+  add("orders", "custom_images", "custom_images TEXT NOT NULL DEFAULT '[]'");
   add("orders", "paypal_me", "paypal_me TEXT NOT NULL DEFAULT ''");
   add("orders", "venmo_username", "venmo_username TEXT NOT NULL DEFAULT ''");
   add("orders", "payment_frozen", "payment_frozen INTEGER NOT NULL DEFAULT 0");
@@ -525,6 +526,8 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "rights_ip_version", "rights_ip_version TEXT NOT NULL DEFAULT ''");
   add("products", "rights_content_version", "rights_content_version TEXT NOT NULL DEFAULT ''");
   add("products", "file_access", "file_access TEXT NOT NULL DEFAULT ''");
+  add("products", "custom_product", "custom_product INTEGER NOT NULL DEFAULT 0");
+  add("products", "buyer_upload", "buyer_upload INTEGER NOT NULL DEFAULT 0");
   add("users", "publish_restricted", "publish_restricted INTEGER NOT NULL DEFAULT 0");
   add("users", "banned", "banned INTEGER NOT NULL DEFAULT 0");
   add("content_reports", "rights_holder", "rights_holder TEXT NOT NULL DEFAULT ''");
@@ -895,6 +898,16 @@ function many(sql: string, ...params: Array<string | number | null>) {
   return db.prepare(sql).all(...params) as Row[];
 }
 
+function readCustomImages(raw: string) {
+  try {
+    const parsed = JSON.parse(raw || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === "string" && /^\/uploads\/[a-zA-Z0-9._-]+$/.test(item));
+  } catch {
+    return [];
+  }
+}
+
 function parseStoredMethods(raw: string) {
   try {
     const parsed = JSON.parse(raw || "[]");
@@ -978,6 +991,8 @@ function mapProduct(row: Row): Product {
     sellerContact: str(row.seller_contact),
     fileLinks: readStoredFileLinks(str(row.file_links)),
     filePassword: str(row.file_password),
+    customProduct: num(row.custom_product) === 1,
+    buyerUpload: num(row.custom_product) === 1 && num(row.buyer_upload) === 1,
     viewCount: num(row.view_count),
     createdAt: str(row.created_at),
     updatedAt: str(row.updated_at),
@@ -1179,6 +1194,7 @@ function mapOrder(row: Row): OrderRecord {
     src: str(row.src),
     fileLinks: readStoredFileLinks(str(row.file_links)),
     filePassword: str(row.file_password),
+    customImages: readCustomImages(str(row.custom_images)),
     fileSentAt: row.file_sent_at ? str(row.file_sent_at) : null,
     fileIssue: str(row.file_issue),
     lines: parseOrderLines(str(row.lines_json)),
@@ -1917,6 +1933,7 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     input.filePassword,
   );
   db.prepare("UPDATE products SET paypal_email = ? WHERE id = ?").run(input.paypalEmail || "", id);
+  db.prepare("UPDATE products SET custom_product = ?, buyer_upload = ? WHERE id = ?").run(input.customProduct ? 1 : 0, input.customProduct && input.buyerUpload ? 1 : 0, id);
   db.prepare("UPDATE products SET auto_renew = 0 WHERE id = ?").run(id);
 }
 
@@ -1996,7 +2013,15 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
       id,
       userId,
     );
-  if (result.changes > 0) db.prepare("UPDATE products SET paypal_email = ? WHERE id = ? AND user_id = ?").run(input.paypalEmail || "", id, userId);
+  if (result.changes > 0) {
+    db.prepare("UPDATE products SET paypal_email = ? WHERE id = ? AND user_id = ?").run(input.paypalEmail || "", id, userId);
+    db.prepare("UPDATE products SET custom_product = ?, buyer_upload = ? WHERE id = ? AND user_id = ?").run(
+      input.customProduct ? 1 : 0,
+      input.customProduct && input.buyerUpload ? 1 : 0,
+      id,
+      userId,
+    );
+  }
   return result.changes > 0;
 }
 
@@ -2854,6 +2879,11 @@ export function insertOrder(input: {
     JSON.stringify(input.lines ?? []),
     new Date().toISOString(),
   );
+}
+
+export function setOrderCustomImages(id: string, images: string[]) {
+  const saved = images.filter((item) => /^\/uploads\/[a-zA-Z0-9._-]+$/.test(item)).slice(0, 3);
+  db.prepare("UPDATE orders SET custom_images = ? WHERE id = ?").run(JSON.stringify(saved), id);
 }
 
 export function setInteracPrompt(id: string, question: string, password: string) {
@@ -4655,8 +4685,8 @@ function ensureAvaDemoDetails() {
 function ensureAvaTee() {
   if (!one("SELECT id FROM users WHERE id = 'usr_ava'")) return;
   const now = "2026-10-20T15:00:00.000Z";
-  const description = "Custom T-shirt printing in Edmonton. Pick a size and place the order, then leave the name or short line you want printed. The photo shows a sample print. It is printed on a solid cotton tee and ready in about a week.";
-  const images = JSON.stringify(["/seed/tee-1.jpg"]);
+  const description = "Custom T-shirt printing in Edmonton. Pick a size and place the order, then upload the picture you want printed. The photos show sample prints. It is printed on a solid cotton tee and ready in about a week.";
+  const images = JSON.stringify(["/seed/tee-1.jpg", "/seed/tee-2.jpg", "/seed/tee-3.jpg"]);
   const options = JSON.stringify([{ name: "Size", values: ["S", "M", "L", "XL", "XXL"] }]);
   const methods = JSON.stringify(["interac", "cash_pickup"]);
   const pickup = "Weekdays, between 4:00 PM and 7:00 PM | Weekends, anytime (8am - 8pm)";
@@ -4727,7 +4757,9 @@ function ensureAvaTee() {
       demo = 1,
       fee_exempt = 0,
       billing_status = 'legacy_review',
-      auto_renew = 0
+      auto_renew = 0,
+      custom_product = 1,
+      buyer_upload = 1
      WHERE id = 'prd_tee' AND user_id = 'usr_ava'`,
   ).run(
     description,

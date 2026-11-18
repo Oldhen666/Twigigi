@@ -51,6 +51,7 @@ import {
   insertModerationEvent,
   insertMessage,
   insertOrder,
+  setOrderCustomImages,
   acceptPlacedOrder,
   insertProduct,
   insertQuote,
@@ -798,6 +799,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     venmoUsername,
     paypalMe: cta === "file" ? "" : paymentMethods.includes("paypal") ? paypalMe : "",
     paypalEmail: cta === "file" ? safeEmail(text(formData, "paypalEmail")) : "",
+    customProduct: cta === "buy" && text(formData, "customProduct") === "1",
+    buyerUpload: cta === "buy" && text(formData, "customProduct") === "1" && formData.get("buyerUpload") === "1",
     zelleMode: "phone",
     zelleContact: "",
     sellerContactMode: priced ? sellerContactMode : "email",
@@ -1208,6 +1211,18 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   if (product.quantityAvailable === 0) return { error: "This product is sold out." };
 
   const digital = product.cta === "file";
+  const wantsUpload = !digital && product.customProduct && product.buyerUpload;
+  let customImages: string[] = [];
+  if (wantsUpload) {
+    const files = formData.getAll("customImages").filter((item): item is File => item instanceof File && item.size > 0);
+    if (files.length < 1) return { fieldErrors: { customImages: "Add the image for this custom order." } };
+    if (files.length > 3) return { fieldErrors: { customImages: "Add up to 3 images." } };
+    try {
+      customImages = await saveImages(files);
+    } catch (error) {
+      return { fieldErrors: { customImages: error instanceof Error ? error.message : "Use JPG, PNG, or WebP photos." } };
+    }
+  }
   const cap = product.quantityAvailable == null ? 20 : Math.min(20, product.quantityAvailable);
   const parsed = z
     .object({
@@ -1293,6 +1308,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       filePassword: digital ? product.filePassword : "",
     });
     setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note);
+    if (customImages.length > 0) setOrderCustomImages(orderId, customImages);
     setOrderPaymentSnapshot(
       orderId,
       paymentSnapshot([digital ? { ...product, paymentMethods: digitalMethods, paypalMe: "" } : product], choice.payment),
@@ -1321,6 +1337,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       "",
       `Product: ${product.title}`,
       selection.label ? `Option: ${selection.label}` : null,
+      customImages.length > 0 ? "The buyer uploaded an image. Open the order to see it." : null,
       `Buyer: ${parsed.data.name}`,
       `Email: ${parsed.data.email}`,
       parsed.data.phone ? `Phone: ${parsed.data.phone}` : null,
@@ -1596,6 +1613,9 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
     const product = getProductById(line.productId);
     if (!product || !isTwigLive(product) || product.cta !== "buy" || product.priceCents == null) {
       return { error: "One of these Twigs is not available to buy." };
+    }
+    if (product.customProduct && product.buyerUpload) {
+      return { error: `${product.title} needs an image from the buyer. Open that Twig and use Buy now.` };
     }
     const first = prepared[0]?.product;
     if (first && (product.userId !== first.userId || product.currency !== first.currency)) {

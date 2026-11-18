@@ -144,6 +144,8 @@ export type ProductInput = {
   sellerContact: string;
   fileLinks: string[];
   filePassword: string;
+  customProduct: boolean;
+  buyerUpload: boolean;
 };
 
 export type Product = ProductInput & {
@@ -226,6 +228,7 @@ export type OrderRecord = {
   pickupOptions: string[];
   pickupMessages: { by: "buyer" | "seller"; body: string; createdAt: string }[];
   pickupPlace: string;
+  customImages: string[];
   deliveryNote: string;
   buyerNote: string;
   paypalMe: string;

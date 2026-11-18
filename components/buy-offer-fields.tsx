@@ -70,6 +70,8 @@ export function BuyOfferFields({
     Object.fromEntries(seededOptions.map((option) => [option.name, option.values.length > 0])),
   );
   const [variable, setVariable] = useState(seed ? seed.fields.hasOptions === "1" : Boolean(product?.hasOptions && product.options.some((item) => item.values.length > 0)));
+  const [customProduct, setCustomProduct] = useState(seed ? seed.fields.customProduct === "1" : Boolean(product?.customProduct));
+  const [buyerUpload, setBuyerUpload] = useState(seed ? seed.checks.buyerUpload === true || seed.fields.buyerUpload === "1" : Boolean(product?.buyerUpload));
   const [pickup, setPickup] = useState(seed ? (seed.checks.pickupEnabled ?? true) : (product?.pickupEnabled ?? true));
   const [ship, setShip] = useState(seed ? seed.checks.shippingEnabled === true : Boolean(product?.deliveryEnabled || product?.shippingEnabled));
   const initialLocation = digital ? "" : seed?.fields.location ?? product?.location ?? "";
@@ -360,6 +362,46 @@ export function BuyOfferFields({
             )}
           </div>
           ) : null}
+          <div className="mt-4 rounded-2xl border border-line bg-white p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="font-medium">Custom product</p>
+                <p className="mt-1 text-sm text-muted">Made to order from what the buyer sends.</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={customProduct}
+                aria-label="Custom product"
+                onClick={() => {
+                  setCustomProduct((on) => {
+                    if (on) setBuyerUpload(false);
+                    return !on;
+                  });
+                }}
+                className={`relative h-7 w-12 shrink-0 rounded-full ${customProduct ? "bg-forest" : "bg-line"}`}
+              >
+                <span className={`absolute top-0.5 size-6 rounded-full bg-white ${customProduct ? "left-5" : "left-0.5"}`} />
+              </button>
+            </div>
+            <input type="hidden" name="customProduct" value={customProduct ? "1" : "0"} />
+            {customProduct ? (
+              <label className="mt-4 flex items-start gap-3 border-t border-line pt-4">
+                <input
+                  type="checkbox"
+                  name="buyerUpload"
+                  value="1"
+                  checked={buyerUpload}
+                  onChange={(event) => setBuyerUpload(event.target.checked)}
+                  className="mt-1 h-5 w-5 accent-forest"
+                />
+                <span>
+                  Buyer uploads an image
+                  <span className="mt-1 block text-sm text-muted">The buyer adds the picture you will print or use.</span>
+                </span>
+              </label>
+            ) : null}
+          </div>
         </div>
         )}
       </div>

@@ -164,9 +164,10 @@ export async function ProductView({
               variants={product.variants}
               samePrice={product.samePrice}
               quantityAvailable={product.quantityAvailable}
-              cartPublicId={product.cta === "buy" ? product.publicId : ""}
+              cartPublicId={product.cta === "buy" && !(product.customProduct && product.buyerUpload) ? product.publicId : ""}
               productId={product.id}
               held={fileHeld}
+              note={product.cta === "buy" && product.customProduct ? (product.buyerUpload ? "Custom product. Upload your image on the next page." : "Custom product") : ""}
             >
               {options.length > 0 ? (
                 <ul className="mt-3 flex flex-wrap gap-2">
@@ -210,13 +211,23 @@ export async function ProductView({
             <span className="flex h-14 items-center justify-center rounded-2xl bg-paper-deep text-lg text-muted">Sold out</span>
           ) : fileHeld ? (
             <span className="flex h-14 items-center justify-center rounded-2xl bg-paper-deep text-lg text-muted">This file is not available</span>
+          ) : product.cta === "buy" && product.customProduct && product.buyerUpload && product.priceCents != null ? (
+            <>
+              <Link href={`/${product.publicId}/${product.slug}/buy`} className="flex h-14 items-center justify-center rounded-2xl bg-forest text-lg text-card">
+                {buyLabel}
+              </Link>
+              <p className="mt-2 text-center text-sm text-muted">Custom product. Upload your image on the next page.</p>
+            </>
           ) : product.cta === "buy" && product.priceCents != null ? (
-            <AddToCart
-              publicId={product.publicId}
-              productId={product.id}
-              cap={product.quantityAvailable == null ? 20 : Math.min(20, product.quantityAvailable)}
-              label={buyLabel}
-            />
+            <>
+              <AddToCart
+                publicId={product.publicId}
+                productId={product.id}
+                cap={product.quantityAvailable == null ? 20 : Math.min(20, product.quantityAvailable)}
+                label={buyLabel}
+              />
+              {product.customProduct ? <p className="mt-2 text-center text-sm text-muted">Custom product</p> : null}
+            </>
           ) : (
             <Link href={`/${product.publicId}/${product.slug}/${cta.href}`} className="flex h-14 items-center justify-center rounded-2xl bg-forest text-lg text-card">
               {buyLabel}

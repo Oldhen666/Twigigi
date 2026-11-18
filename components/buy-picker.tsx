@@ -20,6 +20,7 @@ export function BuyPicker({
   cartPublicId = "",
   productId = "",
   held = false,
+  note = "",
   children,
 }: {
   username: string;
@@ -34,6 +35,7 @@ export function BuyPicker({
   cartPublicId?: string;
   productId?: string;
   held?: boolean;
+  note?: string;
   children?: React.ReactNode;
 }) {
   const [selected, setSelected] = useState(() => options.map((option) => option.values[0] ?? ""));
@@ -115,6 +117,7 @@ export function BuyPicker({
             {buttonLabel || "Buy now"}
           </Link>
         )}
+        {note ? <p className="mt-2 text-center text-sm text-muted">{note}</p> : null}
       </div>
     </>
   );

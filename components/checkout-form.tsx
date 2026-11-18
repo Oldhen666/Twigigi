@@ -40,6 +40,7 @@ export function CheckoutForm({
   payments = null,
   defaultName = "",
   defaultEmail = "",
+  buyerUpload = false,
 }: {
   mode: Cta;
   action: Action;
@@ -57,6 +58,7 @@ export function CheckoutForm({
   payments?: PayDetails | null;
   defaultName?: string;
   defaultEmail?: string;
+  buyerUpload?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(action, {} as FormState);
   const [fulfillment, setFulfillment] = useState(options[0]?.id ?? "pickup");
@@ -147,6 +149,13 @@ export function CheckoutForm({
             aria-required="true"
             className={inputClass}
           />
+        </Field>
+      ) : null}
+
+      {mode === "buy" && buyerUpload ? (
+        <Field label="Your image" name="customImages" required error={fieldErrors?.customImages}>
+          <input name="customImages" type="file" accept="image/jpeg,image/png,image/webp" multiple required className={`${inputClass} py-2`} />
+          <span className="mt-1 block text-sm font-normal text-muted">Add the picture for this custom order. Up to 3 photos. JPG, PNG, or WebP, under 5 MB each.</span>
         </Field>
       ) : null}
 
