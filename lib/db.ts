@@ -4652,8 +4652,104 @@ function ensureAvaDemoDetails() {
   );
 }
 
+function ensureAvaTee() {
+  if (!one("SELECT id FROM users WHERE id = 'usr_ava'")) return;
+  const now = "2026-10-20T15:00:00.000Z";
+  const description = "Custom T-shirt printing in Edmonton. Pick a size and place the order, then leave the name or short line you want printed. The photo shows a sample print. It is printed on a solid cotton tee and ready in about a week.";
+  const images = JSON.stringify(["/seed/tee-1.jpg"]);
+  const options = JSON.stringify([{ name: "Size", values: ["S", "M", "L", "XL", "XXL"] }]);
+  const methods = JSON.stringify(["interac", "cash_pickup"]);
+  const pickup = "Weekdays, between 4:00 PM and 7:00 PM | Weekends, anytime (8am - 8pm)";
+  if (!one("SELECT id FROM products WHERE id = 'prd_tee'") && !one("SELECT id FROM products WHERE user_id = 'usr_ava' AND lower(slug) = 'custom-t-shirt'")) {
+    db.prepare(
+      `INSERT INTO products (
+        id, user_id, slug, title, description, price_cents, currency, location,
+        pickup_enabled, pickup_note, pickup_time, cta, contact_email,
+        status, button_label, has_options, same_price, options_json,
+        payment_methods, interac_email, interac_question, interac_password,
+        category_kind, category_group, category,
+        require_name, require_email, require_phone, seller_contact_mode, seller_contact,
+        demo, billing_status, auto_renew, created_at, updated_at
+      ) VALUES (
+        'prd_tee', 'usr_ava', 'custom-t-shirt', 'Custom T-shirt', ?, 4200, 'CAD', 'Edmonton, Alberta',
+        1, ?, ?, 'buy', 'ava@twigigi.demo',
+        'published', 'Buy now', 1, 1, ?,
+        ?, 'ava@twigigi.demo', 'What city is pickup in?', 'Edmonton',
+        'product', 'handmade-custom', 'custom-clothing',
+        1, 1, 1, 'email', 'ava@twigigi.demo',
+        1, 'legacy_review', 0, ?, ?
+      )`,
+    ).run(
+      description,
+      "Pickup in southwest Edmonton. The street address stays private until the order is confirmed.",
+      pickup,
+      options,
+      methods,
+      now,
+      now,
+    );
+  }
+  db.prepare(
+    `UPDATE products SET
+      slug = 'custom-t-shirt',
+      title = 'Custom T-shirt',
+      description = ?,
+      price_cents = 4200,
+      currency = 'CAD',
+      location = 'Edmonton, Alberta',
+      pickup_enabled = 1,
+      pickup_note = ?,
+      pickup_time = ?,
+      delivery_enabled = 0,
+      shipping_enabled = 0,
+      onsite_enabled = 0,
+      cta = 'buy',
+      contact_email = 'ava@twigigi.demo',
+      status = 'published',
+      images_json = ?,
+      button_label = 'Buy now',
+      has_options = 1,
+      same_price = 1,
+      options_json = ?,
+      payment_methods = ?,
+      interac_email = 'ava@twigigi.demo',
+      interac_question = 'What city is pickup in?',
+      interac_password = 'Edmonton',
+      category_kind = 'product',
+      category_group = 'handmade-custom',
+      category = 'custom-clothing',
+      require_name = 1,
+      require_email = 1,
+      require_phone = 1,
+      seller_contact_mode = 'email',
+      seller_contact = 'ava@twigigi.demo',
+      zelle_contact = '',
+      demo = 1,
+      fee_exempt = 0,
+      billing_status = 'legacy_review',
+      auto_renew = 0
+     WHERE id = 'prd_tee' AND user_id = 'usr_ava'`,
+  ).run(
+    description,
+    "Pickup in southwest Edmonton. The street address stays private until the order is confirmed.",
+    pickup,
+    images,
+    options,
+    methods,
+  );
+  const ava = one("SELECT public_id FROM users WHERE id = 'usr_ava'");
+  const publicId = str(ava?.public_id).toLowerCase();
+  if (!publicId) return;
+  try {
+    updateTag(`seller:${publicId}`);
+    updateTag(`product:${publicId}:custom-t-shirt`);
+  } catch {
+    // Cache tags are not ready while the database module is loading.
+  }
+}
+
 function ensureCurrentDemoTwigs() {
-  const ids = ["prd_cedar", "prd_bench", "prd_wreath", "prd_plan"];
+  const ids = ["prd_cedar", "prd_bench", "prd_wreath", "prd_plan", "prd_tee"];
   const mark = db.prepare("UPDATE products SET demo = 1 WHERE id = ? AND user_id = 'usr_ava'");
   for (const id of ids) mark.run(id);
   db.prepare(
@@ -4780,6 +4876,7 @@ ensureLandscapeDemo();
 ensureDemoReviews();
 ensureDemoCategories();
 ensureAvaDemoDetails();
+ensureAvaTee();
 ensureCurrentDemoTwigs();
 ensurePublicIds();
 voidWaivedOpenFees();
