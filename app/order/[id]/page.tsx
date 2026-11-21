@@ -17,6 +17,7 @@ import { acceptSellerChange, changeOrderPayment, confirmBuyerPickup, confirmRece
 import { getCurrentUser } from "@/lib/auth";
 import { findUserById, getInteractionBySource, getOrder, getProductById, hasReview } from "@/lib/db";
 import { twigigiFileHeld } from "@/lib/copyright";
+import { formatFeeRate } from "@/lib/digital-plans";
 import { formatDate, formatMoney, orderHeading, pickupTimes } from "@/lib/format";
 import { AnotherPickupTime, PickupAgreementReminder } from "@/components/pickup-arrangement";
 import { formatPickupChoice, formatClockMinutes, listingPickupPlace, parsePickupChoice } from "@/lib/pickup";
@@ -370,6 +371,14 @@ async function OrderView({
             <span className="text-card/80">{itemCount === 1 ? "1 item" : `${itemCount} items`} · {fulfillmentLabel}</span>
             <span className="text-base">{formatMoney(order.totalCents || order.amountCents, order.currency)}</span>
           </p>
+          {digital && order.platformFeeCents > 0 ? (
+            <p className="mt-2 text-sm leading-6 text-card/80">
+              Twigigi platform fee {formatFeeRate(order.platformFeeBps)}: {formatMoney(order.platformFeeCents, "CAD")}. This is not added to the amount you pay the seller. Stripe or PayPal payment processing fees are separate.
+            </p>
+          ) : null}
+          {digital && order.platformFeeCents < 1 ? (
+            <p className="mt-2 text-sm leading-6 text-card/80">No Twigigi platform fee is added to this order. Payment processing fees from Stripe or PayPal are separate.</p>
+          ) : null}
           {place || when || order.deliveryNote || order.buyerNote ? (
             <div className="mt-4 space-y-2 border-t border-card/15 pt-4 text-sm text-card/90">
               {place ? <p className="flex gap-2"><PinIcon /><span>{place}</span></p> : null}

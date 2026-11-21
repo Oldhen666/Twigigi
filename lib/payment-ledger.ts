@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { firstCoverage } from "./billing-calendar";
+import { applyDigitalPlanPayment, failDigitalPlanPayment } from "./digital-store";
 import { listingCycleKey } from "./fee-collection";
 import { graceDeadline } from "./listing-cycle";
 
@@ -76,6 +77,7 @@ export function stageFeeCollection(
       database,
       `SELECT id, amount_cents, currency, checkout_url, idempotency_key FROM fee_collections
        WHERE user_id = ? AND currency = ? AND status IN ('processing', 'unknown', 'action_required')
+         AND idempotency_key NOT LIKE 'digital-plan-%'
        ORDER BY created_at DESC LIMIT 1`,
       input.userId,
       input.currency,
@@ -177,6 +179,78 @@ export function stageFeeCollection(
     for (const id of ids) claim.run(input.id, id, input.userId);
     database.exec("COMMIT");
     return { collectionId: input.id, amountCents: amount, currency: input.currency, checkoutUrl: "", idempotencyKey: existingKey, created: true };
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function stageDigitalPlanCollection(
+  database: DatabaseSync,
+  input: { id: string; userId: string; now: string },
+) {
+  ensurePaymentLedger(database);
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const inFlight = oneOf(
+      database,
+      `SELECT id, amount_cents, currency, checkout_url, idempotency_key FROM fee_collections
+       WHERE user_id = ? AND status IN ('processing', 'unknown', 'action_required') AND idempotency_key LIKE 'digital-plan-%'
+       ORDER BY created_at DESC LIMIT 1`,
+      input.userId,
+    );
+    if (inFlight) {
+      database.exec("COMMIT");
+      return {
+        collectionId: text(inFlight.id),
+        amountCents: cents(inFlight.amount_cents),
+        currency: text(inFlight.currency) || "CAD",
+        checkoutUrl: text(inFlight.checkout_url),
+        idempotencyKey: text(inFlight.idempotency_key),
+        created: false,
+      };
+    }
+    const bill = oneOf(
+      database,
+      `SELECT id, event_key, amount_cents FROM twig_bills
+       WHERE user_id = ? AND kind = 'digital_plan' AND status IN ('pending', 'accrued', 'due', 'recorded') AND collection_id = ''
+       ORDER BY created_at ASC LIMIT 1`,
+      input.userId,
+    );
+    if (!bill) {
+      database.exec("COMMIT");
+      return null;
+    }
+    const idempotencyKey = `digital-plan-${text(bill.event_key) || text(bill.id)}`;
+    const existing = oneOf(
+      database,
+      `SELECT id, amount_cents, checkout_url FROM fee_collections
+       WHERE user_id = ? AND idempotency_key = ? AND status IN ('processing', 'unknown', 'action_required')`,
+      input.userId,
+      idempotencyKey,
+    );
+    if (existing) {
+      database.exec("COMMIT");
+      return {
+        collectionId: text(existing.id),
+        amountCents: cents(existing.amount_cents),
+        currency: "CAD",
+        checkoutUrl: text(existing.checkout_url),
+        idempotencyKey,
+        created: false,
+      };
+    }
+    const amount = cents(bill.amount_cents);
+    database.prepare(
+      `INSERT INTO fee_collections (id, user_id, currency, amount_cents, status, idempotency_key, created_at)
+       VALUES (?, ?, 'CAD', ?, 'processing', ?, ?)`,
+    ).run(input.id, input.userId, amount, idempotencyKey, input.now);
+    database.prepare(
+      `UPDATE twig_bills SET collection_id = ?, status = 'processing'
+       WHERE id = ? AND user_id = ? AND collection_id = '' AND status IN ('pending', 'accrued', 'due', 'recorded')`,
+    ).run(input.id, text(bill.id), input.userId);
+    database.exec("COMMIT");
+    return { collectionId: input.id, amountCents: amount, currency: "CAD", checkoutUrl: "", idempotencyKey, created: true };
   } catch (error) {
     database.exec("ROLLBACK");
     throw error;
@@ -332,6 +406,7 @@ export function applyPaymentResult(
         input.collectionId,
         input.userId,
       );
+      failDigitalPlanPayment(database, { userId: input.userId, collectionId: input.collectionId, failedAt: input.paidAt });
       database.prepare(
         `UPDATE twig_bills SET status = 'pending', collection_id = ''
          WHERE collection_id = ? AND user_id = ? AND status != 'paid'`,
@@ -354,7 +429,9 @@ export function applyPaymentResult(
           kind: "failed",
           dedupeKey: `failed:${input.collectionId}`,
           subject: "Twigigi payment failed",
-          body: "Twigigi could not take the listing payment. Nothing in that payment was marked paid. Other listings were not changed.",
+          body: listingRows.length === 0
+            ? "Twigigi could not take the Digital File plan payment. The plan was not changed. Nothing in that payment was marked paid."
+            : "Twigigi could not take the listing payment. Nothing in that payment was marked paid. Other listings were not changed.",
         },
       ];
       if (enteredGrace) {
@@ -378,11 +455,14 @@ export function applyPaymentResult(
       input.collectionId,
       input.userId,
     );
+    const planPayment = listingBills.length === 0;
     const notices: PaymentNotice[] = [{
       kind: "paid",
       dedupeKey: `paid:${input.collectionId}`,
       subject: "Twigigi payment received",
-      body: "Twigigi received this listing payment. Quote fees in the same currency that were included are marked paid separately. Buyer payments to you are not part of this charge.",
+      body: planPayment
+        ? "Twigigi received this Digital File plan payment. The listing allowance updates once for this payment. A repeated confirmation does not add another copy."
+        : "Twigigi received this listing payment. Quote fees in the same currency that were included are marked paid separately. Buyer payments to you are not part of this charge.",
     }];
     for (const row of listingBills) {
       const productId = text(row.product_id);
@@ -439,6 +519,7 @@ export function applyPaymentResult(
     database.prepare(
       `UPDATE fee_collections SET status = 'paid', provider = ?, provider_payment_id = ? WHERE id = ? AND user_id = ?`,
     ).run(input.provider, input.transactionId, input.collectionId, input.userId);
+    applyDigitalPlanPayment(database, { userId: input.userId, collectionId: input.collectionId, paidAt: input.paidAt });
     database.exec("COMMIT");
     return paymentResult(true, false, "paid", notices);
   } catch (error) {

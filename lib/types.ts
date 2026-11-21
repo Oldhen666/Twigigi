@@ -275,6 +275,9 @@ export type OrderRecord = {
   interacPassword: string;
   shipCarrier: string;
   shipTracking: string;
+  platformFeeBps: number;
+  platformFeeCents: number;
+  platformFeeCollected: boolean;
   createdAt: string;
 };
 

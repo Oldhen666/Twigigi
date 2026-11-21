@@ -1,4 +1,5 @@
 import { listingFeeCents, listingFeeCurrency } from "@/lib/billing";
+import { fileListingUsesStorePlan, subscriptionCovers } from "@/lib/digital-plans";
 import { nextPeriodBill, shouldAccrueNextPeriod } from "@/lib/billing-calendar";
 import {
   enqueueBillingNotice,
@@ -9,7 +10,9 @@ import {
   listOpenFeeBills,
   listUserIdsWithFees,
   pauseExpiredGrace,
+  readDigitalSubscription,
   recordTwigBill,
+  renewDigitalPlan,
 } from "@/lib/db";
 import { previewCollections } from "@/lib/fee-collection";
 import type { User } from "@/lib/types";
@@ -48,7 +51,9 @@ export function prepareRenewalBills(userId: string, now = new Date()) {
       body: `${title} is inside its 72-hour grace period. The unpaid fee remains due. After 72 hours, only that listing pauses.`,
     });
   }
+  const storeCovered = subscriptionCovers(readDigitalSubscription(userId), now.getTime());
   for (const product of listFeeListings(userId)) {
+    if (fileListingUsesStorePlan(product.cta, storeCovered)) continue;
     if (listingFeeCents(product.cta, product.feeExempt) < 1) continue;
     if (!shouldAccrueNextPeriod({
       status: "published",
@@ -74,6 +79,7 @@ export function prepareRenewalBills(userId: string, now = new Date()) {
       dueAt: next.dueAt,
     });
   }
+  renewDigitalPlan(userId, now);
 }
 
 export function plansFor(userId: string): FeePlan[] {

@@ -29,7 +29,19 @@ import { splitLocation } from "@/lib/places";
 import { BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
 import { firstCoverage } from "@/lib/billing-calendar";
 import { graceDeadline } from "@/lib/listing-cycle";
-import { applyPaymentResult, claimCollectionCharge, claimCollectionCheckout, collectionOwner, ensurePaymentLedger, noteCollectionHold, readCollection, releaseCollectionClaim, saveCollectionCheckout, saveCollectionPaymentId, stageFeeCollection, type PaymentNotice } from "@/lib/payment-ledger";
+import { applyPaymentResult, claimCollectionCharge, claimCollectionCheckout, collectionOwner, ensurePaymentLedger, noteCollectionHold, readCollection, releaseCollectionClaim, saveCollectionCheckout, saveCollectionPaymentId, stageDigitalPlanCollection, stageFeeCollection, type PaymentNotice } from "@/lib/payment-ledger";
+import {
+  accruePlanRenewal,
+  cancelPlanRenewal,
+  claimFilePublish,
+  commitPlanChange,
+  ensureDigitalStore,
+  legacyDigitalFileBilling,
+  readDigitalSubscriptionRow,
+  type FilePublishResult,
+  type PlanCommit,
+} from "@/lib/digital-store";
+import type { DigitalSubscription } from "@/lib/digital-plans";
 import { readStoredOptions, readStoredVariants } from "@/lib/variants";
 import {
   PROTECTION_DAYS,
@@ -314,6 +326,9 @@ function ensureColumns(database: DatabaseSync) {
   add("orders", "interac_password", "interac_password TEXT NOT NULL DEFAULT ''");
   add("orders", "ship_carrier", "ship_carrier TEXT NOT NULL DEFAULT ''");
   add("orders", "ship_tracking", "ship_tracking TEXT NOT NULL DEFAULT ''");
+  add("orders", "platform_fee_bps", "platform_fee_bps INTEGER NOT NULL DEFAULT 0");
+  add("orders", "platform_fee_cents", "platform_fee_cents INTEGER NOT NULL DEFAULT 0");
+  add("orders", "platform_fee_collected", "platform_fee_collected INTEGER NOT NULL DEFAULT 0");
   add("users", "auto_confirm_orders", "auto_confirm_orders INTEGER NOT NULL DEFAULT 0");
   database.exec(`
     UPDATE orders SET review_state = 'accepted'
@@ -399,6 +414,7 @@ function ensureColumns(database: DatabaseSync) {
   );
   migrateListingCycles(database, new Date().toISOString());
   ensurePaymentLedger(database);
+  ensureDigitalStore(database);
   database.prepare(`UPDATE twig_bills SET status = 'pending' WHERE kind = 'quote' AND status IN ('accrued', 'recorded', 'due')`).run();
   add("quotes", "documents_json", "documents_json TEXT NOT NULL DEFAULT '[]'");
   add("quotes", "billable", "billable INTEGER NOT NULL DEFAULT 1");
@@ -1208,6 +1224,9 @@ function mapOrder(row: Row): OrderRecord {
     interacPassword: str(row.interac_password),
     shipCarrier: str(row.ship_carrier),
     shipTracking: str(row.ship_tracking),
+    platformFeeBps: num(row.platform_fee_bps),
+    platformFeeCents: num(row.platform_fee_cents),
+    platformFeeCollected: num(row.platform_fee_collected) === 1,
     createdAt: str(row.created_at),
   };
 }
@@ -2381,16 +2400,64 @@ export function markRenewalFailed(id: string, failedAt: string) {
 }
 
 export function pauseExpiredGrace(now = new Date().toISOString()) {
+  ensureDigitalStore(db);
+  const covered = `NOT (
+    cta = 'file' AND user_id IN (
+      SELECT user_id FROM digital_subscriptions
+      WHERE (status = 'active' AND (auto_renew = 1 OR paid_until > ?))
+         OR (status = 'grace' AND grace_until > ?)
+    )
+  )`;
   const due = many(
     `SELECT id, user_id, title FROM products
-     WHERE billing_status = 'grace' AND grace_until != '' AND grace_until <= ?`,
+     WHERE billing_status = 'grace' AND grace_until != '' AND grace_until <= ? AND ${covered}`,
+    now,
+    now,
     now,
   );
   db.prepare(
     `UPDATE products SET billing_status = 'paused', updated_at = ?
-     WHERE billing_status = 'grace' AND grace_until != '' AND grace_until <= ?`,
-  ).run(now, now);
+     WHERE billing_status = 'grace' AND grace_until != '' AND grace_until <= ? AND ${covered}`,
+  ).run(now, now, now, now);
   return due.map((row) => ({ id: str(row.id), userId: str(row.user_id), title: str(row.title) }));
+}
+
+export function readDigitalSubscription(userId: string): DigitalSubscription | null {
+  return readDigitalSubscriptionRow(db, userId);
+}
+
+export function claimDigitalFilePublish(productId: string, userId: string, now = new Date().toISOString()): FilePublishResult {
+  return claimFilePublish(db, productId, userId, now);
+}
+
+export function commitDigitalPlan(input: { id: string; userId: string; planId: string; copies: number; now?: string }): PlanCommit {
+  return commitPlanChange(db, { ...input, now: input.now || new Date().toISOString() });
+}
+
+export function cancelDigitalPlan(userId: string, now = new Date().toISOString()) {
+  cancelPlanRenewal(db, userId, now);
+}
+
+export function renewDigitalPlan(userId: string, now = new Date()) {
+  const bytes = crypto.getRandomValues(new Uint8Array(9));
+  return accruePlanRenewal(db, { id: `bill_${Buffer.from(bytes).toString("base64url")}`, userId, now: now.toISOString() });
+}
+
+export function stageDigitalPlan(userId: string) {
+  const bytes = crypto.getRandomValues(new Uint8Array(9));
+  return stageDigitalPlanCollection(db, { id: `col_${Buffer.from(bytes).toString("base64url")}`, userId, now: new Date().toISOString() });
+}
+
+export function legacyDigitalBilling(userId = "") {
+  return legacyDigitalFileBilling(db, userId);
+}
+
+export function setOrderPlatformFee(orderId: string, input: { feeBps: number; feeCents: number; collected: boolean }) {
+  db.prepare(
+    `UPDATE orders
+     SET platform_fee_bps = ?, platform_fee_cents = ?, platform_fee_collected = ?
+     WHERE id = ? AND platform_fee_bps = 0 AND platform_fee_cents = 0 AND platform_fee_collected = 0`,
+  ).run(input.feeBps, input.feeCents, input.collected ? 1 : 0, orderId);
 }
 
 export function listGraceEndingSoon(now: string, until: string) {

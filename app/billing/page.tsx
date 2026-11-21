@@ -31,7 +31,7 @@ async function BillingScreen({
             <span>Buy now or quote listing</span>
             <span>C$1.49 or USD$1.49 / 30 days</span>
           </div>
-          <p className="text-muted">A Canadian listing is CAD. A United States listing is USD. A digital file is always C$1.49 / 30 days.</p>
+          <p className="text-muted">A Canadian listing is CAD. A United States listing is USD. A digital file uses a shop plan in CAD. Buy now and quote listings stay on the fee above.</p>
           <div className="flex items-baseline justify-between gap-6">
             <span>Valid quote request</span>
             <span>{quoteRequest} each</span>
@@ -61,6 +61,9 @@ async function BillingScreen({
         </form>
         <p className="mt-4 text-sm">
           <Link href="/dashboard/payments?tab=receipts" className="text-forest">Open Pay Twigigi</Link>
+        </p>
+        <p className="mt-2 text-sm">
+          <Link href="/pricing" className="text-forest">Digital File pricing</Link>
         </p>
         <p className="mt-2 text-sm">
           <Link href={next} className="text-muted">Continue without changing</Link>

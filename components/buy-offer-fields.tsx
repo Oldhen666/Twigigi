@@ -750,29 +750,49 @@ function PaymentChoices({
           ) : null}
           {method.id === "paypal" && paypalOn ? (
             <div className="mt-3 pl-8">
-              <Field label="PayPal.Me link" required error={paypalError}>
-                <input
-                  ref={paypalRef}
-                  name="paypalMe"
-                  value={paypalMe}
-                  onChange={(event) => onPaypalMe(event.target.value)}
-                  placeholder="https://paypal.me/yourname"
-                  inputMode="url"
-                  className={inputClass}
-                />
-                <span className="mt-1 block text-sm text-muted">
-                  Create yours at{" "}
-                  <a href="https://www.paypal.com/paypalme/" target="_blank" rel="noreferrer" className="text-forest">
-                    https://www.paypal.com/paypalme/
-                  </a>
-                  , then paste it here. Example: https://paypal.me/yourname. Do not add an amount or a currency.
-                </span>
-                {paypalTest ? (
-                  <a href={paypalTest} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-forest">
-                    Test payment link
-                  </a>
-                ) : null}
-              </Field>
+              <label htmlFor="paypal-me-link" className={labelClass}>
+                PayPal.Me link
+                <span className="text-danger"> *</span>
+                <span className="ml-1 font-normal text-muted"> Required</span>
+              </label>
+              <div className="mb-3 rounded-2xl border border-forest/30 bg-moss px-3 py-3 text-sm text-ink">
+                <p className="font-semibold">How to get your PayPal.Me link</p>
+                <ol className="mt-2 list-decimal space-y-1.5 pl-5 leading-6">
+                  <li>Create a PayPal account, or sign in to the one you already use.</li>
+                  <li>
+                    Open{" "}
+                    <a href="https://www.paypal.com/paypalme/" target="_blank" rel="noreferrer" className="font-medium text-forest underline">
+                      paypal.com/paypalme
+                    </a>
+                    .
+                  </li>
+                  <li>Choose a PayPal.Me name if PayPal asks. Your link looks like https://paypal.me/yourname.</li>
+                  <li>Copy that link and paste it below. Leave off any amount or currency.</li>
+                </ol>
+              </div>
+              <input
+                id="paypal-me-link"
+                ref={paypalRef}
+                name="paypalMe"
+                value={paypalMe}
+                onChange={(event) => onPaypalMe(event.target.value)}
+                placeholder="https://paypal.me/yourname"
+                inputMode="url"
+                className={inputClass}
+              />
+              <p className="mt-2 rounded-xl bg-paper-deep px-3 py-2 text-sm font-medium leading-6 text-ink">
+                Create yours at{" "}
+                <a href="https://www.paypal.com/paypalme/" target="_blank" rel="noreferrer" className="font-semibold text-forest underline">
+                  https://www.paypal.com/paypalme/
+                </a>
+                , then paste it here. Example: https://paypal.me/yourname. Do not add an amount or a currency.
+              </p>
+              {paypalError ? <p className="mt-1 text-sm text-danger">{paypalError}</p> : null}
+              {paypalTest ? (
+                <a href={paypalTest} target="_blank" rel="noreferrer" className="mt-2 inline-block text-sm font-medium text-forest">
+                  Test payment link
+                </a>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -5,7 +5,8 @@ import { placeOrder } from "@/lib/actions";
 import { twigigiFileHeld } from "@/lib/copyright";
 import { getCurrentUser } from "@/lib/auth";
 import { getPublicProduct, listedParams, requireLiveTwig } from "@/lib/catalog";
-import { findUserById, getProductById } from "@/lib/db";
+import { activePlanQuote } from "@/lib/digital-plans";
+import { findUserById, getProductById, readDigitalSubscription } from "@/lib/db";
 import { digitalPayMethods } from "@/lib/payments";
 import { sellerPath } from "@/lib/seller-route";
 import { CheckoutForm } from "@/components/checkout-form";
@@ -106,6 +107,7 @@ async function BuyDetails({
               defaultName={account?.displayName ?? ""}
               defaultEmail={account?.email ?? ""}
               buyerUpload={product.cta === "buy" && product.customProduct && product.buyerUpload}
+              fileFeeBps={product.cta === "file" ? activePlanQuote(readDigitalSubscription(product.userId))?.feeBps ?? 0 : 0}
               payments={{
                 methods: fileMethods,
                 cardPaymentUrl: product.cta === "file" ? "" : product.cardPaymentUrl,

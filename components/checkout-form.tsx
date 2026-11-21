@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useActionState } from "react";
 import { useKeepFormValues } from "@/components/keep-form-values";
 import type { FulfillmentOption } from "@/lib/format";
+import { formatFeeRate, platformOrderFeeCents } from "@/lib/digital-plans";
 import { formatMoney, shippingCharge } from "@/lib/format";
 import { methodsForFulfillment, isCashMethod } from "@/lib/payments";
 import type { Cta, FormState, QuoteForm } from "@/lib/types";
@@ -41,6 +42,7 @@ export function CheckoutForm({
   defaultName = "",
   defaultEmail = "",
   buyerUpload = false,
+  fileFeeBps = 0,
 }: {
   mode: Cta;
   action: Action;
@@ -59,6 +61,7 @@ export function CheckoutForm({
   defaultName?: string;
   defaultEmail?: string;
   buyerUpload?: boolean;
+  fileFeeBps?: number;
 }) {
   const [state, formAction, pending] = useActionState(action, {} as FormState);
   const [fulfillment, setFulfillment] = useState(options[0]?.id ?? "pickup");
@@ -130,6 +133,7 @@ export function CheckoutForm({
       ) : null}
       <Field label="Email" name="email" required error={fieldErrors?.email}>
         <input name="email" type="email" autoComplete="email" aria-required="true" defaultValue={defaultEmail} className={inputClass} />
+        {mode === "file" ? <span className="mt-1 block text-sm font-normal text-muted">This email receives the file link and password.</span> : null}
       </Field>
       {(mode !== "buy" && mode !== "file") || requirePhone ? (
         <Field label="Phone" name="phone" required error={fieldErrors?.phone}>
@@ -305,6 +309,16 @@ export function CheckoutForm({
       ) : null}
 
       {total != null ? <p className="font-serif text-3xl text-forest">{formatMoney(total, currency)}</p> : null}
+      {mode === "file" && total != null ? (
+        <div className="space-y-1 text-sm leading-6 text-muted">
+          <p>You pay the seller {formatMoney(total, currency)}. Twigigi does not add its fee to that amount.</p>
+          {fileFeeBps > 0 ? (
+            <p>Twigigi platform fee {formatFeeRate(fileFeeBps)}: {formatMoney(platformOrderFeeCents(total, fileFeeBps), "CAD")}. Stripe or PayPal payment processing fees are separate and are not this platform fee.</p>
+          ) : (
+            <p>No Twigigi platform fee applies to this order. Stripe or PayPal may still charge their own payment processing fee.</p>
+          )}
+        </div>
+      ) : null}
       {shippingWaived ? <p className="-mt-2 text-sm text-muted">Shipping is free on this order.</p> : null}
       {mode === "quote" ? (
         <button type="button" onClick={clearAll} className={`${ghostClass} h-14 w-full rounded-2xl text-lg`}>

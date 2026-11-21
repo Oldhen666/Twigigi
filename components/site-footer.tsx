@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 const LINKS = [
+  ["/pricing", "Pricing"],
   ["/legal/terms", "Terms of Service"],
   ["/legal/privacy", "Privacy Policy"],
   ["/legal/intellectual-property", "Intellectual Property"],

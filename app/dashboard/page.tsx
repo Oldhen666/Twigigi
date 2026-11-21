@@ -2,7 +2,9 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { TwigCard } from "@/components/twig-card";
 import { getImpersonation, requireSeller } from "@/lib/auth";
-import { listOrders, listSellerNotices, productHasActivity, sellerProducts, sellerSales, sellerStats } from "@/lib/db";
+import { platformFee } from "@/lib/billing";
+import { activePlanQuote, formatFeeRate, listingLimitLabel } from "@/lib/digital-plans";
+import { listOrders, listSellerNotices, productHasActivity, readDigitalSubscription, sellerProducts, sellerSales, sellerStats } from "@/lib/db";
 import { formatMoney, isTwigLive, productUrl } from "@/lib/format";
 import { sellerAttention } from "@/lib/order-flow";
 
@@ -23,6 +25,8 @@ async function DashboardBody() {
   const fresh = products.length === 0;
   const waiting = products.length > 0 && totalOrders === 0;
   const notices = listSellerNotices(user.id);
+  const digitalPlan = activePlanQuote(readDigitalSubscription(user.id));
+  const publishedFiles = products.filter((product) => product.cta === "file" && product.status === "published").length;
 
   return (
     <main className="page-frame pb-16">
@@ -30,6 +34,19 @@ async function DashboardBody() {
         <h1 className="font-serif text-4xl">Overview</h1>
         {fresh ? <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Create a Twig, then share the link.</p> : null}
       </div>
+      <section className="mt-6 max-w-xl rounded-3xl border border-line bg-card p-5">
+        <h2 className="font-serif text-2xl">Digital File plan</h2>
+        {digitalPlan ? (
+          <p className="mt-2 text-sm leading-6">
+            {digitalPlan.plan.name} × {digitalPlan.copies}: {listingLimitLabel(digitalPlan.listingLimit)} listings, {platformFee(digitalPlan.monthlyCents, "CAD")} / month, {formatFeeRate(digitalPlan.feeBps)} platform fee.
+            {" "}{publishedFiles} published.
+          </p>
+        ) : (
+          <p className="mt-2 text-sm leading-6 text-muted">No active plan. Drafts can be saved. Publishing a Digital File needs a plan. {publishedFiles} are published now.</p>
+        )}
+        <Link href="/dashboard/digital" className="mt-3 inline-flex text-sm font-medium text-forest">Review plans</Link>
+      </section>
+
       {notices.length > 0 ? (
         <section className="mt-6 max-w-xl space-y-3">
           {notices.map((notice) => (

@@ -12,6 +12,7 @@ import { placeProblem, splitLocation } from "@/lib/places";
 import { cardLinkProblem, digitalPayMethods, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
 import { beginDigitalPaypalCheckout, beginPaypalBillingAgreement, createPlatformFeeCheckout, paypalBillingMessage, paypalCheckoutError, paypalConfigured } from "@/lib/paypal";
 import { plansFor, prepareRenewalBills } from "@/lib/seller-fees";
+import { activePlanQuote, digitalChangeMessage, digitalPublishMessage, snapshotPlatformFee } from "@/lib/digital-plans";
 import { firstCoverage, nextPeriodBill } from "@/lib/billing-calendar";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
@@ -22,7 +23,10 @@ import { parseFileLinks } from "@/lib/files";
 import { descriptionPlain, storedDescription } from "@/lib/rich-text";
 import { resolveUpload, uploadDirectory } from "@/lib/uploads";
 import {
+  cancelDigitalPlan,
   cancelUnpaidDigitalOrder,
+  claimDigitalFilePublish,
+  commitDigitalPlan,
   claimBuyerOrders,
   createUser,
   clearDeactivatesAt,
@@ -43,6 +47,7 @@ import {
   findUserByEmail,
   findUserByUsername,
   findUserById,
+  readDigitalSubscription,
   getOrder,
   setOrderFileIssue,
   getProductById,
@@ -76,6 +81,7 @@ import {
   reserveStock,
   setOrderChoices,
   setOrderPaymentSnapshot,
+  setOrderPlatformFee,
   setOrderStripeAccount,
   setStripeAccount,
   rememberStripeCustomer,
@@ -118,6 +124,7 @@ import {
   rememberCollectionCheckout,
   releaseSellerCheckout,
   setListingAutoRenew,
+  stageDigitalPlan,
   stageSellerCollection,
   setListingFeeExempt,
   setQuoteFeeExempt,
@@ -810,8 +817,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   };
 
   const savedProductId = existing?.id ?? newId("prd");
-  const needsBilling = intent === "publish" && !adminEdit && !acting && !existing?.feeExempt && !user.billingMethod;
+  const publishingNewFile = cta === "file" && intent === "publish" && existing?.status !== "published";
+  const needsBilling = intent === "publish" && !publishingNewFile && !adminEdit && !acting && !existing?.feeExempt && !user.billingMethod;
   if (needsBilling) input.status = "draft";
+  if (publishingNewFile) input.status = existing?.status === "deactivated" ? "deactivated" : "draft";
   try {
     if (existing) {
       updateProduct(existing.id, owner.id, input);
@@ -854,6 +863,11 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   updateTag(sellerTag(owner.publicId));
 
   if (needsBilling) redirect(`/billing?next=${encodeURIComponent(`/dashboard/products/${savedProductId}`)}`);
+  if (publishingNewFile) {
+    const claimed = claimDigitalFilePublish(savedProductId, owner.id);
+    if (!claimed.ok) return { error: digitalPublishMessage(claimed), ...sessionStamp };
+    redirect(`/${owner.publicId}/${slug}`);
+  }
   if (input.status === "published" && (!existing || existing.status !== "published")) {
     const cents = listingFeeCents(input.cta, Boolean(existing?.feeExempt));
     const cardReady = (user.billingMethod === "card" || user.billingMethod === "stripe") && Boolean(getStripe());
@@ -983,6 +997,7 @@ async function redirectCollectionCheckout(
   staged: { collectionId: string; amountCents: number; currency: string; checkoutUrl: string; idempotencyKey?: string } | null,
 ) {
   if (!staged || staged.amountCents < 1) return;
+  const feeName = staged.idempotencyKey?.startsWith("digital-plan-") ? "Twigigi Digital File plan" : "Twigigi fees";
   if (staged.checkoutUrl) redirect(staged.checkoutUrl);
   if (!claimSellerCheckout(staged.collectionId, user.id)) redirect("/dashboard/payments?tab=receipts&billing=error");
   try {
@@ -992,7 +1007,7 @@ async function redirectCollectionCheckout(
       reference: `collection:${staged.collectionId}`,
       amountCents: staged.amountCents,
       currency: staged.currency,
-      description: "Twigigi listing and quote fees",
+      description: feeName,
     });
     rememberCollectionCheckout({ collectionId: staged.collectionId, userId: user.id, provider: "paypal", orderId: checkout.orderId, url: checkout.url });
     redirect(checkout.url);
@@ -1011,7 +1026,7 @@ async function redirectCollectionCheckout(
         price_data: {
           currency: staged.currency === "USD" ? "usd" : "cad",
           unit_amount: staged.amountCents,
-          product_data: { name: "Twigigi fees" },
+          product_data: { name: feeName },
         },
       },
     ],
@@ -1062,6 +1077,31 @@ async function redirectListingFee(
   await redirectCollectionCheckout(user, stageSellerCollection(user.id, currency));
 }
 
+export async function confirmDigitalPlan(formData: FormData) {
+  const user = await requireSeller();
+  const planId = text(formData, "plan");
+  const copies = Number(text(formData, "copies") || "1");
+  const safeCopies = Number.isInteger(copies) ? copies : 0;
+  const back = `/dashboard/digital?plan=${encodeURIComponent(planId)}&copies=${encodeURIComponent(String(safeCopies || 1))}`;
+  const result = commitDigitalPlan({ id: newId("bill"), userId: user.id, planId, copies: safeCopies });
+  if (!result.ok) redirect(`${back}&notice=${result.reason}`);
+  if (result.kind !== "bill" || result.chargeCents < 1) redirect("/dashboard/digital?notice=saved");
+  if (!user.billingMethod) redirect(`/billing?next=${encodeURIComponent(back)}`);
+  try {
+    await redirectCollectionCheckout(user, stageDigitalPlan(user.id));
+  } catch (error) {
+    unstable_rethrow(error);
+    redirect(`${back}&notice=payment`);
+  }
+  redirect(`${back}&notice=payment`);
+}
+
+export async function stopDigitalPlanRenewal() {
+  const user = await requireSeller();
+  cancelDigitalPlan(user.id);
+  redirect("/dashboard/digital?notice=cancel");
+}
+
 export async function payOpenFees() {
   const user = await requireSeller();
   prepareRenewalBills(user.id);
@@ -1081,6 +1121,7 @@ export async function payToResume(formData: FormData) {
   const product = getProductById(text(formData, "id"));
   const back = safeNext(text(formData, "next"));
   if (!product || product.userId !== user.id) redirect(back || "/dashboard");
+  if (product.cta === "file") redirect("/dashboard/digital");
   if (product.billingStatus !== "paused" && listingStillPaid(product)) redirect(back || "/dashboard");
   try {
     await redirectListingFee(user, product);
@@ -1097,6 +1138,16 @@ export async function payAndPublish(formData: FormData) {
   const product = getProductById(text(formData, "id"));
   const back = safeNext(text(formData, "next"));
   if (!product || product.userId !== user.id || product.status === "published") redirect(back);
+  if (product.cta === "file") {
+    if (product.status === "draft" && (product.title.trim().length < 2 || product.images.length < 1)) {
+      redirect(`/dashboard/products/${product.id}`);
+    }
+    const claimed = claimDigitalFilePublish(product.id, user.id);
+    if (!claimed.ok) redirect(`/dashboard/digital?notice=${claimed.reason}`);
+    updateTag(productTag(user.publicId, product.slug));
+    updateTag(sellerTag(user.publicId));
+    redirect(back);
+  }
   if (product.status === "deactivated" && listingStillPaid(product)) {
     resumePublished(product.id, user.id);
     updateTag(productTag(user.publicId, product.slug));
@@ -1136,6 +1187,13 @@ export async function reactivateTwig(formData: FormData) {
   const back = safeNext(text(formData, "next"));
   const product = getProductById(text(formData, "id"));
   if (!product || product.userId !== user.id) redirect(back);
+  if (product.cta === "file" && product.status === "deactivated") {
+    const claimed = claimDigitalFilePublish(product.id, user.id);
+    if (!claimed.ok) redirect(`/dashboard/digital?notice=${claimed.reason}`);
+    updateTag(productTag(user.publicId, product.slug));
+    updateTag(sellerTag(user.publicId));
+    redirect(back);
+  }
   if (product.status === "deactivated") {
     if (!listingStillPaid(product)) redirect(back);
     resumePublished(product.id, user.id);
@@ -1313,6 +1371,12 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
       orderId,
       paymentSnapshot([digital ? { ...product, paymentMethods: digitalMethods, paypalMe: "" } : product], choice.payment),
     );
+    if (digital) {
+      const plan = activePlanQuote(readDigitalSubscription(product.userId));
+      const path = choice.payment === "card" ? "stripe_connect" : choice.payment === "paypal" ? "paypal_checkout" : "manual";
+      const fee = snapshotPlatformFee({ path, amountCents: total, feeBps: plan?.feeBps ?? 0, planActive: Boolean(plan) });
+      setOrderPlatformFee(orderId, { feeBps: fee.feeBps, feeCents: fee.feeCents, collected: fee.collected });
+    }
     if (!digital) acceptPlacedOrder(orderId);
     if (choice.payment === "interac") setInteracPrompt(orderId, product.interacQuestion, product.interacPassword);
     openInteraction({

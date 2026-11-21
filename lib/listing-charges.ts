@@ -66,20 +66,21 @@ function dueKey(bill: ListingChargeBill) {
   return batchKeyFrom(bill.dueAt) || batchKeyFrom(bill.periodKey);
 }
 
-export function listingChargeView(input: { listings: ListingChargeSource[]; bills: ListingChargeBill[] }): ListingChargeCurrency[] {
+export function listingChargeView(input: { listings: ListingChargeSource[]; bills: ListingChargeBill[]; coveredProductIds?: string[] }): ListingChargeCurrency[] {
   const currencies = new Set<string>();
   for (const listing of input.listings) if (listing.currency) currencies.add(listing.currency);
   for (const bill of input.bills) if (bill.currency) currencies.add(bill.currency);
-  return [...currencies].sort().map((currency) => buildCurrency(currency, input.listings, input.bills));
+  const covered = new Set(input.coveredProductIds ?? []);
+  return [...currencies].sort().map((currency) => buildCurrency(currency, input.listings, input.bills, covered));
 }
 
-function buildCurrency(currency: string, listings: ListingChargeSource[], bills: ListingChargeBill[]): ListingChargeCurrency {
+function buildCurrency(currency: string, listings: ListingChargeSource[], bills: ListingChargeBill[], covered: Set<string>): ListingChargeCurrency {
   const ownListings = listings.filter((listing) => listing.currency === currency);
   const ownBills = bills.filter((bill) => bill.currency === currency);
   const ids = new Set(ownListings.map((listing) => listing.id));
   for (const bill of ownBills) ids.add(bill.productId);
   const rows = [...ids]
-    .map((id) => toRow(currency, id, ownListings, ownBills))
+    .map((id) => toRow(currency, id, ownListings, ownBills, covered.has(id)))
     .sort((left, right) => left.title.localeCompare(right.title));
   return {
     currency,
@@ -88,7 +89,7 @@ function buildCurrency(currency: string, listings: ListingChargeSource[], bills:
   };
 }
 
-function toRow(currency: string, productId: string, listings: ListingChargeSource[], bills: ListingChargeBill[]): ListingChargeRow {
+function toRow(currency: string, productId: string, listings: ListingChargeSource[], bills: ListingChargeBill[], coveredByPlan: boolean): ListingChargeRow {
   const listing = listings.find((item) => item.id === productId);
   const title = listing?.title || bills.find((bill) => bill.productId === productId)?.title || "Removed Twig";
   const cta = listing?.cta || "";
@@ -103,7 +104,7 @@ function toRow(currency: string, productId: string, listings: ListingChargeSourc
     ? nextBill.amountCents
     : waived || !listing
       ? 0
-      : upcoming
+      : upcoming && !coveredByPlan
         ? listingFeeCents(listing.cta, false)
         : 0;
   const expiryKey = nextBill ? dueKey(nextBill) : upcoming;
