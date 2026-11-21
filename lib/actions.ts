@@ -13,6 +13,7 @@ import { cardLinkProblem, digitalPayMethods, interacEmailProblem, isCashMethod, 
 import { beginDigitalPaypalCheckout, beginPaypalBillingAgreement, createPlatformFeeCheckout, paypalBillingMessage, paypalCheckoutError, paypalConfigured } from "@/lib/paypal";
 import { plansFor, prepareRenewalBills } from "@/lib/seller-fees";
 import { activePlanQuote, digitalChangeMessage, digitalPublishMessage, snapshotPlatformFee } from "@/lib/digital-plans";
+import { activeBuyQuote, buyChangeMessage, buyPlanChange, optionAllowed, quoteBuyPlan, recommendBuyTarget } from "@/lib/buy-plans";
 import { firstCoverage, nextPeriodBill } from "@/lib/billing-calendar";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
@@ -24,9 +25,12 @@ import { descriptionPlain, storedDescription } from "@/lib/rich-text";
 import { resolveUpload, uploadDirectory } from "@/lib/uploads";
 import {
   cancelDigitalPlan,
+  cancelBuyPlan,
   cancelUnpaidDigitalOrder,
   claimDigitalFilePublish,
+  claimBuyNowPublish,
   commitDigitalPlan,
+  commitBuyPlan,
   claimBuyerOrders,
   createUser,
   clearDeactivatesAt,
@@ -48,6 +52,7 @@ import {
   findUserByUsername,
   findUserById,
   readDigitalSubscription,
+  readBuySubscription,
   getOrder,
   setOrderFileIssue,
   getProductById,
@@ -125,6 +130,7 @@ import {
   releaseSellerCheckout,
   setListingAutoRenew,
   stageDigitalPlan,
+  stageBuyPlan,
   stageSellerCollection,
   setListingFeeExempt,
   setQuoteFeeExempt,
@@ -148,6 +154,7 @@ import {
   markFileSent,
   completePayout,
   setDispute,
+  sellerProducts,
   startPayout,
   updateOrderStatus,
   updateProduct,
@@ -818,9 +825,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
 
   const savedProductId = existing?.id ?? newId("prd");
   const publishingNewFile = cta === "file" && intent === "publish" && existing?.status !== "published";
-  const needsBilling = intent === "publish" && !publishingNewFile && !adminEdit && !acting && !existing?.feeExempt && !user.billingMethod;
+  const publishingNewBuy = cta === "buy" && intent === "publish" && existing?.status !== "published";
+  const needsBilling = intent === "publish" && !publishingNewFile && !publishingNewBuy && !adminEdit && !acting && !existing?.feeExempt && !user.billingMethod;
   if (needsBilling) input.status = "draft";
-  if (publishingNewFile) input.status = existing?.status === "deactivated" ? "deactivated" : "draft";
+  if (publishingNewFile || publishingNewBuy) input.status = existing?.status === "deactivated" ? "deactivated" : "draft";
   try {
     if (existing) {
       updateProduct(existing.id, owner.id, input);
@@ -866,6 +874,11 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   if (publishingNewFile) {
     const claimed = claimDigitalFilePublish(savedProductId, owner.id);
     if (!claimed.ok) return { error: digitalPublishMessage(claimed), ...sessionStamp };
+    redirect(`/${owner.publicId}/${slug}`);
+  }
+  if (publishingNewBuy) {
+    const claimed = claimBuyNowPublish(savedProductId, owner.id);
+    if (!claimed.ok) redirect(`/dashboard/buy?add=1&notice=${claimed.reason}`);
     redirect(`/${owner.publicId}/${slug}`);
   }
   if (input.status === "published" && (!existing || existing.status !== "published")) {
@@ -997,7 +1010,11 @@ async function redirectCollectionCheckout(
   staged: { collectionId: string; amountCents: number; currency: string; checkoutUrl: string; idempotencyKey?: string } | null,
 ) {
   if (!staged || staged.amountCents < 1) return;
-  const feeName = staged.idempotencyKey?.startsWith("digital-plan-") ? "Twigigi Digital File plan" : "Twigigi fees";
+  const feeName = staged.idempotencyKey?.startsWith("digital-plan-")
+    ? "Twigigi Digital File plan"
+    : staged.idempotencyKey?.startsWith("buy-now-plan-")
+      ? "Twigigi Buy Now bundle"
+      : "Twigigi fees";
   if (staged.checkoutUrl) redirect(staged.checkoutUrl);
   if (!claimSellerCheckout(staged.collectionId, user.id)) redirect("/dashboard/payments?tab=receipts&billing=error");
   try {
@@ -1102,6 +1119,54 @@ export async function stopDigitalPlanRenewal() {
   redirect("/dashboard/digital?notice=cancel");
 }
 
+export async function confirmBuyPlan(formData: FormData) {
+  const user = await requireSeller();
+  const planId = text(formData, "plan");
+  const extraSlots = Number(text(formData, "extra") || "0");
+  const addSlots = Number(text(formData, "add") || "0");
+  const safeExtra = Number.isInteger(extraSlots) ? extraSlots : -1;
+  const back = `/dashboard/buy?add=${encodeURIComponent(String(addSlots || ""))}&plan=${encodeURIComponent(planId)}&extra=${encodeURIComponent(String(Math.max(safeExtra, 0)))}`;
+  if (!Number.isInteger(addSlots) || addSlots < 0 || safeExtra < 0) redirect(`${back}&notice=choice`);
+  const published = sellerProducts(user.id).filter((product) => product.cta === "buy" && product.status === "published").length;
+  if (addSlots === 0) {
+    const base = quoteBuyPlan(planId, 0);
+    if (!base || safeExtra !== 0 || (base.listingLimit != null && published > base.listingLimit)) redirect(`${back}&notice=quota`);
+  } else {
+    const recommendation = recommendBuyTarget({
+      current: activeBuyQuote(readBuySubscription(user.id)),
+      published,
+      addSlots,
+    });
+    if (!recommendation || !optionAllowed(recommendation, planId, safeExtra)) redirect(`${back}&notice=choice`);
+  }
+  const priced = buyPlanChange({
+    userId: user.id,
+    current: readBuySubscription(user.id),
+    planId,
+    extraSlots: safeExtra,
+    published,
+    now: new Date().toISOString(),
+  });
+  if (!priced.ok) redirect(`${back}&notice=${priced.reason}`);
+  const result = commitBuyPlan({ id: newId("bill"), userId: user.id, planId, extraSlots: safeExtra });
+  if (!result.ok) redirect(`${back}&notice=${result.reason}`);
+  if (result.kind !== "bill" || result.chargeCents < 1) redirect("/dashboard/buy?notice=saved");
+  if (!user.billingMethod) redirect(`/billing?next=${encodeURIComponent(back)}`);
+  try {
+    await redirectCollectionCheckout(user, stageBuyPlan(user.id));
+  } catch (error) {
+    unstable_rethrow(error);
+    redirect(`${back}&notice=payment`);
+  }
+  redirect(`${back}&notice=payment`);
+}
+
+export async function stopBuyPlanRenewal() {
+  const user = await requireSeller();
+  cancelBuyPlan(user.id);
+  redirect("/dashboard/buy?notice=cancel");
+}
+
 export async function payOpenFees() {
   const user = await requireSeller();
   prepareRenewalBills(user.id);
@@ -1122,6 +1187,7 @@ export async function payToResume(formData: FormData) {
   const back = safeNext(text(formData, "next"));
   if (!product || product.userId !== user.id) redirect(back || "/dashboard");
   if (product.cta === "file") redirect("/dashboard/digital");
+  if (product.cta === "buy") redirect("/dashboard/buy?add=1");
   if (product.billingStatus !== "paused" && listingStillPaid(product)) redirect(back || "/dashboard");
   try {
     await redirectListingFee(user, product);
@@ -1144,6 +1210,16 @@ export async function payAndPublish(formData: FormData) {
     }
     const claimed = claimDigitalFilePublish(product.id, user.id);
     if (!claimed.ok) redirect(`/dashboard/digital?notice=${claimed.reason}`);
+    updateTag(productTag(user.publicId, product.slug));
+    updateTag(sellerTag(user.publicId));
+    redirect(back);
+  }
+  if (product.cta === "buy") {
+    if (product.status === "draft" && (product.title.trim().length < 2 || product.images.length < 1)) {
+      redirect(`/dashboard/products/${product.id}`);
+    }
+    const claimed = claimBuyNowPublish(product.id, user.id);
+    if (!claimed.ok) redirect(`/dashboard/buy?add=1&notice=${claimed.reason}`);
     updateTag(productTag(user.publicId, product.slug));
     updateTag(sellerTag(user.publicId));
     redirect(back);
@@ -1190,6 +1266,13 @@ export async function reactivateTwig(formData: FormData) {
   if (product.cta === "file" && product.status === "deactivated") {
     const claimed = claimDigitalFilePublish(product.id, user.id);
     if (!claimed.ok) redirect(`/dashboard/digital?notice=${claimed.reason}`);
+    updateTag(productTag(user.publicId, product.slug));
+    updateTag(sellerTag(user.publicId));
+    redirect(back);
+  }
+  if (product.cta === "buy" && product.status === "deactivated") {
+    const claimed = claimBuyNowPublish(product.id, user.id);
+    if (!claimed.ok) redirect(`/dashboard/buy?add=1&notice=${claimed.reason}`);
     updateTag(productTag(user.publicId, product.slug));
     updateTag(sellerTag(user.publicId));
     redirect(back);

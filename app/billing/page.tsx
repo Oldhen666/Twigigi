@@ -28,10 +28,15 @@ async function BillingScreen({
         <p className="mt-2 max-w-prose text-sm leading-6 text-muted">Choose how you will pay Twigigi before a Twig can be published. This does not charge you and does not save a card.</p>
         <div className="mt-6 max-w-prose space-y-2 text-sm">
           <div className="flex items-baseline justify-between gap-6">
-            <span>Buy now or quote listing</span>
+            <span>Buy now bundle</span>
+            <span>C$12.99 to C$59.99 / month</span>
+          </div>
+          <p className="text-muted">A new published Buy Now listing uses a CAD bundle. Quote listings stay on the listing fee. A digital file uses a shop plan in CAD. An existing per-listing Buy Now bill is not repriced.</p>
+          <div className="flex items-baseline justify-between gap-6">
+            <span>Quote listing</span>
             <span>C$1.49 or USD$1.49 / 30 days</span>
           </div>
-          <p className="text-muted">A Canadian listing is CAD. A United States listing is USD. A digital file uses a shop plan in CAD. Buy now and quote listings stay on the fee above.</p>
+          <p className="text-muted">A Canadian quote listing is CAD. A United States quote listing is USD.</p>
           <div className="flex items-baseline justify-between gap-6">
             <span>Valid quote request</span>
             <span>{quoteRequest} each</span>
@@ -63,7 +68,7 @@ async function BillingScreen({
           <Link href="/dashboard/payments?tab=receipts" className="text-forest">Open Pay Twigigi</Link>
         </p>
         <p className="mt-2 text-sm">
-          <Link href="/pricing" className="text-forest">Digital File pricing</Link>
+          <Link href="/pricing" className="text-forest">Pricing</Link>
         </p>
         <p className="mt-2 text-sm">
           <Link href={next} className="text-muted">Continue without changing</Link>

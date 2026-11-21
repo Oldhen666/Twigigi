@@ -1,13 +1,31 @@
 import Link from "next/link";
 import { platformFee } from "@/lib/billing";
+import { BUY_PLANS } from "@/lib/buy-plans";
 import { DIGITAL_PLANS, formatFeeRate, listingLimitLabel } from "@/lib/digital-plans";
 
-export const metadata = { title: "Digital File pricing" };
+export const metadata = { title: "Pricing" };
 
 export default function Page() {
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-10">
-      <h1 className="font-serif text-4xl">Digital File plans</h1>
+      <h1 className="font-serif text-4xl">Pricing</h1>
+      <h2 className="mt-8 font-serif text-3xl">Buy Now bundles</h2>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
+        A Buy Now bundle is the seller subscription for published Buy Now listings. Prices are CAD per month. C$59.99 is the highest monthly price. Buyer checkout stays with the seller and is not this subscription.
+      </p>
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        {BUY_PLANS.map((plan) => (
+          <article key={plan.id} className="rounded-3xl border border-line bg-card p-5">
+            <h3 className="font-serif text-3xl">{plan.name}</h3>
+            <p className="mt-3 font-serif text-3xl">{platformFee(plan.monthlyCents, "CAD")}<span className="font-sans text-base text-muted"> / month</span></p>
+            <p className="mt-3 text-sm leading-6">{plan.listings == null ? "Unlimited published Buy Now listings. Extra slots are not added." : `${plan.listings} published Buy Now listings. Add 1 or 10 slots on this bundle when you need room.`}</p>
+            <Link href={`/dashboard/buy?plan=${plan.id}`} className="mt-5 inline-flex h-11 items-center rounded-full bg-forest px-4 text-sm text-card">
+              Review {plan.name}
+            </Link>
+          </article>
+        ))}
+      </div>
+      <h2 className="mt-12 font-serif text-3xl">Digital File plans</h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
         One plan covers the whole shop. Prices are in CAD. Buy now and quote listings are not part of these plans.
         A Twigigi platform fee is separate from the payment processing fee charged by Stripe or PayPal.

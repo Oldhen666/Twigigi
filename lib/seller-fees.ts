@@ -1,5 +1,6 @@
 import { listingFeeCents, listingFeeCurrency } from "@/lib/billing";
 import { fileListingUsesStorePlan, subscriptionCovers } from "@/lib/digital-plans";
+import { buyListingUsesBundle, subscriptionCoversBuy } from "@/lib/buy-plans";
 import { nextPeriodBill, shouldAccrueNextPeriod } from "@/lib/billing-calendar";
 import {
   enqueueBillingNotice,
@@ -11,7 +12,9 @@ import {
   listUserIdsWithFees,
   pauseExpiredGrace,
   readDigitalSubscription,
+  readBuySubscription,
   recordTwigBill,
+  renewBuyPlan,
   renewDigitalPlan,
 } from "@/lib/db";
 import { previewCollections } from "@/lib/fee-collection";
@@ -52,8 +55,10 @@ export function prepareRenewalBills(userId: string, now = new Date()) {
     });
   }
   const storeCovered = subscriptionCovers(readDigitalSubscription(userId), now.getTime());
+  const buyCovered = subscriptionCoversBuy(readBuySubscription(userId), now.getTime());
   for (const product of listFeeListings(userId)) {
     if (fileListingUsesStorePlan(product.cta, storeCovered)) continue;
+    if (buyListingUsesBundle(product.cta, buyCovered)) continue;
     if (listingFeeCents(product.cta, product.feeExempt) < 1) continue;
     if (!shouldAccrueNextPeriod({
       status: "published",
@@ -80,6 +85,7 @@ export function prepareRenewalBills(userId: string, now = new Date()) {
     });
   }
   renewDigitalPlan(userId, now);
+  renewBuyPlan(userId, now);
 }
 
 export function plansFor(userId: string): FeePlan[] {

@@ -12,7 +12,8 @@ import { listingChargeView } from "@/lib/listing-charges";
 import { cardCanRenew, BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
 import { requireSeller } from "@/lib/auth";
 import { subscriptionCovers } from "@/lib/digital-plans";
-import { listAttentionCollections, listBillingListings, listSellerBills, markCardActionRequired, readDigitalSubscription, saveCardAuthorization, sellerProducts, setStripeAccount } from "@/lib/db";
+import { subscriptionCoversBuy } from "@/lib/buy-plans";
+import { listAttentionCollections, listBillingListings, listSellerBills, markCardActionRequired, readBuySubscription, readDigitalSubscription, saveCardAuthorization, sellerProducts, setStripeAccount } from "@/lib/db";
 import { collectSellerFees } from "@/lib/seller-fees";
 import { outstandingCents } from "@/lib/fee-collection";
 import { billingYear } from "@/lib/format";
@@ -84,6 +85,7 @@ export default async function Page({
   const billingListings = listBillingListings(user.id);
   const listings = billingListings.filter((product) => listingFeeCents(product.cta, product.feeExempt) > 0);
   const digitalCovered = subscriptionCovers(readDigitalSubscription(user.id));
+  const buyCovered = subscriptionCoversBuy(readBuySubscription(user.id));
   const listingCharges = listingChargeView({
     listings: billingListings.map((product) => ({
       id: product.id,
@@ -106,7 +108,10 @@ export default async function Page({
       dueAt: bill.dueAt,
       periodKey: bill.billingPeriodKey,
     })),
-    coveredProductIds: digitalCovered ? billingListings.filter((product) => product.cta === "file").map((product) => product.id) : [],
+    coveredProductIds: [
+      ...(digitalCovered ? billingListings.filter((product) => product.cta === "file").map((product) => product.id) : []),
+      ...(buyCovered ? billingListings.filter((product) => product.cta === "buy").map((product) => product.id) : []),
+    ],
   });
   const outstandingByCurrency = [...new Set(bills.map((bill) => bill.currency || "CAD"))]
     .map((currency) => ({ currency, cents: outstandingCents(bills, currency) }))
@@ -266,11 +271,11 @@ export default async function Page({
                   <div className="mt-3 grid gap-4 sm:grid-cols-2">
                     <div className="min-w-0 rounded-xl border border-line px-4 py-3">
                       <p className="text-[13px] text-muted">Listing fee</p>
-                      <p className="mt-1">Canadian Buy now and quote listings</p>
+                      <p className="mt-1">Canadian quote listings</p>
                       <p className="font-sans text-[15px] font-semibold tabular-nums">{formatListingFee("CAD")}</p>
                       <p className="mt-2">US physical listings</p>
                       <p className="font-sans text-[15px] font-semibold tabular-nums">{formatListingFee("USD")}</p>
-                      <p className="mt-2 text-[13px] text-muted">First charge at paid publish, then the 15th or the 28th. Digital File plans are separate. An existing per-listing digital bill is not repriced.</p>
+                      <p className="mt-2 text-[13px] text-muted">First charge at paid publish, then the 15th or the 28th. Buy Now bundles and Digital File plans are separate. An existing per-listing bill is not repriced.</p>
                     </div>
                     <div className="min-w-0 rounded-xl border border-line px-4 py-3">
                       <p className="text-[13px] text-muted">Quote fee</p>

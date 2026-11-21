@@ -4,7 +4,8 @@ import { TwigCard } from "@/components/twig-card";
 import { getImpersonation, requireSeller } from "@/lib/auth";
 import { platformFee } from "@/lib/billing";
 import { activePlanQuote, formatFeeRate, listingLimitLabel } from "@/lib/digital-plans";
-import { listOrders, listSellerNotices, productHasActivity, readDigitalSubscription, sellerProducts, sellerSales, sellerStats } from "@/lib/db";
+import { activeBuyQuote } from "@/lib/buy-plans";
+import { listOrders, listSellerNotices, productHasActivity, readBuySubscription, readDigitalSubscription, sellerProducts, sellerSales, sellerStats } from "@/lib/db";
 import { formatMoney, isTwigLive, productUrl } from "@/lib/format";
 import { sellerAttention } from "@/lib/order-flow";
 
@@ -27,6 +28,8 @@ async function DashboardBody() {
   const notices = listSellerNotices(user.id);
   const digitalPlan = activePlanQuote(readDigitalSubscription(user.id));
   const publishedFiles = products.filter((product) => product.cta === "file" && product.status === "published").length;
+  const buyPlan = activeBuyQuote(readBuySubscription(user.id));
+  const publishedBuy = products.filter((product) => product.cta === "buy" && product.status === "published").length;
 
   return (
     <main className="page-frame pb-16">
@@ -45,6 +48,18 @@ async function DashboardBody() {
           <p className="mt-2 text-sm leading-6 text-muted">No active plan. Drafts can be saved. Publishing a Digital File needs a plan. {publishedFiles} are published now.</p>
         )}
         <Link href="/dashboard/digital" className="mt-3 inline-flex text-sm font-medium text-forest">Review plans</Link>
+      </section>
+      <section className="mt-6 max-w-xl rounded-3xl border border-line bg-card p-5">
+        <h2 className="font-serif text-2xl">Buy Now bundle</h2>
+        {buyPlan ? (
+          <p className="mt-2 text-sm leading-6">
+            {buyPlan.plan.name}{buyPlan.extraSlots > 0 ? ` + ${buyPlan.extraSlots} slots` : ""}: {buyPlan.listingLimit == null ? "Unlimited" : buyPlan.listingLimit} listings, {platformFee(buyPlan.monthlyCents, "CAD")} / month.
+            {" "}{publishedBuy} published.
+          </p>
+        ) : (
+          <p className="mt-2 text-sm leading-6 text-muted">A published Buy Now listing uses one CAD bundle. Quote listings stay on the listing fee.</p>
+        )}
+        <Link href="/dashboard/buy" className="mt-3 inline-flex text-sm font-medium text-forest">Review bundles</Link>
       </section>
 
       {notices.length > 0 ? (

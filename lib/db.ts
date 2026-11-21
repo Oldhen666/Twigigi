@@ -29,7 +29,19 @@ import { splitLocation } from "@/lib/places";
 import { BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
 import { firstCoverage } from "@/lib/billing-calendar";
 import { graceDeadline } from "@/lib/listing-cycle";
-import { applyPaymentResult, claimCollectionCharge, claimCollectionCheckout, collectionOwner, ensurePaymentLedger, noteCollectionHold, readCollection, releaseCollectionClaim, saveCollectionCheckout, saveCollectionPaymentId, stageDigitalPlanCollection, stageFeeCollection, type PaymentNotice } from "@/lib/payment-ledger";
+import { applyPaymentResult, claimCollectionCharge, claimCollectionCheckout, collectionOwner, ensurePaymentLedger, noteCollectionHold, readCollection, releaseCollectionClaim, saveCollectionCheckout, saveCollectionPaymentId, stageBuyPlanCollection, stageDigitalPlanCollection, stageFeeCollection, type PaymentNotice } from "@/lib/payment-ledger";
+import {
+  accrueBuyRenewal,
+  cancelBuyRenewal,
+  claimBuyPublish,
+  commitBuyChange,
+  ensureBuyStore,
+  legacyBuyListingBilling,
+  readBuySubscriptionRow,
+  type BuyCommit,
+  type BuyPublishResult,
+} from "@/lib/buy-store";
+import type { BuySubscription } from "@/lib/buy-plans";
 import {
   accruePlanRenewal,
   cancelPlanRenewal,
@@ -415,6 +427,7 @@ function ensureColumns(database: DatabaseSync) {
   migrateListingCycles(database, new Date().toISOString());
   ensurePaymentLedger(database);
   ensureDigitalStore(database);
+  ensureBuyStore(database);
   database.prepare(`UPDATE twig_bills SET status = 'pending' WHERE kind = 'quote' AND status IN ('accrued', 'recorded', 'due')`).run();
   add("quotes", "documents_json", "documents_json TEXT NOT NULL DEFAULT '[]'");
   add("quotes", "billable", "billable INTEGER NOT NULL DEFAULT 1");
@@ -2401,12 +2414,18 @@ export function markRenewalFailed(id: string, failedAt: string) {
 
 export function pauseExpiredGrace(now = new Date().toISOString()) {
   ensureDigitalStore(db);
+  ensureBuyStore(db);
   const covered = `NOT (
-    cta = 'file' AND user_id IN (
+    (cta = 'file' AND user_id IN (
       SELECT user_id FROM digital_subscriptions
       WHERE (status = 'active' AND (auto_renew = 1 OR paid_until > ?))
          OR (status = 'grace' AND grace_until > ?)
-    )
+    ))
+    OR (cta = 'buy' AND user_id IN (
+      SELECT user_id FROM buy_subscriptions
+      WHERE (status = 'active' AND (auto_renew = 1 OR paid_until > ?))
+         OR (status = 'grace' AND grace_until > ?)
+    ))
   )`;
   const due = many(
     `SELECT id, user_id, title FROM products
@@ -2414,11 +2433,13 @@ export function pauseExpiredGrace(now = new Date().toISOString()) {
     now,
     now,
     now,
+    now,
+    now,
   );
   db.prepare(
     `UPDATE products SET billing_status = 'paused', updated_at = ?
      WHERE billing_status = 'grace' AND grace_until != '' AND grace_until <= ? AND ${covered}`,
-  ).run(now, now, now, now);
+  ).run(now, now, now, now, now, now);
   return due.map((row) => ({ id: str(row.id), userId: str(row.user_id), title: str(row.title) }));
 }
 
@@ -2446,6 +2467,36 @@ export function renewDigitalPlan(userId: string, now = new Date()) {
 export function stageDigitalPlan(userId: string) {
   const bytes = crypto.getRandomValues(new Uint8Array(9));
   return stageDigitalPlanCollection(db, { id: `col_${Buffer.from(bytes).toString("base64url")}`, userId, now: new Date().toISOString() });
+}
+
+export function readBuySubscription(userId: string): BuySubscription | null {
+  return readBuySubscriptionRow(db, userId);
+}
+
+export function claimBuyNowPublish(productId: string, userId: string, now = new Date().toISOString()): BuyPublishResult {
+  return claimBuyPublish(db, productId, userId, now);
+}
+
+export function commitBuyPlan(input: { id: string; userId: string; planId: string; extraSlots: number; now?: string }): BuyCommit {
+  return commitBuyChange(db, { ...input, now: input.now || new Date().toISOString() });
+}
+
+export function cancelBuyPlan(userId: string, now = new Date().toISOString()) {
+  cancelBuyRenewal(db, userId, now);
+}
+
+export function renewBuyPlan(userId: string, now = new Date()) {
+  const bytes = crypto.getRandomValues(new Uint8Array(9));
+  return accrueBuyRenewal(db, { id: `bill_${Buffer.from(bytes).toString("base64url")}`, userId, now: now.toISOString() });
+}
+
+export function stageBuyPlan(userId: string) {
+  const bytes = crypto.getRandomValues(new Uint8Array(9));
+  return stageBuyPlanCollection(db, { id: `col_${Buffer.from(bytes).toString("base64url")}`, userId, now: new Date().toISOString() });
+}
+
+export function legacyBuyBilling(userId = "") {
+  return legacyBuyListingBilling(db, userId);
 }
 
 export function legacyDigitalBilling(userId = "") {
@@ -2681,10 +2732,16 @@ export function unpaidListingIdsForCharge(chargeKey: string, userId: string) {
 }
 
 export function listUserIdsWithFees() {
+  ensureDigitalStore(db);
+  ensureBuyStore(db);
   const rows = many(
     `SELECT user_id AS id FROM products WHERE status = 'published'
      UNION
-     SELECT user_id AS id FROM twig_bills WHERE status IN ('accrued', 'recorded', 'due')`,
+     SELECT user_id AS id FROM twig_bills WHERE status IN ('accrued', 'recorded', 'due')
+     UNION
+     SELECT user_id AS id FROM digital_subscriptions WHERE status IN ('active', 'grace')
+     UNION
+     SELECT user_id AS id FROM buy_subscriptions WHERE status IN ('active', 'grace')`,
   );
   return rows.map((row) => str(row.id)).filter(Boolean);
 }

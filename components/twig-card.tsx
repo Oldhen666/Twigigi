@@ -46,7 +46,7 @@ export function TwigCard({
   const deleteLabel = deleteAnchor ? formatBillingDate(addDays(deleteAnchor, DEACTIVATION_GRACE_DAYS), true) : "";
   const price = product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request";
   const views = `${product.viewCount} ${product.viewCount === 1 ? "view" : "views"}`;
-  const publishLabel = skipPay || fee === 0 ? "Publish" : `Publish · ${listingLabel} / 30 days`;
+  const publishLabel = product.cta === "buy" || product.cta === "file" || skipPay || fee === 0 ? "Publish" : `Publish · ${listingLabel} / 30 days`;
   const paidThrough = product.status === "deactivated" && listingStillPaid(product);
   const showDeactivate = product.status === "published";
   const showDelete = canDelete && (product.status === "draft" || product.status === "deactivated");
