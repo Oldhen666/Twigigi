@@ -4943,7 +4943,12 @@ function ensureAvaDemoDetails() {
 function ensureAvaTee() {
   if (!one("SELECT id FROM users WHERE id = 'usr_ava'")) return;
   const now = "2026-10-20T15:00:00.000Z";
-  const description = "Custom T-shirt printing in Edmonton. Pick a size and place the order, then upload the picture you want printed. The photos show sample prints. It is printed on a solid cotton tee and ready in about a week.";
+  const description = "A cotton T-shirt printed with the name you enter. Choose a size, then pick local pickup in Edmonton or shipping within Canada.";
+  const personalization = JSON.stringify({
+    enabled: true,
+    proof: false,
+    fields: [{ id: "name", kind: "text", label: "Name to print", help: "The name to print on the shirt.", required: true, maxLength: 40 }],
+  });
   const images = JSON.stringify(["/seed/tee-1.jpg", "/seed/tee-2.jpg", "/seed/tee-3.jpg"]);
   const options = JSON.stringify([{ name: "Size", values: ["S", "M", "L", "XL", "XXL"] }]);
   const methods = JSON.stringify(["interac", "cash_pickup"]);
@@ -4989,7 +4994,9 @@ function ensureAvaTee() {
       pickup_note = ?,
       pickup_time = ?,
       delivery_enabled = 0,
-      shipping_enabled = 0,
+      shipping_enabled = 1,
+      shipping_fee_cents = 800,
+      shipping_note = 'Ships within Canada.',
       onsite_enabled = 0,
       cta = 'buy',
       contact_email = 'ava@twigigi.demo',
@@ -5017,7 +5024,8 @@ function ensureAvaTee() {
       billing_status = 'legacy_review',
       auto_renew = 0,
       custom_product = 1,
-      buyer_upload = 1
+      buyer_upload = 0,
+      personalization_json = ?
      WHERE id = 'prd_tee' AND user_id = 'usr_ava'`,
   ).run(
     description,
@@ -5026,6 +5034,7 @@ function ensureAvaTee() {
     images,
     options,
     methods,
+    personalization,
   );
   const ava = one("SELECT public_id FROM users WHERE id = 'usr_ava'");
   const publicId = str(ava?.public_id).toLowerCase();
@@ -5038,8 +5047,95 @@ function ensureAvaTee() {
   }
 }
 
+function ensureAvaDesk() {
+  if (!one("SELECT id FROM users WHERE id = 'usr_ava'")) return;
+  const now = "2026-10-22T15:00:00.000Z";
+  const description = "A light oak office desk for local pickup in Edmonton. The street address stays private until the order is confirmed.";
+  const images = JSON.stringify(["/seed/desk-1.jpg"]);
+  const methods = JSON.stringify(["interac", "cash_pickup"]);
+  const pickup = "Weekdays, between 4:00 PM and 7:00 PM | Weekends, anytime (8am - 8pm)";
+  if (!one("SELECT id FROM products WHERE id = 'prd_desk'") && !one("SELECT id FROM products WHERE user_id = 'usr_ava' AND lower(slug) = 'office-desk'")) {
+    db.prepare(
+      `INSERT INTO products (
+        id, user_id, slug, title, description, price_cents, currency, location,
+        pickup_enabled, pickup_note, pickup_time, cta, contact_email,
+        status, images_json, button_label, payment_methods, interac_email, interac_question, interac_password,
+        category_kind, category_group, category,
+        require_name, require_email, require_phone, seller_contact_mode, seller_contact,
+        demo, billing_status, auto_renew, created_at, updated_at
+      ) VALUES (
+        'prd_desk', 'usr_ava', 'office-desk', 'Office desk', ?, 18000, 'CAD', 'Edmonton, Alberta',
+        1, ?, ?, 'buy', 'ava@twigigi.demo',
+        'published', ?, 'Buy now', ?, 'ava@twigigi.demo', 'What city is pickup in?', 'Edmonton',
+        'product', 'office-business', 'office-furniture',
+        1, 1, 1, 'email', 'ava@twigigi.demo',
+        1, 'legacy_review', 0, ?, ?
+      )`,
+    ).run(
+      description,
+      "Pickup in southwest Edmonton. The street address stays private until the order is confirmed.",
+      pickup,
+      images,
+      methods,
+      now,
+      now,
+    );
+  }
+  db.prepare(
+    `UPDATE products SET
+      slug = 'office-desk',
+      title = 'Office desk',
+      description = ?,
+      price_cents = 18000,
+      currency = 'CAD',
+      location = 'Edmonton, Alberta',
+      pickup_enabled = 1,
+      pickup_note = ?,
+      pickup_time = ?,
+      delivery_enabled = 0,
+      shipping_enabled = 0,
+      shipping_fee_cents = NULL,
+      shipping_note = '',
+      onsite_enabled = 0,
+      remote_enabled = 0,
+      cta = 'buy',
+      contact_email = 'ava@twigigi.demo',
+      status = 'published',
+      images_json = ?,
+      button_label = 'Buy now',
+      has_options = 0,
+      options_json = '[]',
+      payment_methods = ?,
+      interac_email = 'ava@twigigi.demo',
+      interac_question = 'What city is pickup in?',
+      interac_password = 'Edmonton',
+      category_kind = 'product',
+      category_group = 'office-business',
+      category = 'office-furniture',
+      require_name = 1,
+      require_email = 1,
+      require_phone = 1,
+      seller_contact_mode = 'email',
+      seller_contact = 'ava@twigigi.demo',
+      custom_product = 0,
+      buyer_upload = 0,
+      personalization_json = '',
+      demo = 1,
+      fee_exempt = 0,
+      billing_status = 'legacy_review',
+      auto_renew = 0
+     WHERE id = 'prd_desk' AND user_id = 'usr_ava'`,
+  ).run(
+    description,
+    "Pickup in southwest Edmonton. The street address stays private until the order is confirmed.",
+    pickup,
+    images,
+    methods,
+  );
+}
+
 function ensureCurrentDemoTwigs() {
-  const ids = ["prd_cedar", "prd_bench", "prd_wreath", "prd_plan", "prd_tee"];
+  const ids = ["prd_cedar", "prd_bench", "prd_wreath", "prd_plan", "prd_tee", "prd_desk"];
   const mark = db.prepare("UPDATE products SET demo = 1 WHERE id = ? AND user_id = 'usr_ava'");
   for (const id of ids) mark.run(id);
   db.prepare(
@@ -5076,9 +5172,22 @@ function ensureCurrentDemoTwigs() {
       zelle_contact = '',
       seller_contact_mode = 'email',
       seller_contact = 'ava@twigigi.demo',
-      quote_fee_exempt = 1
+      quote_fee_exempt = 1,
+      quote_form_json = ?
      WHERE id = 'prd_bench' AND user_id = 'usr_ava'`,
-  ).run();
+  ).run(JSON.stringify({
+    askName: true,
+    askPhone: true,
+    askCompany: false,
+    askAddress: true,
+    askQuantity: false,
+    items: [],
+    questions: [
+      { id: "postal", label: "Postal code", required: true, answer: "text", choices: [] },
+      { id: "scope", label: "What should the quote cover?", required: true, answer: "text", choices: [] },
+    ],
+    terms: "",
+  }));
   db.prepare(
     `UPDATE products SET
       seller_contact_mode = 'email',
@@ -5167,6 +5276,7 @@ ensureDemoReviews();
 ensureDemoCategories();
 ensureAvaDemoDetails();
 ensureAvaTee();
+ensureAvaDesk();
 ensureCurrentDemoTwigs();
 ensurePublicIds();
 voidWaivedOpenFees();

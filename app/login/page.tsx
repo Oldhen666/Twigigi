@@ -5,6 +5,20 @@ import { LoginForm, LoginHelp } from "@/components/auth-forms";
 import { BackButton } from "@/components/back-button";
 import { Logo } from "@/components/logo";
 import { getCurrentUser } from "@/lib/auth";
+import { readCta } from "@/lib/format";
+
+function signupHref(nextPath: string) {
+  if (!nextPath) return "/signup";
+  const params = new URLSearchParams();
+  try {
+    const cta = readCta(new URL(nextPath, "http://localhost").searchParams.get("cta") ?? undefined);
+    if (cta) params.set("cta", cta);
+  } catch {
+    // A return path without a query still goes to signup with that next page.
+  }
+  params.set("next", nextPath);
+  return `/signup?${params.toString()}`;
+}
 
 async function LoginScreen({
   searchParams,
@@ -25,7 +39,7 @@ async function LoginScreen({
         <LoginForm nextPath={nextPath} />
       </div>
       <p className="mt-4 text-sm text-muted">
-        New here? <Link href="/signup" className="text-forest">Create a Twigigi account</Link>
+        New here? <Link href={signupHref(nextPath)} className="text-forest">Create a Twigigi account</Link>
       </p>
       <LoginHelp />
       </div>
