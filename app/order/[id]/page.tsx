@@ -11,6 +11,8 @@ import { PayMethods } from "@/components/pay-methods";
 import { BuyerPay } from "@/components/buyer-pay";
 import { ReviewSeller } from "@/components/review-seller";
 import { Stage } from "@/components/stage";
+import { PersonalizationFacts } from "@/components/personalization-facts";
+import { ProofPanel } from "@/components/proof-panel";
 import { buttonClass } from "@/components/ui";
 import { ReloadForm } from "@/components/reload-form";
 import { acceptSellerChange, changeOrderPayment, confirmBuyerPickup, confirmReceipt, leavePickupNote, payDigitalFile, requestAnotherPickup } from "@/lib/actions";
@@ -170,6 +172,7 @@ async function OrderView({
                   </div>
                 ))}
               </div>
+              {order.personalization ? <PersonalizationFacts snapshot={order.personalization} variantLabel={order.variantLabel} /> : null}
               <div className="mt-4 flex items-center justify-between gap-4 border-t border-line pt-4 text-sm text-muted">
                 {filePage ? (
                   <p className="font-medium text-forest">Payment confirmed</p>
@@ -184,6 +187,7 @@ async function OrderView({
                 <PrintReceipt orderNumber={orderNumber} rows={receiptRows} label={filePage ? "View receipt" : "Print receipt"} />
               </div>
             </section>
+            <ProofPanel orderId={order.id} snapshot={order.personalization} role="buyer" paid={order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled"} />
 
             {filePage ? (
               <DigitalFileAccess
@@ -355,7 +359,7 @@ async function OrderView({
               ))}
             </div>
           ) : order.variantLabel ? <p className="mt-2 text-sm text-card/70">{order.variantLabel}</p> : null}
-          {order.customImages.length > 0 ? (
+          {order.personalization ? <div className="text-card"><PersonalizationFacts snapshot={order.personalization} variantLabel={order.variantLabel} /></div> : order.customImages.length > 0 ? (
             <div className="mt-4">
               <p className="text-xs font-medium uppercase tracking-[0.14em] text-card/70">Your image</p>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -388,6 +392,7 @@ async function OrderView({
             </div>
           ) : null}
         </section>
+        <ProofPanel orderId={order.id} snapshot={order.personalization} role="buyer" paid={order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled"} />
 
         {copy.next.length > 0 ? (
           <section className="mt-6">

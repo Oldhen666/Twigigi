@@ -7,12 +7,6 @@ function feeLabel(row: ListingChargeRow) {
   return platformFee(row.nextFeeCents, row.currency);
 }
 
-function quoteLabel(row: ListingChargeRow) {
-  const amount = platformFee(row.quoteCents, row.currency);
-  const requests = row.quoteCount === 1 ? "request" : "requests";
-  return `${amount} · ${row.quoteCount} ${requests}`;
-}
-
 export function ListingCharges({ currencies }: { currencies: ListingChargeCurrency[] }) {
   const shown = currencies.filter((currency) => currency.rows.length > 0);
   if (shown.length === 0) return null;
@@ -33,21 +27,21 @@ export function ListingCharges({ currencies }: { currencies: ListingChargeCurren
                   <p className="min-w-0 break-words text-[15px] font-medium">{row.title}</p>
                   <p className="shrink-0 text-[13px] text-muted">{row.status}</p>
                 </div>
-                <dl className="mt-3 grid gap-2 sm:grid-cols-3">
+                <dl className="mt-3 grid gap-2 sm:grid-cols-2">
                   <div>
                     <dt className="text-[13px] text-muted">Next fee</dt>
                     <dd className="font-sans text-[15px] font-semibold tabular-nums">{feeLabel(row)}</dd>
                   </div>
+                  {row.cta === "quote" && row.rateCents > 0 ? (
+                    <div>
+                      <dt className="text-[13px] text-muted">Listing price</dt>
+                      <dd className="font-sans text-[15px] font-semibold tabular-nums">{platformFee(row.rateCents, row.currency)} per month</dd>
+                    </div>
+                  ) : null}
                   <div>
                     <dt className="text-[13px] text-muted">Expiry</dt>
                     <dd className="font-sans text-[15px] tabular-nums">{row.expiry || "—"}</dd>
                   </div>
-                  {row.cta === "quote" ? (
-                    <div>
-                      <dt className="text-[13px] text-muted">Quotes this period</dt>
-                      <dd className="font-sans text-[15px] font-semibold tabular-nums">{quoteLabel(row)}</dd>
-                    </div>
-                  ) : null}
                 </dl>
               </li>
             ))}

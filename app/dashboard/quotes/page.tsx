@@ -4,6 +4,7 @@ import { SellerQuotes } from "@/components/seller-quotes";
 import { requireSeller } from "@/lib/auth";
 import { getProductById, listQuotes, openFollowupFees } from "@/lib/db";
 import { platformFee } from "@/lib/billing";
+import { QUOTE_FOLLOWUP_INCLUDED_LINE } from "@/lib/quote-followup";
 import { formatDate, formatMoney } from "@/lib/format";
 
 async function QuotesScreen() {
@@ -18,7 +19,7 @@ async function QuotesScreen() {
       {fees.length > 0 ? (
         <section className="mt-4 max-w-xl rounded-3xl border border-line bg-card p-5 text-sm leading-6">
           <h2 className="font-serif text-2xl">Follow-up fees this period</h2>
-          <p className="mt-2">{platformFee(feeTotal, "CAD")} will join the next Get a Quote listing bill. Sending a follow-up is not a completed sale.</p>
+          <p className="mt-2">{platformFee(feeTotal, "CAD")} is waiting for the next bill. {QUOTE_FOLLOWUP_INCLUDED_LINE} Receiving an inquiry does not add this fee.</p>
           <ul className="mt-3 space-y-1">
             {fees.map((fee) => (
               <li key={fee.id}>{fee.title || "Inquiry"} · {fee.customerName} · {platformFee(fee.amountCents, fee.currency)}</li>

@@ -9,11 +9,11 @@ import { updateTag } from "next/cache";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { placeProblem, splitLocation } from "@/lib/places";
-import { cardLinkProblem, digitalPayMethods, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
+import { cardLinkProblem, digitalPayMethods, interacEmailProblem, isCashMethod, isTransferMethod, methodLabel, methodsForFulfillment, parsePaymentMethods, paypalMeName, paypalMeProblem, safeEmail, sellerContactProblem, stripeConnectCountry, venmoUsernameFrom, venmoUsernameProblem } from "@/lib/payments";
 import { beginDigitalPaypalCheckout, beginPaypalBillingAgreement, createPlatformFeeCheckout, paypalBillingMessage, paypalCheckoutError, paypalConfigured } from "@/lib/paypal";
 import { plansFor, prepareRenewalBills } from "@/lib/seller-fees";
 import { activePlanQuote, digitalChangeMessage, digitalPublishMessage, snapshotPlatformFee } from "@/lib/digital-plans";
-import { activeBuyQuote, buyChangeMessage, buyPlanChange, optionAllowed, quoteBuyPlan, recommendBuyTarget } from "@/lib/buy-plans";
+import { activeBuyQuote, buyPlanChange, optionAllowed, publishBuyOffer, publishChoice, quoteBuyPlan, recommendBuyTarget } from "@/lib/buy-plans";
 import { firstCoverage, nextPeriodBill } from "@/lib/billing-calendar";
 import { clearSession, getCurrentUser, getImpersonation, requireAdmin, requireSeller, requireUser, setSession } from "@/lib/auth";
 import { productTag, sellerTag } from "@/lib/catalog";
@@ -21,6 +21,7 @@ import { deliverPaidFile, sendPaymentConfirmed } from "@/lib/file-delivery";
 import { acceptNote, notifyBuyer, readyNote } from "@/lib/order-notices";
 import { fulfillmentDone, sellerBulkActions, shipsToBuyer, type SellerBulkAction } from "@/lib/order-flow";
 import { parseFileLinks } from "@/lib/files";
+import { addProof, answerFromBuyer, decideProof, emptyPersonalization, emptySnapshot, legacyUploadPersonalization, personalizationFromSeller, PERSONALIZATION_FILE_LIMIT } from "@/lib/personalization";
 import { descriptionPlain, storedDescription } from "@/lib/rich-text";
 import { resolveUpload, uploadDirectory } from "@/lib/uploads";
 import {
@@ -73,6 +74,7 @@ import {
   insertMessage,
   insertOrder,
   setOrderCustomImages,
+  setOrderPersonalization,
   acceptPlacedOrder,
   insertProduct,
   insertQuote,
@@ -489,6 +491,29 @@ function parseWhole(value: string): number | null | "invalid" {
   return Number(trimmed);
 }
 
+async function readOrderPersonalization(config: import("@/lib/personalization").PersonalizationConfig, formData: FormData) {
+  if (!config.enabled || (config.fields.length < 1 && !config.proof)) return { ok: true as const, snapshot: null, images: [] as string[] };
+  const values: Record<string, string> = {};
+  const saved: Record<string, { path: string; name: string }[]> = {};
+  for (const field of config.fields) {
+    if (field.kind !== "file") {
+      values[field.id] = text(formData, `p_${field.id}`);
+      continue;
+    }
+    const files = formData.getAll(`pFile_${field.id}`).filter((item): item is File => item instanceof File && item.size > 0).slice(0, PERSONALIZATION_FILE_LIMIT);
+    if (files.length > field.maxFiles) return { ok: false as const, errors: { [field.id]: `Add up to ${field.maxFiles} ${field.maxFiles === 1 ? "file" : "files"}.` } };
+    try {
+      const paths = files.length > 0 ? await saveImages(files) : [];
+      saved[field.id] = paths.map((filePath, index) => ({ path: filePath, name: files[index].name.split(/[/\\]/).pop()?.slice(0, 80) || "file" }));
+    } catch (error) {
+      return { ok: false as const, errors: { [field.id]: error instanceof Error ? error.message : "Use JPG, PNG, or WebP photos under 5 MB." } };
+    }
+  }
+  const answers = answerFromBuyer(config, values, saved);
+  if (!answers.ok) return { ok: false as const, errors: answers.errors };
+  return { ok: true as const, snapshot: emptySnapshot(config, answers.answers), images: answers.answers.flatMap((answer) => answer.files.map((file) => file.path)) };
+}
+
 async function saveImages(files: File[]) {
   const directory = uploadDirectory();
   fs.mkdirSync(directory, { recursive: true });
@@ -540,6 +565,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const location = text(formData, "location").trim();
   const ctaValue = text(formData, "cta");
   const cta: Cta = ctaValue === "buy" || ctaValue === "contact" || ctaValue === "file" ? ctaValue : "quote";
+  const connectStripe = text(formData, "intent") === "stripe" && cta === "file";
   const priced = cta === "buy" || cta === "file";
   const price = parseMoney(text(formData, "price"));
   const deliveryRadius = parseWhole(text(formData, "deliveryRadiusKm"));
@@ -716,6 +742,30 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     errors.digitalRights = "Confirm that you own this content or have permission to sell and distribute it.";
   }
 
+  const personalizationRaw = text(formData, "personalizationJson");
+  let personalization = emptyPersonalization();
+  if (cta === "buy" && personalizationRaw) {
+    const parsed = personalizationFromSeller(personalizationRaw);
+    if (!parsed.ok) errors.personalization = parsed.error;
+    else personalization = parsed.config;
+  } else if (cta === "buy" && text(formData, "customProduct") === "1" && formData.get("buyerUpload") === "1") {
+    personalization = legacyUploadPersonalization();
+  }
+
+  if (cta === "quote" && text(formData, "profileSkipped") !== "1") {
+    const logo = formData.get("businessLogo");
+    if (logo instanceof File && logo.size > 0) {
+      if (!IMAGE_TYPES[logo.type]) errors.businessLogo = "Use JPG, PNG, or WebP photos.";
+      else if (logo.size > 5 * 1024 * 1024) errors.businessLogo = "Each photo must be under 5 MB.";
+    }
+    const caseFiles = formData.getAll("caseImages").filter((item): item is File => item instanceof File && item.size > 0);
+    if (formData.getAll("caseKept").length + caseFiles.length > 4) errors.caseImages = "Use up to 4 photos.";
+    for (const file of caseFiles) {
+      if (!IMAGE_TYPES[file.type]) errors.caseImages = "Use JPG, PNG, or WebP photos.";
+      else if (file.size > 5 * 1024 * 1024) errors.caseImages = "Each photo must be under 5 MB.";
+    }
+  }
+
   if (Object.keys(errors).length > 0) return { fieldErrors: errors };
 
   let user = await getCurrentUser();
@@ -742,7 +792,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       return { fieldErrors: { paypalEmail: "Add a PayPal email or connect Stripe in Payment settings." }, ...sessionStamp };
     }
   }
-  if (existing && existing.status !== "draft" && intent === "draft") {
+  if (existing && existing.status !== "draft" && intent === "draft" && !connectStripe) {
     return {
       error:
         existing.status === "published"
@@ -804,7 +854,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     cta,
     contactEmail,
     contactPhone: contactPhone.slice(0, 40),
-    status: intent === "publish" ? "published" : "draft",
+    status: connectStripe && existing && existing.status !== "draft" ? existing.status : intent === "publish" ? "published" : "draft",
     images,
     quantityAvailable: priced ? quantityAvailable : null,
     buttonLabel: cta === "file" ? "Get the file" : cta === "buy" ? buttonLabel : "Buy now",
@@ -824,8 +874,9 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     venmoUsername,
     paypalMe: cta === "file" ? "" : paymentMethods.includes("paypal") ? paypalMe : "",
     paypalEmail: cta === "file" ? safeEmail(text(formData, "paypalEmail")) : "",
-    customProduct: cta === "buy" && text(formData, "customProduct") === "1",
-    buyerUpload: cta === "buy" && text(formData, "customProduct") === "1" && formData.get("buyerUpload") === "1",
+    customProduct: cta === "buy" && personalization.enabled,
+    buyerUpload: cta === "buy" && personalization.enabled && personalization.fields.some((field) => field.kind === "file"),
+    personalization,
     zelleMode: "phone",
     zelleContact: "",
     sellerContactMode: priced ? sellerContactMode : "email",
@@ -908,6 +959,26 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     });
   }
 
+  if (connectStripe) {
+    const back = `/dashboard/products/${savedProductId}`;
+    const country = text(formData, "stripeCountry") === "US" ? "US" : stripeConnectCountry(owner);
+    try {
+      const linked = await createStripeConnectLink({
+        accountId: owner.stripeAccountId,
+        email: owner.email,
+        country,
+        returnPath: back,
+      });
+      if (!linked) redirect(`${back}?stripe=setup&step=2`);
+      if (linked.accountId) setStripeAccount(owner.id, linked.accountId, owner.stripeChargesEnabled);
+      if (!linked.url) redirect(`${back}?stripe=error&step=2&reason=${encodeURIComponent(linked.message || "Stripe could not open the connection page. Try again in a moment.")}`);
+      redirect(linked.url);
+    } catch (error) {
+      unstable_rethrow(error);
+      redirect(`${back}?stripe=error&step=2`);
+    }
+  }
+
   if (needsBilling) redirect(`/billing?next=${encodeURIComponent(`/dashboard/products/${savedProductId}`)}`);
   if (publishingNewFile) {
     const claimed = claimDigitalFilePublish(savedProductId, owner.id);
@@ -916,7 +987,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   }
   if (publishingNewBuy) {
     const claimed = claimBuyNowPublish(savedProductId, owner.id);
-    if (!claimed.ok) redirect(`/dashboard/buy?add=1&notice=${claimed.reason}`);
+    if (!claimed.ok) redirect(`/dashboard/buy?draft=${encodeURIComponent(savedProductId)}&notice=${claimed.reason}`);
     redirect(`/${owner.publicId}/${slug}`);
   }
   if (input.status === "published" && (!existing || existing.status !== "published")) {
@@ -1035,17 +1106,34 @@ export async function savePayoutDetails(formData: FormData) {
   redirect("/dashboard/payments");
 }
 
-export async function saveBillingMethod(formData: FormData) {
+export async function saveBillingMethod(_prev: { error?: string }, formData: FormData): Promise<{ error?: string }> {
   const user = await requireSeller();
   const method = text(formData, "method");
-  if (!isBillingMethod(method)) redirect("/billing");
-  setBillingMethod(user.id, method);
-  redirect(safeNext(text(formData, "next")));
+  const next = safeNext(text(formData, "next"));
+  if (method !== "card" && method !== "paypal") return { error: "Choose a way to pay Twigigi fees." };
+  if (method === "paypal" && !paypalConfigured()) return { error: "PayPal cannot pay Twigigi fees yet." };
+  try {
+    if (setBillingMethod(user.id, method) < 1) return { error: "The preference was not saved. Your selection is still here." };
+  } catch {
+    return { error: "The preference was not saved. Your selection is still here." };
+  }
+  redirect(next);
+}
+
+function checkoutReturn(path: string, notice: string) {
+  const safe = safeNext(path);
+  if (safe === "/dashboard") return "";
+  const [base, query = ""] = safe.split("?");
+  const params = new URLSearchParams(query);
+  if (notice) params.set("notice", notice);
+  const next = `${base}?${params.toString()}`;
+  return next.startsWith("/dashboard/buy?draft=") ? next : "";
 }
 
 async function redirectCollectionCheckout(
   user: { id: string; billingMethod: string; stripeCustomerId?: string },
   staged: { collectionId: string; amountCents: number; currency: string; checkoutUrl: string; idempotencyKey?: string } | null,
+  returnPath = "",
 ) {
   if (!staged || staged.amountCents < 1) return;
   const feeName = staged.idempotencyKey?.startsWith("digital-plan-")
@@ -1063,6 +1151,8 @@ async function redirectCollectionCheckout(
       amountCents: staged.amountCents,
       currency: staged.currency,
       description: feeName,
+      returnPath: checkoutReturn(returnPath, "returned"),
+      cancelPath: checkoutReturn(returnPath, "canceled"),
     });
     rememberCollectionCheckout({ collectionId: staged.collectionId, userId: user.id, provider: "paypal", orderId: checkout.orderId, url: checkout.url });
     redirect(checkout.url);
@@ -1085,8 +1175,8 @@ async function redirectCollectionCheckout(
         },
       },
     ],
-    success_url: `${appUrl()}/billing/complete?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${appUrl()}/dashboard/payments?tab=receipts&billing=canceled`,
+    success_url: `${appUrl()}/billing/complete?session_id={CHECKOUT_SESSION_ID}${checkoutReturn(returnPath, "returned") ? `&next=${encodeURIComponent(checkoutReturn(returnPath, "returned"))}` : ""}`,
+    cancel_url: checkoutReturn(returnPath, "canceled") ? `${appUrl()}${checkoutReturn(returnPath, "canceled")}` : `${appUrl()}/dashboard/payments?tab=receipts&billing=canceled`,
     metadata: { purpose: "twigigi_fees", userId: user.id, collectionId: staged.collectionId },
     payment_intent_data: {
       metadata: { purpose: "twigigi_fees", userId: user.id, collectionId: staged.collectionId },
@@ -1107,6 +1197,7 @@ async function redirectCollectionCheckout(
 async function redirectListingFee(
   user: { id: string; billingMethod: string; stripeCustomerId?: string },
   product: { id: string; title: string; cta: string; location: string; feeExempt?: boolean; paidUntil?: string | null; billingStatus?: string; graceUntil?: string | null; autoRenew?: boolean; billingAnchorDay?: number },
+  returnPath = "",
 ) {
   const quoteRate = product.cta === "quote" ? readQuoteListingCharge(product.id) : null;
   const cents = quoteRate ? quoteRate.cents : listingFeeCents(product.cta, Boolean(product.feeExempt));
@@ -1130,7 +1221,7 @@ async function redirectListingFee(
     dueAt,
   });
   if (bill.status === "paid") return;
-  await redirectCollectionCheckout(user, stageSellerCollection(user.id, currency));
+  await redirectCollectionCheckout(user, stageSellerCollection(user.id, currency), returnPath);
 }
 
 export async function confirmDigitalPlan(formData: FormData) {
@@ -1158,16 +1249,31 @@ export async function stopDigitalPlanRenewal() {
   redirect("/dashboard/digital?notice=cancel");
 }
 
+function ownedBuyDraft(id: string, userId: string) {
+  const product = getProductById(id);
+  if (!product || product.userId !== userId || product.cta !== "buy") return null;
+  if (product.status !== "draft" && product.status !== "deactivated") return null;
+  return product;
+}
+
 export async function confirmBuyPlan(formData: FormData) {
   const user = await requireSeller();
   const planId = text(formData, "plan");
   const extraSlots = Number(text(formData, "extra") || "0");
   const addSlots = Number(text(formData, "add") || "0");
   const safeExtra = Number.isInteger(extraSlots) ? extraSlots : -1;
-  const back = `/dashboard/buy?add=${encodeURIComponent(String(addSlots || ""))}&plan=${encodeURIComponent(planId)}&extra=${encodeURIComponent(String(Math.max(safeExtra, 0)))}`;
-  if (!Number.isInteger(addSlots) || addSlots < 0 || safeExtra < 0) redirect(`${back}&notice=choice`);
+  const draft = ownedBuyDraft(text(formData, "draft"), user.id);
   const published = sellerProducts(user.id).filter((product) => product.cta === "buy" && product.status === "published").length;
-  if (addSlots === 0) {
+  const managementBack = `/dashboard/buy?add=${encodeURIComponent(String(addSlots || ""))}&plan=${encodeURIComponent(planId)}&extra=${encodeURIComponent(String(Math.max(safeExtra, 0)))}`;
+  const back = draft
+    ? `/dashboard/buy?draft=${encodeURIComponent(draft.id)}&choice=${encodeURIComponent(`${planId}:${Math.max(safeExtra, 0)}`)}`
+    : managementBack;
+  if (!Number.isInteger(addSlots) || addSlots < 0 || safeExtra < 0) redirect(`${back}&notice=choice`);
+  if (draft) {
+    const offer = publishBuyOffer({ current: activeBuyQuote(readBuySubscription(user.id)), published });
+    const selected = publishChoice(`${planId}:${safeExtra}`, offer);
+    if (offer.included || !selected || selected.planId !== planId || selected.extraSlots !== safeExtra) redirect(`${back}&notice=choice`);
+  } else if (addSlots === 0) {
     const base = quoteBuyPlan(planId, 0);
     if (!base || safeExtra !== 0 || (base.listingLimit != null && published > base.listingLimit)) redirect(`${back}&notice=quota`);
   } else {
@@ -1189,15 +1295,61 @@ export async function confirmBuyPlan(formData: FormData) {
   if (!priced.ok) redirect(`${back}&notice=${priced.reason}`);
   const result = commitBuyPlan({ id: newId("bill"), userId: user.id, planId, extraSlots: safeExtra });
   if (!result.ok) redirect(`${back}&notice=${result.reason}`);
-  if (result.kind !== "bill" || result.chargeCents < 1) redirect("/dashboard/buy?notice=saved");
+  if (result.kind !== "bill" || result.chargeCents < 1) {
+    redirect(draft ? `/dashboard/buy?draft=${encodeURIComponent(draft.id)}&notice=ready` : "/dashboard/buy?notice=saved");
+  }
   if (!user.billingMethod) redirect(`/billing?next=${encodeURIComponent(back)}`);
   try {
-    await redirectCollectionCheckout(user, stageBuyPlan(user.id));
+    await redirectCollectionCheckout(user, stageBuyPlan(user.id), draft ? `/dashboard/buy?draft=${encodeURIComponent(draft.id)}` : "");
   } catch (error) {
     unstable_rethrow(error);
     redirect(`${back}&notice=payment`);
   }
   redirect(`${back}&notice=payment`);
+}
+
+export async function publishBuyDraft(formData: FormData) {
+  const user = await requireSeller();
+  const product = ownedBuyDraft(text(formData, "id"), user.id);
+  if (!product) redirect("/dashboard/buy");
+  if (product.title.trim().length < 2 || product.images.length < 1) redirect(`/dashboard/products/${product.id}`);
+  const claimed = claimBuyNowPublish(product.id, user.id);
+  if (!claimed.ok) redirect(`/dashboard/buy?draft=${encodeURIComponent(product.id)}&notice=${claimed.reason === "no_plan" ? "waiting" : claimed.reason}`);
+  updateTag(productTag(user.publicId, product.slug));
+  updateTag(sellerTag(user.publicId));
+  redirect(`/dashboard/buy?draft=${encodeURIComponent(product.id)}&notice=published`);
+}
+
+export async function publishBuyListing(formData: FormData) {
+  const user = await requireSeller();
+  const acting = await getImpersonation();
+  const product = ownedBuyDraft(text(formData, "id"), user.id);
+  if (!product) redirect("/dashboard/buy");
+  if (product.title.trim().length < 2 || product.images.length < 1) redirect(`/dashboard/products/${product.id}`);
+  if (activeBuyQuote(readBuySubscription(user.id))) {
+    const claimed = claimBuyNowPublish(product.id, user.id);
+    if (!claimed.ok) redirect(`/dashboard/buy?draft=${encodeURIComponent(product.id)}&notice=${claimed.reason}`);
+    updateTag(productTag(user.publicId, product.slug));
+    updateTag(sellerTag(user.publicId));
+    redirect(`/dashboard/buy?draft=${encodeURIComponent(product.id)}&notice=published`);
+  }
+  const back = `/dashboard/buy?draft=${encodeURIComponent(product.id)}&fee=listing`;
+  const waived = Boolean(acting) || product.feeExempt;
+  if (!waived && !user.billingMethod) redirect(`/billing?next=${encodeURIComponent(back)}`);
+  if (!waived && listingFeeCents(product.cta, false) > 0) {
+    try {
+      await redirectListingFee(user, product, back);
+    } catch (error) {
+      unstable_rethrow(error);
+      redirect(`${back}&notice=payment`);
+    }
+    redirect(`${back}&notice=returned`);
+  }
+  if (product.status === "deactivated") reactivateProduct(product.id, user.id);
+  else publishDraft(product.id, user.id);
+  updateTag(productTag(user.publicId, product.slug));
+  updateTag(sellerTag(user.publicId));
+  redirect(`/dashboard/buy?draft=${encodeURIComponent(product.id)}&notice=published`);
 }
 
 export async function stopBuyPlanRenewal() {
@@ -1226,7 +1378,7 @@ export async function payToResume(formData: FormData) {
   const back = safeNext(text(formData, "next"));
   if (!product || product.userId !== user.id) redirect(back || "/dashboard");
   if (product.cta === "file") redirect("/dashboard/digital");
-  if (product.cta === "buy") redirect("/dashboard/buy?add=1");
+  if (product.cta === "buy") redirect(`/dashboard/buy?draft=${encodeURIComponent(product.id)}`);
   if (product.billingStatus !== "paused" && listingStillPaid(product)) redirect(back || "/dashboard");
   try {
     await redirectListingFee(user, product);
@@ -1258,10 +1410,10 @@ export async function payAndPublish(formData: FormData) {
       redirect(`/dashboard/products/${product.id}`);
     }
     const claimed = claimBuyNowPublish(product.id, user.id);
-    if (!claimed.ok) redirect(`/dashboard/buy?add=1&notice=${claimed.reason}`);
+    if (!claimed.ok) redirect(`/dashboard/buy?draft=${encodeURIComponent(product.id)}&notice=${claimed.reason}`);
     updateTag(productTag(user.publicId, product.slug));
     updateTag(sellerTag(user.publicId));
-    redirect(back);
+    redirect(`/dashboard/buy?draft=${encodeURIComponent(product.id)}&notice=published`);
   }
   if (product.status === "deactivated" && listingStillPaid(product)) {
     resumePublished(product.id, user.id);
@@ -1311,10 +1463,10 @@ export async function reactivateTwig(formData: FormData) {
   }
   if (product.cta === "buy" && product.status === "deactivated") {
     const claimed = claimBuyNowPublish(product.id, user.id);
-    if (!claimed.ok) redirect(`/dashboard/buy?add=1&notice=${claimed.reason}`);
+    if (!claimed.ok) redirect(`/dashboard/buy?draft=${encodeURIComponent(product.id)}&notice=${claimed.reason}`);
     updateTag(productTag(user.publicId, product.slug));
     updateTag(sellerTag(user.publicId));
-    redirect(back);
+    redirect(`/dashboard/buy?draft=${encodeURIComponent(product.id)}&notice=published`);
   }
   if (product.status === "deactivated") {
     if (!listingStillPaid(product)) redirect(back);
@@ -1391,18 +1543,9 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
   if (product.quantityAvailable === 0) return { error: "This product is sold out." };
 
   const digital = product.cta === "file";
-  const wantsUpload = !digital && product.customProduct && product.buyerUpload;
-  let customImages: string[] = [];
-  if (wantsUpload) {
-    const files = formData.getAll("customImages").filter((item): item is File => item instanceof File && item.size > 0);
-    if (files.length < 1) return { fieldErrors: { customImages: "Add the image for this custom order." } };
-    if (files.length > 3) return { fieldErrors: { customImages: "Add up to 3 images." } };
-    try {
-      customImages = await saveImages(files);
-    } catch (error) {
-      return { fieldErrors: { customImages: error instanceof Error ? error.message : "Use JPG, PNG, or WebP photos." } };
-    }
-  }
+  const personalization = !digital ? await readOrderPersonalization(product.personalization, formData) : { ok: true as const, snapshot: null, images: [] as string[] };
+  if (!personalization.ok) return { fieldErrors: personalization.errors };
+  const customImages = personalization.images;
   const cap = product.quantityAvailable == null ? 20 : Math.min(20, product.quantityAvailable);
   const parsed = z
     .object({
@@ -1489,6 +1632,7 @@ export async function placeOrder(_prev: FormState, formData: FormData): Promise<
     });
     setOrderChoices(orderId, choice.payment, choice.pickupWindow, instructions.note);
     if (customImages.length > 0) setOrderCustomImages(orderId, customImages);
+    if (personalization.snapshot) setOrderPersonalization(orderId, personalization.snapshot);
     setOrderPaymentSnapshot(
       orderId,
       paymentSnapshot([digital ? { ...product, paymentMethods: digitalMethods, paypalMe: "" } : product], choice.payment),
@@ -1800,8 +1944,8 @@ export async function placeCartOrder(_prev: FormState, formData: FormData): Prom
     if (!product || !isTwigLive(product) || product.cta !== "buy" || product.priceCents == null) {
       return { error: "One of these Twigs is not available to buy." };
     }
-    if (product.customProduct && product.buyerUpload) {
-      return { error: `${product.title} needs an image from the buyer. Open that Twig and use Buy now.` };
+    if (product.personalization.enabled && (product.personalization.fields.length > 0 || product.personalization.proof)) {
+      return { error: `${product.title} asks for personalization. Open that Twig and use Buy now.` };
     }
     const first = prepared[0]?.product;
     if (first && (product.userId !== first.userId || product.currency !== first.currency)) {
@@ -2381,6 +2525,59 @@ export async function confirmBuyerPickup(_prev: FormState, formData: FormData): 
     }
   }
   return { next: back };
+}
+
+export async function sendOrderProof(_prev: FormState, formData: FormData): Promise<FormState> {
+  const seller = await requireSeller();
+  if (!seller) redirect("/login");
+  const id = text(formData, "id");
+  const order = getOrder(id);
+  if (!order || order.sellerId !== seller.id || !order.personalization?.proofRequested) return { error: "This order does not ask for a proof." };
+  if (!(order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled")) return { error: "Send the proof after payment is confirmed." };
+  const files = formData.getAll("proof").filter((item): item is File => item instanceof File && item.size > 0);
+  if (files.length < 1 || files.length > PERSONALIZATION_FILE_LIMIT) return { error: "Add 1 to 3 proof images. JPG, PNG, or WebP, under 5 MB each." };
+  let paths: string[] = [];
+  try {
+    paths = await saveImages(files);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Use JPG, PNG, or WebP photos under 5 MB." };
+  }
+  const snapshot = addProof(order.personalization, {
+    id: `prf_${randomBytes(4).toString("hex")}`,
+    note: text(formData, "note").trim().slice(0, 400),
+    files: paths.map((filePath, index) => ({ path: filePath, name: files[index].name.split(/[/\\]/).pop()?.slice(0, 80) || "proof" })),
+    createdAt: new Date().toISOString(),
+    current: true,
+  });
+  setOrderPersonalization(id, snapshot);
+  await sendOrderEmail([order.email], {
+    subject: `Proof ready: ${order.productTitle}`,
+    text: [`A proof is ready for order ${order.publicRef}.`, "Open the order to approve it or request changes.", "", `${appUrl()}/order/${order.id}`].join("\n"),
+    replyTo: seller.email,
+  });
+  redirect(`/dashboard/orders/${id}`);
+}
+
+export async function reviewOrderProof(_prev: FormState, formData: FormData): Promise<FormState> {
+  const id = text(formData, "id");
+  const back = `/order/${id}`;
+  const order = getOrder(id);
+  if (!order?.personalization) return { next: back };
+  const user = await getCurrentUser();
+  if (user && user.id === order.sellerId && user.email.toLowerCase() !== order.email.toLowerCase()) return { next: back };
+  const decision = text(formData, "decision") === "approved" ? "approved" : "changes";
+  const result = decideProof(order.personalization, decision, text(formData, "note").trim());
+  if (!result.ok) return { error: result.error };
+  setOrderPersonalization(id, result.snapshot);
+  const seller = findUserById(order.sellerId);
+  if (seller) {
+    await sendOrderEmail([seller.email], {
+      subject: decision === "approved" ? `Proof approved: ${order.productTitle}` : `Proof changes requested: ${order.productTitle}`,
+      text: [`${order.buyerName} ${decision === "approved" ? "approved the current proof" : "requested changes to the current proof"} for order ${order.publicRef}.`, result.snapshot.decisionNote, "", `${appUrl()}/dashboard/orders/${order.id}`].filter(Boolean).join("\n"),
+      replyTo: order.email,
+    });
+  }
+  redirect(back);
 }
 
 export async function requestAnotherPickup(_prev: FormState, formData: FormData): Promise<FormState> {

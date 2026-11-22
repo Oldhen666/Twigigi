@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useActionState } from "react";
 import { useKeepFormValues } from "@/components/keep-form-values";
 import type { FulfillmentOption } from "@/lib/format";
@@ -11,6 +11,7 @@ import type { Cta, FormState, QuoteForm } from "@/lib/types";
 import { PayChoice, PickupFacts } from "@/components/checkout-choices";
 import { PaymentRiskNote } from "@/components/payment-risk";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
+import { legacyUploadPersonalization, PERSONALIZATION_FILE_ACCEPT, PERSONALIZATION_FILE_HELP, type PersonalizationConfig } from "@/lib/personalization";
 
 type PayDetails = {
   methods: string[];
@@ -42,6 +43,7 @@ export function CheckoutForm({
   defaultName = "",
   defaultEmail = "",
   buyerUpload = false,
+  personalization = null,
   fileFeeBps = 0,
 }: {
   mode: Cta;
@@ -61,6 +63,7 @@ export function CheckoutForm({
   defaultName?: string;
   defaultEmail?: string;
   buyerUpload?: boolean;
+  personalization?: PersonalizationConfig | null;
   fileFeeBps?: number;
 }) {
   const [state, formAction, pending] = useActionState(action, {} as FormState);
@@ -105,6 +108,54 @@ export function CheckoutForm({
   const fieldErrors = hideErrors || pending ? undefined : state.fieldErrors;
   const formError = hideErrors || pending ? undefined : state.error;
   const needsTransfer = mode === "buy" && payFulfillment !== "pickup" && payMethods.length === 0;
+  const config = useMemo(() => (
+    personalization && personalization.enabled && (personalization.fields.length > 0 || personalization.proof)
+      ? personalization
+      : buyerUpload
+        ? legacyUploadPersonalization()
+        : null
+  ), [personalization, buyerUpload]);
+  const steps = config ? ["details", config.fields.length > 0 ? "personal" : "", "delivery", "review"].filter(Boolean) : [];
+  const [step, setStep] = useState(steps[0] ?? "details");
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [fileNames, setFileNames] = useState<Record<string, string[]>>({});
+  const [fileKeys, setFileKeys] = useState<Record<string, number>>({});
+  const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!config || !state.fieldErrors) return;
+    const keys = Object.keys(state.fieldErrors);
+    if (keys.some((key) => key === "name" || key === "email" || key === "phone" || key === "quantity")) setStep("details");
+    else if (config.fields.some((field) => keys.includes(field.id))) setStep("personal");
+    else if (keys.some((key) => key === "fulfillment" || key === "pickupTime" || key === "address" || key === "deliveryNote")) setStep("delivery");
+    else if (keys.includes("paymentMethod")) setStep("review");
+    setFileNames((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const field of config.fields) {
+        if (field.kind !== "file" || !state.fieldErrors?.[field.id]) continue;
+        const input = formRef.current?.elements.namedItem(`pFile_${field.id}`);
+        const attached = input instanceof HTMLInputElement && input.files ? input.files.length : 0;
+        if (attached > 0 || (next[field.id] ?? []).length === 0) continue;
+        next[field.id] = [];
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [state.fieldErrors, config]);
+  function goNext() {
+    if (step === "personal" && config) {
+      const errors: Record<string, string> = {};
+      for (const field of config.fields) {
+        if (!field.required) continue;
+        if (field.kind === "file" && (fileNames[field.id] ?? []).length < 1) errors[field.id] = `Add ${field.label}.`;
+        if (field.kind !== "file" && !(answers[field.id] ?? "").trim()) errors[field.id] = field.kind === "choice" ? `Choose ${field.label}.` : `Enter ${field.label}.`;
+      }
+      setLocalErrors(errors);
+      if (Object.keys(errors).length > 0) return;
+    }
+    setStep(steps[Math.min(steps.indexOf(step) + 1, steps.length - 1)] ?? "review");
+  }
+  const reviewLine = [variantLabel.replaceAll(" / ", " · "), ...(config?.fields ?? []).filter((field) => field.kind !== "file" && field.kind !== "note").map((field) => answers[field.id]).filter(Boolean)].filter(Boolean).join(" · ");
 
   return (
     <form
@@ -125,7 +176,9 @@ export function CheckoutForm({
       {variantKey ? <input type="hidden" name="variant" value={variantKey} /> : null}
       {variantLabel ? <p className="text-sm text-muted">{variantLabel}</p> : null}
       {formError ? <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{formError}</p> : null}
+      {config ? <p className="text-sm text-muted">{step === "details" ? "Options and quantity" : step === "personal" ? "Personalization" : step === "delivery" ? "Delivery" : "Review and pay"}</p> : null}
 
+      <div className={config && step !== "details" ? "hidden space-y-4" : "space-y-4"}>
       {(mode !== "buy" && mode !== "file") || requireName ? (
         <Field label="Name" name="name" required error={fieldErrors?.name}>
           <input name="name" autoComplete="name" aria-required="true" defaultValue={defaultName} className={inputClass} />
@@ -155,14 +208,70 @@ export function CheckoutForm({
           />
         </Field>
       ) : null}
+      </div>
 
-      {mode === "buy" && buyerUpload ? (
-        <Field label="Your image" name="customImages" required error={fieldErrors?.customImages}>
-          <input name="customImages" type="file" accept="image/jpeg,image/png,image/webp" multiple required className={`${inputClass} py-2`} />
-          <span className="mt-1 block text-sm font-normal text-muted">Add the picture for this custom order. Up to 3 photos. JPG, PNG, or WebP, under 5 MB each.</span>
-        </Field>
+      {config && config.fields.length > 0 ? (
+        <div className={step === "personal" ? "space-y-4" : "hidden"}>
+          {config.fields.map((field) => {
+            const error = fieldErrors?.[field.id] || localErrors[field.id];
+            if (field.kind === "file") {
+              return (
+                <div key={field.id}>
+                  <span className={labelClass}>{field.label}{field.required ? <span className="text-danger"> *</span> : null}</span>
+                  <input
+                    key={`${field.id}-${fileKeys[field.id] ?? 0}`}
+                    name={`pFile_${field.id}`}
+                    type="file"
+                    accept={PERSONALIZATION_FILE_ACCEPT}
+                    multiple={field.maxFiles > 1}
+                    className={`${inputClass} py-2`}
+                    onChange={(event) => {
+                      const names = Array.from(event.target.files ?? []).slice(0, field.maxFiles).map((file) => file.name);
+                      setFileNames((current) => ({ ...current, [field.id]: names }));
+                      setLocalErrors((current) => ({ ...current, [field.id]: "" }));
+                    }}
+                  />
+                  <span className="mt-1 block text-sm text-muted">{field.help || "Add the file for this order."} {PERSONALIZATION_FILE_HELP} Up to {field.maxFiles}.</span>
+                  {(fileNames[field.id] ?? []).map((name) => <span key={name} className="mt-1 block text-sm">{name}</span>)}
+                  {(fileNames[field.id] ?? []).length > 0 ? (
+                    <button type="button" className="mt-2 text-sm text-forest" onClick={() => { setFileKeys((current) => ({ ...current, [field.id]: (current[field.id] ?? 0) + 1 })); setFileNames((current) => ({ ...current, [field.id]: [] })); }}>Remove</button>
+                  ) : null}
+                  {error ? <span className="mt-1 block text-sm text-danger">{error}</span> : null}
+                </div>
+              );
+            }
+            if (field.kind === "choice") {
+              return (
+                <fieldset key={field.id}>
+                  <legend className={labelClass}>{field.label}{field.required ? <span className="text-danger"> *</span> : null}</legend>
+                  {field.help ? <p className="mb-2 text-sm text-muted">{field.help}</p> : null}
+                  <div className="space-y-2">
+                    {field.options.map((option) => (
+                      <label key={option} className="flex items-center gap-2 text-sm">
+                        <input type="radio" name={`p_${field.id}`} value={option} checked={answers[field.id] === option} onChange={() => { setAnswers((current) => ({ ...current, [field.id]: option })); setLocalErrors((current) => ({ ...current, [field.id]: "" })); }} />
+                        {option}
+                      </label>
+                    ))}
+                  </div>
+                  {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
+                </fieldset>
+              );
+            }
+            return (
+              <Field key={field.id} label={field.label} name={field.id} required={field.required} error={error}>
+                {field.kind === "note" ? (
+                  <textarea name={`p_${field.id}`} rows={3} maxLength={400} defaultValue={answers[field.id] ?? ""} onChange={(event) => setAnswers((current) => ({ ...current, [field.id]: event.target.value }))} placeholder={field.help} className={`${inputClass} h-auto py-3`} />
+                ) : (
+                  <input name={`p_${field.id}`} maxLength={field.maxLength} defaultValue={answers[field.id] ?? ""} onChange={(event) => setAnswers((current) => ({ ...current, [field.id]: event.target.value }))} placeholder={field.help} className={inputClass} />
+                )}
+                {field.kind === "text" ? <span className="mt-1 block text-sm font-normal text-muted">Up to {field.maxLength} characters.</span> : null}
+              </Field>
+            );
+          })}
+        </div>
       ) : null}
 
+      <div className={config && step !== "delivery" ? "hidden space-y-4" : "space-y-4"}>
       {mode === "buy" ? (
         <fieldset>
           <legend className={labelClass}>How do you want it?</legend>
@@ -195,7 +304,31 @@ export function CheckoutForm({
           {fieldErrors?.fulfillment ? <p className="mt-1 text-sm text-danger">{fieldErrors.fulfillment}</p> : null}
         </fieldset>
       ) : null}
+      {mode === "buy" && fulfillment !== "pickup" ? (
+        <>
+          <Field label="Address" name="address" required error={fieldErrors?.address}>
+            <textarea name="address" rows={3} autoComplete="street-address" aria-required="true" className={`${inputClass} h-auto py-3`} />
+          </Field>
+          {fulfillment === "shipping" ? (
+            <Field label="Delivery instructions (optional)" name="deliveryNote" error={fieldErrors?.deliveryNote}>
+              <input name="deliveryNote" maxLength={200} placeholder="Gate code, buzzer, where to leave it" className={inputClass} />
+            </Field>
+          ) : null}
+        </>
+      ) : null}
+      </div>
 
+      {config && step === "review" ? (
+        <div className="rounded-2xl border border-line bg-white p-4 text-sm leading-6">
+          {reviewLine ? <p>{reviewLine}</p> : null}
+          {config.fields.filter((field) => field.kind === "file").flatMap((field) => (fileNames[field.id] ?? []).map((name) => <p key={`${field.id}-${name}`}>{field.label}: {name}</p>))}
+          {config.fields.filter((field) => field.kind === "note" && answers[field.id]).map((field) => <p key={field.id}>{field.label}: {answers[field.id]}</p>)}
+          {config.fields.length > 0 ? <button type="button" className="mt-2 text-forest" onClick={() => setStep("personal")}>Edit personalization</button> : null}
+          {config.proof ? <p className="mt-3 text-muted">You’ll receive a proof to approve before we start making your item.</p> : null}
+        </div>
+      ) : null}
+
+      <div className={config && step !== "review" ? "hidden space-y-4" : "space-y-4"}>
       {(mode === "file" || mode === "buy") && payments ? (
         <PayChoice
           methods={payMethods}
@@ -216,19 +349,6 @@ export function CheckoutForm({
       ) : null}
       {mode === "buy" && needsTransfer ? <p className="text-sm text-danger">Delivery and shipping have to be paid by transfer first. This seller has not set one up.</p> : null}
       {mode === "file" ? <p className="text-sm text-muted">Next you pay the seller. The file is emailed as soon as the payment is confirmed.</p> : null}
-
-      {mode === "buy" && fulfillment !== "pickup" ? (
-        <>
-          <Field label="Address" name="address" required error={fieldErrors?.address}>
-            <textarea name="address" rows={3} autoComplete="street-address" aria-required="true" className={`${inputClass} h-auto py-3`} />
-          </Field>
-          {fulfillment === "shipping" ? (
-            <Field label="Delivery instructions (optional)" name="deliveryNote" error={fieldErrors?.deliveryNote}>
-              <input name="deliveryNote" maxLength={200} placeholder="Gate code, buzzer, where to leave it" className={inputClass} />
-            </Field>
-          ) : null}
-        </>
-      ) : null}
 
       {mode === "quote" && quoteForm ? (
         <>
@@ -325,9 +445,17 @@ export function CheckoutForm({
           Clear all
         </button>
       ) : null}
+      </div>
+      {config && step !== "review" ? (
+        <div className="flex gap-2">
+          {step !== "details" ? <button type="button" onClick={() => setStep(steps[Math.max(steps.indexOf(step) - 1, 0)] ?? "details")} className={`${ghostClass} h-14 flex-1 rounded-2xl text-lg`}>Back</button> : null}
+          <button type="button" onClick={goNext} className={`${buttonClass} h-14 flex-1 rounded-2xl text-lg`}>Continue</button>
+        </div>
+      ) : (
       <button disabled={pending || needsTransfer} className={`${buttonClass} h-14 w-full rounded-2xl text-lg`}>
         {pending ? "Sending…" : label}
       </button>
+      )}
       {riskOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" onClick={() => setRiskOpen(false)}>
           <div role="dialog" aria-modal="true" aria-labelledby="pay-risk-title" className="w-full max-w-md rounded-[28px] bg-card p-5" onClick={(event) => event.stopPropagation()}>

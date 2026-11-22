@@ -3,10 +3,11 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { listingFeeCents } from "../lib/billing.ts";
 import { previewCollections } from "../lib/fee-collection.ts";
-import { QUOTE_FOLLOWUP_CENTS, QUOTE_LISTING_CENTS, publicBusinessName } from "../lib/quote-followup.ts";
+import { QUOTE_FOLLOWUP_CENTS, QUOTE_LISTING_CENTS, previewQuoteListingCharge, publicBusinessName, quoteBillingAnchor, quoteFeeExample, quotePublishOffer, quoteRenewalLine } from "../lib/quote-followup.ts";
 import {
   ensureQuoteFollowup,
   followupFeeCovered,
+  listFollowupFeeLines,
   listOpenFollowupFees,
   lockQuoteListingRate,
   markFollowupSent,
@@ -40,6 +41,22 @@ function db() {
   `);
   return database;
 }
+
+test("a new quote confirmation uses C$4.99 and an existing locked price stays on its own renewal day", () => {
+  assert.equal(quoteBillingAnchor("2026-11-10T18:00:00.000Z"), 15);
+  assert.equal(quoteBillingAnchor("2026-11-21T18:00:00.000Z"), 28);
+  assert.equal(quoteBillingAnchor("2026-11-21T18:00:00.000Z", 15), 15);
+  const fresh = quotePublishOffer({ now: "2026-11-21T18:00:00.000Z", settings: null });
+  assert.equal(fresh.cents, QUOTE_LISTING_CENTS);
+  assert.equal(fresh.currency, "CAD");
+  assert.equal(fresh.anchor, 28);
+  assert.equal(quoteRenewalLine(fresh.cents, fresh.currency, fresh.anchor), "Renews at C$4.99 on the 28th of each month.");
+  const legacy = previewQuoteListingCharge({ listingRateCents: 149, listingCurrency: "USD" });
+  assert.deepEqual(legacy, { cents: 149, currency: "USD", legacy: true });
+  assert.equal(quoteRenewalLine(legacy.cents, legacy.currency, 15), "Renews at USD$1.49 on the 15th of each month.");
+  assert.match(quoteFeeExample(), /Example: 1 listing \(C\$4\.99\) \+ first follow-ups on 5 inquiries \(C\$2\.50\) = C\$7\.49 before tax\./);
+  assert.match(quoteFeeExample(), /next bill includes that listing renewal and these follow-up fees/);
+});
 
 test("a skipped business profile keeps the seller display name", () => {
   const database = db();
@@ -181,4 +198,13 @@ test("five first follow-ups plus the C$4.99 renewal total C$7.49 and do not repe
   const again = database.prepare(`SELECT COUNT(*) AS n FROM twig_bills WHERE kind = 'quote'`).get() as { n: number };
   assert.equal(again.n, 5);
   assert.equal(previewCollections(view)[0].totalCents, 749);
+  const lines = listFollowupFeeLines(database, "usr");
+  assert.equal(lines.length, 5);
+  assert.equal(lines[0].kind, "visit");
+  assert.equal(lines[0].hasBill, true);
+  assert.equal(lines[0].billStatus, "pending");
+  assert.equal(lines[0].customerName, "Ada");
+  database.prepare(`DELETE FROM twig_bills WHERE id = ?`).run(lines[0].billId);
+  const missing = listFollowupFeeLines(database, "usr").find((line) => line.quoteId === lines[0].quoteId);
+  assert.equal(missing?.hasBill, false);
 });

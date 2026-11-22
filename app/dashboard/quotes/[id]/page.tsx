@@ -6,7 +6,7 @@ import { SellerQuoteActions } from "@/components/seller-quote-actions";
 import { requireSeller } from "@/lib/auth";
 import { getInteractionBySource, getProductById, getQuote, quoteFollowupCovered, quoteFollowups, readQuoteTwigSettings } from "@/lib/db";
 import { formatDate, formatMoney, srcLabel } from "@/lib/format";
-import { FOLLOWUP_COVERED_NOTICE, FOLLOWUP_FEE_NOTICE } from "@/lib/quote-followup";
+import { FOLLOWUP_COVERED_NOTICE, FOLLOWUP_SEND_NOTICE } from "@/lib/quote-followup";
 import { buttonClass, ghostClass, inputClass } from "@/components/ui";
 
 const STATUS_LABEL = { new: "New", contacted: "Contacted", closed: "Closed" } as const;
@@ -117,26 +117,26 @@ async function QuoteScreen({
         {tools.visit ? (
           <form action={sendSiteVisit} className="mt-4 space-y-3 rounded-2xl border border-line p-4">
             <h3 className="text-sm font-medium">Schedule a Site Visit</h3>
-            <p className="text-sm leading-6">{covered ? FOLLOWUP_COVERED_NOTICE : FOLLOWUP_FEE_NOTICE}</p>
             <input type="hidden" name="id" value={quote.id} />
             <input name="visitDate" type="date" required className={inputClass} />
             <input name="visitTime" type="time" required className={inputClass} />
             <input name="timezone" placeholder="Time zone, such as America/Edmonton" className={inputClass} />
             <textarea name="note" rows={2} placeholder="Note, optional" className={`${inputClass} h-auto py-3`} />
             <button name="intent" value="draft" className={`${ghostClass} w-full`}>Save visit draft</button>
+            <p className="text-sm leading-6">{covered ? FOLLOWUP_COVERED_NOTICE : FOLLOWUP_SEND_NOTICE}</p>
             <button name="intent" value="send" className={`${buttonClass} w-full`}>Send site visit</button>
           </form>
         ) : null}
         {tools.invoice ? (
           <form action={sendQuoteInvoice} className="mt-4 space-y-3 rounded-2xl border border-line p-4">
             <h3 className="text-sm font-medium">Send an Invoice</h3>
-            <p className="text-sm leading-6">{covered ? FOLLOWUP_COVERED_NOTICE : FOLLOWUP_FEE_NOTICE}</p>
             <input type="hidden" name="id" value={quote.id} />
             <input type="hidden" name="currency" value={acceptedOffer ? String(acceptedOffer.payload.currency || currency) : currency} />
             <input name="amount" inputMode="decimal" defaultValue={acceptedOffer ? (Number(acceptedOffer.payload.cents || 0) / 100).toFixed(2) : ""} placeholder="Amount" className={inputClass} />
             <input name="dueOn" type="date" required className={inputClass} />
             <textarea name="note" rows={3} placeholder="Payment instructions" className={`${inputClass} h-auto py-3`} />
             <button name="intent" value="draft" className={`${ghostClass} w-full`}>Save invoice draft</button>
+            <p className="text-sm leading-6">{covered ? FOLLOWUP_COVERED_NOTICE : FOLLOWUP_SEND_NOTICE}</p>
             <button name="intent" value="send" className={`${buttonClass} w-full`}>Send invoice</button>
           </form>
         ) : null}

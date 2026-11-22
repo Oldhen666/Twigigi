@@ -137,6 +137,22 @@ export function platformOrderFeeCents(amountCents: number, feeBps: number) {
   return Math.floor((amountCents * feeBps + 5_000) / 10_000);
 }
 
+export function coveringDigitalQuotes(neededListings: number): PlanQuote[] {
+  const needed = Number.isInteger(neededListings) && neededListings > 0 ? neededListings : 0;
+  const quotes: PlanQuote[] = [];
+  for (const plan of DIGITAL_PLANS) {
+    const copies = plan.listingsPerCopy == null ? 1 : plan.stackable ? Math.max(1, Math.ceil(needed / plan.listingsPerCopy)) : 1;
+    const quote = quoteDigitalPlan(plan.id, copies);
+    if (!quote || (quote.listingLimit != null && quote.listingLimit < needed)) continue;
+    quotes.push(quote);
+  }
+  return quotes;
+}
+
+export function digitalMonthlyTotal(quote: PlanQuote, salesCents: number) {
+  return quote.monthlyCents + platformOrderFeeCents(salesCents, quote.feeBps);
+}
+
 export function platformFeeCapability(path: PlatformFeePath) {
   if (path === "stripe_connect") {
     return {

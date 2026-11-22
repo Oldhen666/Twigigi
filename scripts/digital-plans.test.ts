@@ -6,6 +6,8 @@ import {
   DIGITAL_PLANS,
   planChange,
   platformOrderFeeCents,
+  coveringDigitalQuotes,
+  digitalMonthlyTotal,
   quoteDigitalPlan,
   singlePlanAlternative,
   snapshotPlatformFee,
@@ -33,6 +35,18 @@ test("pricing, dashboard, and server rules read the same five CAD plans", () => 
     assert.equal(quote.feeBps, plan.feeBps);
     assert.equal(quote.listingLimit, plan.listingsPerCopy);
   }
+});
+
+test("18 listings at C$1,500 chargeable sales price Creator x2 below Growth", () => {
+  const quotes = coveringDigitalQuotes(18);
+  const creator = quotes.find((quote) => quote.plan.id === "creator");
+  const growth = quotes.find((quote) => quote.plan.id === "growth");
+  assert.equal(quotes.some((quote) => quote.plan.id === "starter"), false);
+  assert.equal(creator?.copies, 2);
+  assert.equal(growth?.copies, 1);
+  assert.equal(digitalMonthlyTotal(creator!, 150_000), 5248);
+  assert.equal(digitalMonthlyTotal(growth!, 150_000), 5999);
+  assert.equal(digitalMonthlyTotal(growth!, 150_000) - digitalMonthlyTotal(creator!, 150_000), 751);
 });
 
 test("stacked copies multiply listings and price once, and keep one order rate", () => {

@@ -5,7 +5,9 @@ import { centsToInput } from "@/lib/format";
 import type { NewPageDraft } from "@/lib/new-page-draft";
 import type { Product, ProductOption, ProductVariant } from "@/lib/types";
 import { MAX_VALUES, OPTION_NAMES, normalizeVariants, variantLabel } from "@/lib/variants";
-import { inputClass, labelClass } from "@/components/ui";
+import { buttonClass, inputClass, labelClass } from "@/components/ui";
+import { PersonalizationEditor } from "@/components/personalization-editor";
+import { readPersonalization } from "@/lib/personalization";
 import { CA_PROVINCES, US_STATES, joinLocation, lookupCurrentPlace, lookupIpPlace, splitLocation } from "@/lib/places";
 import { isCashMethod, parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile, paypalMeName, venmoProfileUrl, venmoUsernameFrom } from "@/lib/payments";
 
@@ -50,6 +52,11 @@ export function BuyOfferFields({
   onChange,
   digital = false,
   stripeReady = false,
+  stripeStarted = false,
+  stripeCountry = "CA",
+  stripeNotice = "",
+  stripeReason = "",
+  pending = false,
   paymentDefaults,
 }: {
   product?: Product;
@@ -58,6 +65,11 @@ export function BuyOfferFields({
   onChange?: () => void;
   digital?: boolean;
   stripeReady?: boolean;
+  stripeStarted?: boolean;
+  stripeCountry?: "CA" | "US";
+  stripeNotice?: "" | "setup" | "error";
+  stripeReason?: string;
+  pending?: boolean;
   paymentDefaults?: PaymentDefaults;
 }) {
   const seededOptions = readOptions(seed, product);
@@ -70,8 +82,10 @@ export function BuyOfferFields({
     Object.fromEntries(seededOptions.map((option) => [option.name, option.values.length > 0])),
   );
   const [variable, setVariable] = useState(seed ? seed.fields.hasOptions === "1" : Boolean(product?.hasOptions && product.options.some((item) => item.values.length > 0)));
-  const [customProduct, setCustomProduct] = useState(seed ? seed.fields.customProduct === "1" : Boolean(product?.customProduct));
-  const [buyerUpload, setBuyerUpload] = useState(seed ? seed.checks.buyerUpload === true || seed.fields.buyerUpload === "1" : Boolean(product?.buyerUpload));
+  const personalization = readPersonalization(
+    seed?.fields.personalizationJson || (product ? JSON.stringify(product.personalization) : ""),
+    seed ? seed.fields.customProduct === "1" && (seed.checks.buyerUpload === true || seed.fields.buyerUpload === "1") : Boolean(product?.buyerUpload),
+  );
   const [pickup, setPickup] = useState(seed ? (seed.checks.pickupEnabled ?? true) : (product?.pickupEnabled ?? true));
   const [ship, setShip] = useState(seed ? seed.checks.shippingEnabled === true : Boolean(product?.deliveryEnabled || product?.shippingEnabled));
   const initialLocation = digital ? "" : seed?.fields.location ?? product?.location ?? "";
@@ -362,46 +376,8 @@ export function BuyOfferFields({
             )}
           </div>
           ) : null}
-          <div className="mt-4 rounded-2xl border border-line bg-white p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="font-medium">Custom product</p>
-                <p className="mt-1 text-sm text-muted">Made to order from what the buyer sends.</p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={customProduct}
-                aria-label="Custom product"
-                onClick={() => {
-                  setCustomProduct((on) => {
-                    if (on) setBuyerUpload(false);
-                    return !on;
-                  });
-                }}
-                className={`relative h-7 w-12 shrink-0 rounded-full ${customProduct ? "bg-forest" : "bg-line"}`}
-              >
-                <span className={`absolute top-0.5 size-6 rounded-full bg-white ${customProduct ? "left-5" : "left-0.5"}`} />
-              </button>
-            </div>
-            <input type="hidden" name="customProduct" value={customProduct ? "1" : "0"} />
-            {customProduct ? (
-              <label className="mt-4 flex items-start gap-3 border-t border-line pt-4">
-                <input
-                  type="checkbox"
-                  name="buyerUpload"
-                  value="1"
-                  checked={buyerUpload}
-                  onChange={(event) => setBuyerUpload(event.target.checked)}
-                  className="mt-1 h-5 w-5 accent-forest"
-                />
-                <span>
-                  Buyer uploads an image
-                  <span className="mt-1 block text-sm text-muted">The buyer adds the picture you will print or use.</span>
-                </span>
-              </label>
-            ) : null}
-          </div>
+          <PersonalizationEditor initial={personalization} />
+          {errors?.personalization ? <p className="mt-2 text-sm text-danger">{errors.personalization}</p> : null}
         </div>
         )}
       </div>
@@ -537,6 +513,11 @@ export function BuyOfferFields({
           venmoError={errors?.venmoUsername}
           paypalError={digital ? errors?.paypalEmail : errors?.paypalMe}
           stripeReady={stripeReady}
+          stripeStarted={stripeStarted}
+          stripeCountry={stripeCountry}
+          stripeNotice={stripeNotice}
+          stripeReason={stripeReason}
+          pending={pending}
           pickup={pickup}
           onToggle={toggleMethod}
           onCardUrl={setCardUrl}
@@ -575,6 +556,11 @@ function PaymentChoices({
   venmoError,
   paypalError,
   stripeReady = false,
+  stripeStarted = false,
+  stripeCountry = "CA",
+  stripeNotice = "",
+  stripeReason = "",
+  pending = false,
   pickup = true,
   onToggle,
   onCardUrl,
@@ -606,6 +592,11 @@ function PaymentChoices({
   venmoError?: string;
   paypalError?: string;
   stripeReady?: boolean;
+  stripeStarted?: boolean;
+  stripeCountry?: "CA" | "US";
+  stripeNotice?: "" | "setup" | "error";
+  stripeReason?: string;
+  pending?: boolean;
   pickup?: boolean;
   onToggle: (id: string) => void;
   onCardUrl: (value: string) => void;
@@ -647,16 +638,46 @@ function PaymentChoices({
               : "Buyers pay this PayPal account. Twigigi emails the file when PayPal confirms the payment."}
           </span>
         </Field>
-        <div className="rounded-2xl border border-line bg-white px-4 py-3 text-sm">
-          <p className="font-medium text-ink">Pay by card</p>
+        <div className="rounded-2xl border border-line bg-white px-4 py-3">
+          <input type="hidden" name="stripeCountry" value={stripeCountry} />
+          <p className="font-medium text-ink">Accept card payments</p>
+          <p className="mt-1 text-sm text-muted">Optional. Connect Stripe to let buyers pay by credit or debit card.</p>
           {stripeReady ? (
-            <p className="mt-1 text-muted">Stripe is connected. Buyers can pay by card, and the money goes to your Stripe account. Twigigi does not take a fee.</p>
+            <p className="mt-3 text-sm font-medium text-forest">Card payments enabled</p>
           ) : (
-            <p className="mt-1 text-muted">
-              Connect Stripe once if you want buyers to pay by card.{" "}
-              <a href="/dashboard/payments" target="_blank" rel="noreferrer" className="font-medium text-forest">Connect Stripe</a>
-            </p>
+            <button
+              type="button"
+              disabled={pending}
+              className={`${buttonClass} mt-3 w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest sm:w-auto`}
+              onClick={(event) => {
+                const form = event.currentTarget.closest("form");
+                if (!form) return;
+                let submitter = form.querySelector<HTMLButtonElement>("[data-stripe-connect]");
+                if (!submitter) {
+                  submitter = document.createElement("button");
+                  submitter.type = "submit";
+                  submitter.name = "intent";
+                  submitter.value = "stripe";
+                  submitter.hidden = true;
+                  submitter.dataset.stripeConnect = "1";
+                  form.append(submitter);
+                }
+                form.requestSubmit(submitter);
+              }}
+            >
+              {stripeStarted ? "Finish Stripe setup" : "Connect Stripe"}
+            </button>
           )}
+          {stripeNotice === "setup" ? <p className="mt-3 text-sm text-danger">Stripe is not set up on this server yet.</p> : null}
+          {stripeNotice === "error" ? <p className="mt-3 text-sm text-danger">{stripeReason || "Stripe could not open the connection page. Try again in a moment."}</p> : null}
+          <details className="mt-3">
+            <summary className="cursor-pointer text-sm font-medium text-forest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">How do I set up card payments?</summary>
+            <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-muted">
+              <li>Select “Connect Stripe” to open the setup on Stripe.</li>
+              <li>Follow Stripe’s prompts to provide the requested account details and add a bank account for payouts.</li>
+              <li>Return to Twigigi and check your status. Once card payments are enabled, buyers can choose card at checkout.</li>
+            </ol>
+          </details>
         </div>
       </div>
     );

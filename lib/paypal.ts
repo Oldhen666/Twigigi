@@ -179,8 +179,10 @@ export function readPaypalWebhookCapture(event: unknown): PaypalCapture | null {
   return readCaptureRecord(record.resource);
 }
 
-export async function createPlatformFeeCheckout(input: { reference: string; amountCents: number; currency: string; description: string }) {
+export async function createPlatformFeeCheckout(input: { reference: string; amountCents: number; currency: string; description: string; returnPath?: string; cancelPath?: string }) {
   const currency = input.currency === "USD" ? "USD" : "CAD";
+  const returnPath = input.returnPath?.startsWith("/dashboard/buy?draft=") ? input.returnPath : "";
+  const cancelPath = input.cancelPath?.startsWith("/dashboard/buy?draft=") ? input.cancelPath : "";
   const body = await paypalFetch("/v2/checkout/orders", {
     method: "POST",
     body: {
@@ -196,8 +198,8 @@ export async function createPlatformFeeCheckout(input: { reference: string; amou
         brand_name: "Twigigi",
         user_action: "PAY_NOW",
         shipping_preference: "NO_SHIPPING",
-        return_url: `${appUrl()}/api/paypal/fee/return`,
-        cancel_url: `${appUrl()}/dashboard/payments?tab=receipts&billing=canceled`,
+        return_url: returnPath ? `${appUrl()}/api/paypal/fee/return?next=${encodeURIComponent(returnPath)}` : `${appUrl()}/api/paypal/fee/return`,
+        cancel_url: cancelPath ? `${appUrl()}${cancelPath}` : `${appUrl()}/dashboard/payments?tab=receipts&billing=canceled`,
       },
     },
   });

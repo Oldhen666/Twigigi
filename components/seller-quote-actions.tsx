@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { closeQuoteRequest, markQuoteContacted, sendSellerQuote } from "@/lib/actions";
-import { FOLLOWUP_COVERED_NOTICE, FOLLOWUP_FEE_NOTICE } from "@/lib/quote-followup";
+import { FOLLOWUP_COVERED_NOTICE, FOLLOWUP_SEND_NOTICE } from "@/lib/quote-followup";
 import { formatMoney } from "@/lib/format";
 import type { FormState } from "@/lib/types";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
@@ -49,7 +49,6 @@ export function SellerQuoteActions({
         <form action={send} className="mt-3 space-y-4">
           <input type="hidden" name="id" value={quoteId} />
           <input type="hidden" name="currency" value={currency === "USD" ? "USD" : "CAD"} />
-          <p className="text-sm leading-6">{covered ? FOLLOWUP_COVERED_NOTICE : FOLLOWUP_FEE_NOTICE}</p>
           <fieldset className="space-y-2">
             <legend className={labelClass}>Quote type</legend>
             {(["fixed", "estimate"] as const).map((option) => (
@@ -95,6 +94,7 @@ export function SellerQuoteActions({
             {note.trim() ? <p className="mt-2 text-sm">{note.trim()}</p> : null}
           </div>
           {state.error ? <p className="text-sm text-danger">{state.error}</p> : null}
+          <p className="text-sm leading-6">{covered ? FOLLOWUP_COVERED_NOTICE : FOLLOWUP_SEND_NOTICE}</p>
           <button disabled={sending} className={`${buttonClass} w-full`}>{sending ? "Sending…" : "Send quote"}</button>
           <button type="button" onClick={() => setOpen(false)} className={`${ghostClass} w-full`}>Cancel</button>
         </form>

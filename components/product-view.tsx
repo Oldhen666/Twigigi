@@ -21,6 +21,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { findUserById, getProductById, isFavorite, isGuestLiked, isLiked, likeCount, listProductReviews, readQuoteTwigSettings, sellerReviewSummary, soldCount } from "@/lib/db";
 import { publicBusinessName } from "@/lib/quote-followup";
 import { digitalPayMethods } from "@/lib/payments";
+import { collectsPersonalization } from "@/lib/personalization";
 import { readVisitor } from "@/lib/visitor";
 import { categoryHref, categoryLabel, resolveCategory } from "@/lib/categories";
 import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
@@ -64,6 +65,7 @@ export async function ProductView({
   const buyLabel = product.cta === "buy" ? product.buttonLabel || cta.label : cta.label;
   const showOptions = (product.cta === "buy" || product.cta === "file") && product.hasOptions && product.options.length > 0 && product.priceCents != null;
   const soldOut = (product.cta === "buy" || product.cta === "file") && product.quantityAvailable === 0;
+  const personalized = product.cta === "buy" && collectsPersonalization(product.personalization);
   const category = categoryLabel(product.categoryKind, product.categoryGroup, product.category);
   const categoryLink = resolveCategory(product.categoryKind, product.categoryGroup, product.category, true);
   const quoteProfile = product.cta === "quote" ? readQuoteTwigSettings(product.id) : null;
@@ -167,10 +169,10 @@ export async function ProductView({
               variants={product.variants}
               samePrice={product.samePrice}
               quantityAvailable={product.quantityAvailable}
-              cartPublicId={product.cta === "buy" && !(product.customProduct && product.buyerUpload) ? product.publicId : ""}
+              cartPublicId={product.cta === "buy" && !personalized ? product.publicId : ""}
               productId={product.id}
               held={fileHeld}
-              note={product.cta === "buy" && product.customProduct ? (product.buyerUpload ? "Custom product. Upload your image on the next page." : "Custom product") : ""}
+              note={personalized ? "Add personalization on the next page." : ""}
             >
               {options.length > 0 ? (
                 <ul className="mt-3 flex flex-wrap gap-2">
@@ -227,12 +229,12 @@ export async function ProductView({
             <span className="flex h-14 items-center justify-center rounded-2xl bg-paper-deep text-lg text-muted">Sold out</span>
           ) : fileHeld ? (
             <span className="flex h-14 items-center justify-center rounded-2xl bg-paper-deep text-lg text-muted">This file is not available</span>
-          ) : product.cta === "buy" && product.customProduct && product.buyerUpload && product.priceCents != null ? (
+          ) : product.cta === "buy" && personalized && product.priceCents != null ? (
             <>
               <Link href={`/${product.publicId}/${product.slug}/buy`} className="flex h-14 items-center justify-center rounded-2xl bg-forest text-lg text-card">
                 {buyLabel}
               </Link>
-              <p className="mt-2 text-center text-sm text-muted">Custom product. Upload your image on the next page.</p>
+              <p className="mt-2 text-center text-sm text-muted">Add personalization on the next page.</p>
             </>
           ) : product.cta === "buy" && product.priceCents != null ? (
             <>
@@ -242,7 +244,6 @@ export async function ProductView({
                 cap={product.quantityAvailable == null ? 20 : Math.min(20, product.quantityAvailable)}
                 label={buyLabel}
               />
-              {product.customProduct ? <p className="mt-2 text-center text-sm text-muted">Custom product</p> : null}
             </>
           ) : (
             <Link href={`/${product.publicId}/${product.slug}/${cta.href}`} className="flex h-14 items-center justify-center rounded-2xl bg-forest text-lg text-card">

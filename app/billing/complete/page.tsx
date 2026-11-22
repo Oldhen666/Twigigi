@@ -3,7 +3,17 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { requireUser } from "@/lib/auth";
 import { collectionForSeller } from "@/lib/db";
+import { safeNext } from "@/lib/format";
 import { getStripe } from "@/lib/stripe";
+
+function draftReturn(value: string) {
+  const next = safeNext(value);
+  return next.startsWith("/dashboard/buy?draft=") ? next : "";
+}
+
+function listingReturn(value: string) {
+  return draftReturn(value).includes("fee=listing");
+}
 
 async function CompleteScreen({
   searchParams,
@@ -15,12 +25,14 @@ async function CompleteScreen({
   const state = typeof params.state === "string" ? params.state : "";
   const collectionId = typeof params.collection === "string" ? params.collection : "";
   const sessionId = typeof params.session_id === "string" ? params.session_id : "";
+  const draft = draftReturn(typeof params.next === "string" ? params.next : "");
+  const listing = listingReturn(typeof params.next === "string" ? params.next : "");
   if (state === "incomplete") {
     return (
       <main className="page-frame py-16">
         <h1 className="font-serif text-4xl">Payment not completed</h1>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-muted">Nothing was marked paid. The listing period was not changed.</p>
-        <Link href="/dashboard/payments?tab=receipts" className="mt-6 inline-block text-sm font-medium text-forest">Back to billing</Link>
+        <p className="mt-3 max-w-xl text-sm leading-6 text-muted">{draft ? "Nothing was marked paid. The Twig is still a draft." : "Nothing was marked paid. The listing period was not changed."}</p>
+        {draft ? <Link href={draft} className="mt-6 inline-block text-sm font-medium text-forest">Back to this Twig</Link> : <Link href="/dashboard/payments?tab=receipts" className="mt-6 inline-block text-sm font-medium text-forest">Back to billing</Link>}
       </main>
     );
   }
@@ -39,12 +51,22 @@ async function CompleteScreen({
         <h1 className="font-serif text-4xl">{stored?.status === "paid" ? "Payment confirmed" : stripePaid ? "Payment received" : "Payment not completed"}</h1>
         <p className="mt-3 max-w-xl text-sm leading-6 text-muted">
           {stored?.status === "paid"
-            ? "The signed payment confirmation updated this bill and the listing period."
+            ? listing
+              ? "The listing payment is confirmed. This Twig is published."
+              : draft
+                ? "The subscription is confirmed. This Twig is still a draft until you publish it."
+                : "The signed payment confirmation updated this bill and the listing period."
             : stripePaid
-              ? "Stripe has accepted the payment. The listing period changes only after the signed webhook is confirmed."
-              : "This payment was not completed. Nothing was marked paid."}
+              ? listing
+                ? "Stripe has accepted the payment. This Twig publishes when that payment is confirmed."
+                : draft
+                  ? "Stripe has accepted the payment. This Twig stays a draft until the subscription is confirmed and you publish it."
+                  : "Stripe has accepted the payment. The listing period changes only after the signed webhook is confirmed."
+              : draft
+                ? "This payment was not completed. Nothing was marked paid. The draft is saved."
+                : "This payment was not completed. Nothing was marked paid."}
         </p>
-        <Link href="/dashboard/payments?tab=receipts" className="mt-6 inline-block text-sm font-medium text-forest">Back to billing</Link>
+        {draft ? <Link href={draft} className="mt-6 inline-block text-sm font-medium text-forest">{listing ? "Back to this Twig" : stored?.status === "paid" || stripePaid ? "Publish Twig" : "Back to this Twig"}</Link> : <Link href="/dashboard/payments?tab=receipts" className="mt-6 inline-block text-sm font-medium text-forest">Back to billing</Link>}
       </main>
     );
   }
@@ -53,10 +75,16 @@ async function CompleteScreen({
       <h1 className="font-serif text-4xl">{collection?.status === "paid" ? "Payment confirmed" : "Waiting for confirmation"}</h1>
       <p className="mt-3 max-w-xl text-sm leading-6 text-muted">
         {collection?.status === "paid"
-          ? "The payment was confirmed on the server. Refresh is safe and will not extend the listing again."
-          : "This page only shows the payment status. It does not decide whether the payment succeeded."}
+          ? listing
+            ? "The listing payment is confirmed. This Twig is published."
+            : draft
+              ? "The subscription is confirmed. This Twig is still a draft until you publish it."
+              : "The payment was confirmed on the server. Refresh is safe and will not extend the listing again."
+          : draft
+            ? "The payment is not confirmed yet. The draft is saved."
+            : "This page only shows the payment status. It does not decide whether the payment succeeded."}
       </p>
-      <Link href="/dashboard/payments?tab=receipts" className="mt-6 inline-block text-sm font-medium text-forest">Back to billing</Link>
+      {draft ? <Link href={draft} className="mt-6 inline-block text-sm font-medium text-forest">{listing || collection?.status !== "paid" ? "Back to this Twig" : "Publish Twig"}</Link> : <Link href="/dashboard/payments?tab=receipts" className="mt-6 inline-block text-sm font-medium text-forest">Back to billing</Link>}
     </main>
   );
 }

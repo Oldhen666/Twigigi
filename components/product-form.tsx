@@ -11,6 +11,7 @@ import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/component
 import { PhotoFrame } from "@/components/photo-frame";
 import { PublishAccount } from "@/components/publish-account";
 import { QuoteFormFields } from "@/components/quote-form-fields";
+import { QuotePublishCard } from "@/components/quote-publish-card";
 import { DescriptionEditor } from "@/components/description-editor";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { categoryProblem } from "@/lib/categories";
@@ -19,6 +20,7 @@ import { PROVINCES, joinLocation, lookupCurrentPlace, placeProblem, splitLocatio
 import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameProblem } from "@/lib/payments";
 import { descriptionPlain } from "@/lib/rich-text";
 import { digitalRightsDue } from "@/lib/copyright";
+import { FOLLOWUP_DRAFT_LINE, quotePublishOffer } from "@/lib/quote-followup";
 
 type Action = (state: FormState, formData: FormData) => Promise<FormState>;
 
@@ -35,6 +37,27 @@ type FrameRequest = {
   total: number;
 };
 
+type ProfileImage = { id: string; src: string; kept: boolean; file?: File };
+
+const QUOTE_STEPS = ["Business profile", "Listing details", "Inquiry form", "Follow-up tools"] as const;
+const PROFILE_PHOTO_TYPES: Record<string, boolean> = { "image/jpeg": true, "image/png": true, "image/webp": true };
+const PROFILE_PHOTO_BYTES = 5 * 1024 * 1024;
+const PROFILE_PHOTO_HELP = "JPG, PNG, or WebP, under 5 MB.";
+const PORTFOLIO_LIMIT = 4;
+
+function profilePhotoProblem(file: File) {
+  if (!PROFILE_PHOTO_TYPES[file.type]) return "Use JPG, PNG, or WebP photos.";
+  if (file.size > PROFILE_PHOTO_BYTES) return "Each photo must be under 5 MB.";
+  return "";
+}
+
+function assignFiles(input: HTMLInputElement | null, files: File[]) {
+  if (!input) return;
+  const transfer = new DataTransfer();
+  for (const file of files) transfer.items.add(file);
+  input.files = transfer.files;
+}
+
 export function ProductForm({
   action,
   product,
@@ -43,10 +66,15 @@ export function ProductForm({
   sellerName,
   guest = false,
   stripeReady = false,
+  stripeStarted = false,
+  stripeCountry = "CA",
+  stripeNotice = "",
+  stripeReason = "",
   paymentDefaults,
   initialStep = 1,
   sellerBio = "",
   quoteSettings = null,
+  quoteOffer = null,
 }: {
   action: Action;
   product?: Product;
@@ -55,6 +83,10 @@ export function ProductForm({
   sellerName: string;
   guest?: boolean;
   stripeReady?: boolean;
+  stripeStarted?: boolean;
+  stripeCountry?: "CA" | "US";
+  stripeNotice?: "" | "setup" | "error";
+  stripeReason?: string;
   paymentDefaults?: PaymentDefaults;
   initialStep?: 1 | 2 | 3 | 4;
   sellerBio?: string;
@@ -68,6 +100,7 @@ export function ProductForm({
     offerEnabled: boolean;
     invoiceEnabled: boolean;
   } | null;
+  quoteOffer?: { cents: number; currency: string; anchor: 15 | 28 } | null;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const refreshRef = useRef<(form: HTMLFormElement) => void>(() => {});
@@ -89,6 +122,14 @@ export function ProductForm({
   const [framing, setFraming] = useState<FrameRequest | null>(null);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(initialStep);
   const [profileSkipped, setProfileSkipped] = useState(quoteSettings?.profileSkipped ?? false);
+  const [logoImage, setLogoImage] = useState<ProfileImage | null>(
+    quoteSettings?.businessLogo && !quoteSettings.profileSkipped ? { id: "logo", src: quoteSettings.businessLogo, kept: true } : null,
+  );
+  const [portfolio, setPortfolio] = useState<ProfileImage[]>(
+    quoteSettings && !quoteSettings.profileSkipped ? quoteSettings.caseImages.map((src) => ({ id: src, src, kept: true })) : [],
+  );
+  const logoInput = useRef<HTMLInputElement>(null);
+  const portfolioInput = useRef<HTMLInputElement>(null);
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<PagePreviewDraft | null>(null);
   const [draft, setDraft] = useState<NewPageDraft | null>(null);
@@ -120,6 +161,9 @@ export function ProductForm({
   const quote = cta === "quote";
   const stepped = priced || quote;
   const fresh = !product;
+  const quoteConfirmation = quote && !published && !product?.feeExempt
+    ? quoteOffer ?? quotePublishOffer({ now: new Date().toISOString(), anchorDay: product?.billingAnchorDay, settings: null })
+    : null;
   keptCount.current = photos.filter((photo) => photo.kind === "kept").length;
 
   useEffect(() => {
@@ -131,7 +175,8 @@ export function ProductForm({
     setPreviewing(false);
     const details = ["title", "description", "videoUrl", "images", "category", "fileLinks", "digitalRights"].some((key) => errors[key]);
     if (quote) {
-      if (details || ["location", "fulfillment", "contactEmail", "contactPhone", "shippingNote", "sellerContact"].some((key) => errors[key])) setStep(2);
+      if (["businessName", "businessBio", "businessLogo", "caseImages"].some((key) => errors[key])) setStep(1);
+      else if (details || ["location", "fulfillment", "contactEmail", "contactPhone", "shippingNote", "sellerContact"].some((key) => errors[key])) setStep(2);
       else setStep(3);
       return;
     }
@@ -550,7 +595,11 @@ export function ProductForm({
   function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const intent = submitter instanceof HTMLButtonElement && submitter.name === "intent" ? submitter.value : "";
-    if (intent !== "draft" && intent !== "publish") {
+    if (intent !== "draft" && intent !== "publish" && intent !== "stripe") {
+      event.preventDefault();
+      return;
+    }
+    if (intent === "stripe" && !file) {
       event.preventDefault();
       return;
     }
@@ -583,7 +632,7 @@ export function ProductForm({
     }
     if (needsAccount && !accountOpen) {
       event.preventDefault();
-      setAccountIntent(intent === "draft" ? "draft" : "publish");
+      setAccountIntent(intent === "publish" ? "publish" : "draft");
       setAccountOpen(true);
       return;
     }
@@ -723,6 +772,59 @@ export function ProductForm({
     event.target.value = "";
   }
 
+  function chooseLogo(file: File) {
+    const problem = profilePhotoProblem(file);
+    if (problem) {
+      assignFiles(logoInput.current, logoImage?.file ? [logoImage.file] : []);
+      setLocalErrors((current) => ({ ...current, businessLogo: problem }));
+      return;
+    }
+    setLogoImage((current) => {
+      if (current && !current.kept) URL.revokeObjectURL(current.src);
+      return { id: crypto.randomUUID(), src: URL.createObjectURL(file), kept: false, file };
+    });
+    assignFiles(logoInput.current, [file]);
+    setLocalErrors((current) => ({ ...current, businessLogo: "" }));
+  }
+
+  function removeLogo() {
+    setLogoImage((current) => {
+      if (current && !current.kept) URL.revokeObjectURL(current.src);
+      return null;
+    });
+    if (logoInput.current) logoInput.current.value = "";
+    setLocalErrors((current) => ({ ...current, businessLogo: "" }));
+  }
+
+  function addPortfolio(files: File[]) {
+    const next = [...portfolio];
+    let problem = "";
+    for (const file of files) {
+      if (next.length >= PORTFOLIO_LIMIT) {
+        problem = "Use up to 4 photos.";
+        break;
+      }
+      const issue = profilePhotoProblem(file);
+      if (issue) {
+        problem = issue;
+        continue;
+      }
+      next.push({ id: crypto.randomUUID(), src: URL.createObjectURL(file), kept: false, file });
+    }
+    setPortfolio(next);
+    assignFiles(portfolioInput.current, next.flatMap((photo) => (photo.file ? [photo.file] : [])));
+    setLocalErrors((current) => ({ ...current, caseImages: problem }));
+  }
+
+  function removePortfolio(id: string) {
+    const next = portfolio.filter((photo) => photo.id !== id);
+    const removed = portfolio.find((photo) => photo.id === id);
+    if (removed && !removed.kept) URL.revokeObjectURL(removed.src);
+    setPortfolio(next);
+    assignFiles(portfolioInput.current, next.flatMap((photo) => (photo.file ? [photo.file] : [])));
+    setLocalErrors((current) => ({ ...current, caseImages: "" }));
+  }
+
   function clearAll() {
     skipSave.current = true;
     latest.current = null;
@@ -751,6 +853,15 @@ export function ProductForm({
     setLive({});
     setPhotoOpen(false);
     setPhotoNote("");
+    setProfileSkipped(false);
+    setLogoImage((current) => {
+      if (current && !current.kept) URL.revokeObjectURL(current.src);
+      return null;
+    });
+    setPortfolio((current) => {
+      for (const photo of current) if (!photo.kept) URL.revokeObjectURL(photo.src);
+      return [];
+    });
     window.setTimeout(() => {
       skipSave.current = false;
     }, 300);
@@ -870,8 +981,8 @@ export function ProductForm({
       {confirmClear ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={() => setConfirmClear(false)} onKeyDown={(event) => { if (event.key === "Escape") setConfirmClear(false); }}>
           <div role="dialog" aria-modal="true" aria-labelledby="clear-all-title" className="w-full max-w-sm rounded-[28px] border border-line bg-card p-6 text-center shadow-lg" onClick={(event) => event.stopPropagation()}>
-            <h2 id="clear-all-title" className="font-serif text-3xl">Clear all</h2>
-            <p className="mt-2 text-sm text-muted">Are you sure to clear all info?</p>
+            <h2 id="clear-all-title" className="font-serif text-3xl">{quote ? "Clear this draft" : "Clear all"}</h2>
+            <p className="mt-2 text-sm text-muted">{quote ? "This clears the business profile, listing details, inquiry form, and follow-up tools on this page. A draft already saved in your account stays until you save again." : "Are you sure to clear all info?"}</p>
             <button
               type="button"
               className={`${buttonClass} mt-5 w-full`}
@@ -880,7 +991,7 @@ export function ProductForm({
                 clearAll();
               }}
             >
-              Clear all
+              {quote ? "Clear draft" : "Clear all"}
             </button>
             <button type="button" className={`${ghostClass} mt-2 w-full`} onClick={() => setConfirmClear(false)}>
               Cancel
@@ -910,7 +1021,18 @@ export function ProductForm({
         photo.kind === "kept" ? <input key={photo.id} type="hidden" name="kept" value={photo.src} /> : null
       ))}
       {state.error ? <p className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{state.error}</p> : null}
-      {fresh && !previewing ? (
+      {fresh && !previewing && quote ? (
+        <div className="mt-4 flex justify-end">
+          <details className="relative">
+            <summary className="cursor-pointer list-none rounded-full px-3 py-2 text-sm text-muted hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">More</summary>
+            <div className="absolute right-0 z-10 mt-1 w-44 rounded-2xl border border-line bg-card p-1">
+              <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm text-danger hover:bg-paper" onClick={() => setConfirmClear(true)}>
+                Clear draft
+              </button>
+            </div>
+          </details>
+        </div>
+      ) : fresh && !previewing ? (
         <div className="mt-4 flex justify-end">
           <button type="button" onClick={() => setConfirmClear(true)} className="text-sm text-danger">
             Clear all
@@ -929,34 +1051,65 @@ export function ProductForm({
         </div>
       ) : null}
       {quote ? (
-        <div className="mt-6 grid grid-cols-4 gap-1 rounded-full bg-paper-deep p-1">
-          <StepTab current={step} step={1} label="Profile" onClick={() => showStep(1)} />
-          <StepTab current={step} step={2} label="Service" onClick={() => showStep(2)} />
-          <StepTab current={step} step={3} label="Quote" onClick={() => showStep(3)} />
-          <StepTab current={step} step={4} label="Follow-up" onClick={() => showStep(4)} />
-        </div>
+        <QuoteProgress
+          step={step}
+          onStep={(next) => {
+            if (step === 1 && next !== 1) setProfileSkipped(false);
+            showStep(next);
+          }}
+        />
       ) : null}
 
       {quote ? (
-        <div className={step === 1 ? undefined : "hidden"}>
+        <div className={step === 1 ? "mt-8 space-y-4" : "hidden"}>
           <input type="hidden" name="profileSkipped" value={profileSkipped ? "1" : "0"} />
-          <Section title="Business Profile">
-            <p className="text-sm text-muted">Optional. Skip this step and the public page uses your seller name. Empty details are left off the page.</p>
-            <Field label="Business name">
-              <input name="businessName" defaultValue={quoteSettings?.profileSkipped ? "" : quoteSettings?.businessName || sellerName} className={inputClass} />
-            </Field>
-            <Field label="Short introduction">
-              <textarea name="businessBio" defaultValue={quoteSettings?.profileSkipped ? "" : quoteSettings?.businessBio || sellerBio} rows={3} className={`${inputClass} h-auto py-3`} />
-            </Field>
-            <Field label="Logo">
-              {quoteSettings?.businessLogo ? <input type="hidden" name="businessLogoKept" value={quoteSettings.businessLogo} /> : null}
-              <input name="businessLogo" type="file" accept="image/jpeg,image/png,image/webp" className="text-sm" />
-            </Field>
-            <Field label="Case photos">
-              {(quoteSettings?.caseImages ?? []).map((src) => <input key={src} type="hidden" name="caseKept" value={src} />)}
-              <input name="caseImages" type="file" accept="image/jpeg,image/png,image/webp" multiple className="text-sm" />
-            </Field>
-          </Section>
+          <div className="flex items-baseline gap-2">
+            <h2 className="font-serif text-2xl">Business profile</h2>
+            <span className="text-sm text-muted">Optional</span>
+          </div>
+          <p className="text-sm leading-6 text-muted">Add details to your public listing. If you skip, we’ll show your seller name.</p>
+          <Field label="Display name">
+            <input name="businessName" defaultValue={quoteSettings?.profileSkipped ? "" : quoteSettings?.businessName || sellerName} placeholder="North Yard Studio" className={inputClass} />
+          </Field>
+          <Field label="About your business">
+            <textarea name="businessBio" defaultValue={quoteSettings?.profileSkipped ? "" : quoteSettings?.businessBio || sellerBio} rows={3} placeholder="We embroider names and logos on shirts and hats." className={`${inputClass} h-auto py-3`} />
+          </Field>
+          <div>
+            <span className={labelClass}>Logo</span>
+            <div className="flex items-center gap-3">
+              {logoImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoImage.src} alt="" className="size-14 rounded-xl border border-line object-cover" />
+              ) : null}
+              <button type="button" className={`${ghostClass} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest`} onClick={() => logoInput.current?.click()}>{logoImage ? "Replace logo" : "Upload logo"}</button>
+              {logoImage ? <button type="button" className="text-sm font-medium text-danger" onClick={removeLogo}>Remove</button> : null}
+            </div>
+            {logoImage?.kept ? <input type="hidden" name="businessLogoKept" value={logoImage.src} /> : null}
+            <input ref={logoInput} name="businessLogo" type="file" accept="image/jpeg,image/png,image/webp" tabIndex={-1} className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) chooseLogo(file); }} />
+            <p className="mt-2 text-sm text-muted">{PROFILE_PHOTO_HELP}</p>
+            {visibleErrors.businessLogo ? <p className="mt-1 text-sm text-danger">{visibleErrors.businessLogo}</p> : null}
+          </div>
+          <div>
+            <span className={labelClass}>Portfolio photos</span>
+            {portfolio.length > 0 ? (
+              <ul className="mb-3 grid grid-cols-4 gap-2">
+                {portfolio.map((photo) => (
+                  <li key={photo.id} className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photo.src} alt="" className="aspect-square w-full rounded-xl border border-line object-cover" />
+                    <button type="button" className="mt-1 text-sm font-medium text-danger" onClick={() => removePortfolio(photo.id)}>Remove</button>
+                    {photo.kept ? <input type="hidden" name="caseKept" value={photo.src} /> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {portfolio.length < PORTFOLIO_LIMIT ? (
+              <button type="button" className={`${ghostClass} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest`} onClick={() => portfolioInput.current?.click()}>Add photos</button>
+            ) : null}
+            <input ref={portfolioInput} name="caseImages" type="file" accept="image/jpeg,image/png,image/webp" multiple tabIndex={-1} className="sr-only" onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ""; addPortfolio(files); }} />
+            <p className="mt-2 text-sm text-muted">{PROFILE_PHOTO_HELP} Up to {PORTFOLIO_LIMIT}.</p>
+            {visibleErrors.caseImages ? <p className="mt-1 text-sm text-danger">{visibleErrors.caseImages}</p> : null}
+          </div>
         </div>
       ) : null}
 
@@ -1067,7 +1220,7 @@ export function ProductForm({
 
       {priced ? (
         <div className={step !== 2 ? "hidden" : undefined}>
-          <BuyOfferFields product={product} errors={visibleErrors} seed={fresh ? draft : null} onChange={fresh ? remember : undefined} digital={file} stripeReady={stripeReady} paymentDefaults={paymentDefaults} />
+          <BuyOfferFields product={product} errors={visibleErrors} seed={fresh ? draft : null} onChange={fresh ? remember : undefined} digital={file} stripeReady={stripeReady} stripeStarted={stripeStarted} stripeCountry={stripeCountry} stripeNotice={stripeNotice} stripeReason={stripeReason} pending={pending} paymentDefaults={paymentDefaults} />
           <Section title="Order email">
             <Field label="Email for new orders" error={visibleErrors.contactEmail}>
               <input name="contactEmail" type="email" defaultValue={emailValue(draft, product, defaultEmail)} placeholder="name@email.com (email)" className={inputClass} />
@@ -1119,6 +1272,7 @@ export function ProductForm({
         <div className={step !== 4 ? "hidden" : undefined}>
           <Section title="Follow-up Tools">
             <p className="text-sm text-muted">Optional. You can receive the inquiry and contact the customer yourself. After an inquiry arrives, send any enabled tool from that inquiry. They do not have to be used in order.</p>
+            <p className="text-sm text-muted">{FOLLOWUP_DRAFT_LINE}</p>
             <ProvideChoice name="visitEnabled" checked={quoteSettings?.visitEnabled} title="Schedule a Site Visit" detail="Propose a date and time" />
             <ProvideChoice name="offerEnabled" checked={quoteSettings ? quoteSettings.offerEnabled : false} title="Send a Quote" detail="Send a price and scope" />
             <ProvideChoice name="invoiceEnabled" checked={quoteSettings?.invoiceEnabled} title="Send an Invoice" detail="Send an amount and payment instructions" />
@@ -1155,6 +1309,15 @@ export function ProductForm({
         </div>
       ) : null}
 
+      {previewing && quoteConfirmation ? (
+        <QuotePublishCard
+          title={preview?.title.trim() || "This Twig"}
+          cents={quoteConfirmation.cents}
+          currency={quoteConfirmation.currency}
+          anchor={quoteConfirmation.anchor}
+        />
+      ) : null}
+
       {previewing ? (
         <div key="preview-actions" className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg">
           <button type="button" onClick={() => setPreviewing(false)} className={ghostClass}>
@@ -1164,9 +1327,9 @@ export function ProductForm({
           {publishButton}
         </div>
       ) : quote && step === 1 ? (
-        <div className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg">
-          <button type="button" onClick={() => { setProfileSkipped(true); showStep(2); }} className={`${ghostClass} flex-1`}>Skip</button>
-          <button type="button" onClick={() => { setProfileSkipped(false); showStep(2); }} className={`${buttonClass} flex-1`}>Next</button>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <button type="button" onClick={() => { setProfileSkipped(true); showStep(2); }} className="order-2 h-12 text-sm font-medium text-muted hover:text-ink sm:order-1">Skip for now</button>
+          <button type="button" onClick={() => { setProfileSkipped(false); showStep(2); }} className={`${buttonClass} order-1 w-full sm:order-2 sm:w-auto`}>Continue to listing details</button>
         </div>
       ) : stepped && step === 1 ? (
         <div className="sticky bottom-3 z-10 mt-8 rounded-full border border-line bg-card p-2 shadow-lg">
@@ -1292,11 +1455,33 @@ function quoteDraft(draft: NewPageDraft | null, product?: Product): QuoteForm | 
   }
 }
 
-function StepTab({ current, step, label, onClick }: { current: number; step: number; label: string; onClick: () => void }) {
+function QuoteProgress({ step, onStep }: { step: number; onStep: (step: 1 | 2 | 3 | 4) => void }) {
+  const label = QUOTE_STEPS[step - 1] ?? QUOTE_STEPS[0];
   return (
-    <button type="button" onClick={onClick} className={`h-11 rounded-full px-2 text-sm font-medium ${current === step ? "bg-forest text-card" : "text-muted"}`}>
-      {step} · {label}
-    </button>
+    <div className="mt-6">
+      <p className="text-sm text-muted sm:sr-only">Step {step} of 4</p>
+      <p className="mt-1 font-medium sm:hidden">{label}</p>
+      <div className="hidden gap-2 sm:grid sm:grid-cols-4">
+        {QUOTE_STEPS.map((name, index) => {
+          const number = (index + 1) as 1 | 2 | 3 | 4;
+          const current = number === step;
+          return (
+            <button
+              key={name}
+              type="button"
+              onClick={() => onStep(number)}
+              aria-current={current ? "step" : undefined}
+              className={`rounded-lg px-1 py-1 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest ${current ? "font-medium text-ink" : "text-muted"}`}
+            >
+              {number} {name}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3 h-1 overflow-hidden rounded-full bg-line" aria-hidden="true">
+        <div className="h-full rounded-full bg-forest" style={{ width: `${(step / QUOTE_STEPS.length) * 100}%` }} />
+      </div>
+    </div>
   );
 }
 

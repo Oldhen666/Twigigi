@@ -79,7 +79,7 @@ async function BuyDetails({
         <h1 className="mt-3 font-serif text-4xl">{product.cta === "file" ? product.buttonLabel || "Get the file" : product.buttonLabel || "Buy now"}</h1>
         {selection?.label ? <p className="mt-2 text-muted">{selection.label}</p> : null}
         <p className="mt-2 font-serif text-2xl text-forest">{formatMoney(unit, product.currency)}</p>
-        {product.customProduct ? <p className="mt-2 text-sm text-muted">{product.buyerUpload ? "Custom product. Add your image below." : "Custom product"}</p> : null}
+        {product.cta === "buy" && product.personalization.enabled && product.personalization.fields.length > 0 ? <p className="mt-2 text-sm text-muted">Add your personalization before payment.</p> : null}
         {product.quantityAvailable === 0 ? (
           <p className="mt-6 rounded-xl bg-paper-deep px-3 py-2 text-sm text-muted">This product is sold out.</p>
         ) : missingOption || (selection && !selection.available) ? (
@@ -107,6 +107,7 @@ async function BuyDetails({
               defaultName={account?.displayName ?? ""}
               defaultEmail={account?.email ?? ""}
               buyerUpload={product.cta === "buy" && product.customProduct && product.buyerUpload}
+              personalization={product.cta === "buy" ? product.personalization : null}
               fileFeeBps={product.cta === "file" ? activePlanQuote(readDigitalSubscription(product.userId))?.feeBps ?? 0 : 0}
               payments={{
                 methods: fileMethods,

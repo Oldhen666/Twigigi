@@ -146,6 +146,7 @@ export type ProductInput = {
   filePassword: string;
   customProduct: boolean;
   buyerUpload: boolean;
+  personalization: import("@/lib/personalization").PersonalizationConfig;
 };
 
 export type Product = ProductInput & {
@@ -229,6 +230,7 @@ export type OrderRecord = {
   pickupMessages: { by: "buyer" | "seller"; body: string; createdAt: string }[];
   pickupPlace: string;
   customImages: string[];
+  personalization: import("@/lib/personalization").PersonalizationSnapshot | null;
   deliveryNote: string;
   buyerNote: string;
   paypalMe: string;

@@ -13,7 +13,9 @@ import { cardCanRenew, BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
 import { requireSeller } from "@/lib/auth";
 import { subscriptionCovers } from "@/lib/digital-plans";
 import { subscriptionCoversBuy } from "@/lib/buy-plans";
-import { listAttentionCollections, listBillingListings, listSellerBills, markCardActionRequired, readBuySubscription, readDigitalSubscription, saveCardAuthorization, sellerProducts, setStripeAccount } from "@/lib/db";
+import { followupFeeLines, listAttentionCollections, listBillingListings, listSellerBills, markCardActionRequired, readBuySubscription, readDigitalSubscription, readQuoteTwigSettings, saveCardAuthorization, sellerProducts, setStripeAccount } from "@/lib/db";
+import { FollowupFeeLines } from "@/components/followup-fee-lines";
+import { previewQuoteListingCharge, QUOTE_FOLLOWUP_INCLUDED_LINE, QUOTE_FOLLOWUP_PUBLIC_LINE, QUOTE_LISTING_CENTS, quoteListingRateLine } from "@/lib/quote-followup";
 import { collectSellerFees } from "@/lib/seller-fees";
 import { outstandingCents } from "@/lib/fee-collection";
 import { billingYear } from "@/lib/format";
@@ -86,18 +88,26 @@ export default async function Page({
   const listings = billingListings.filter((product) => listingFeeCents(product.cta, product.feeExempt) > 0);
   const digitalCovered = subscriptionCovers(readDigitalSubscription(user.id));
   const buyCovered = subscriptionCoversBuy(readBuySubscription(user.id));
+  const quoteRates = new Map(
+    billingListings.filter((product) => product.cta === "quote").map((product) => [product.id, previewQuoteListingCharge(readQuoteTwigSettings(product.id))] as const),
+  );
+  const followups = followupFeeLines(user.id);
   const listingCharges = listingChargeView({
-    listings: billingListings.map((product) => ({
-      id: product.id,
-      title: product.title,
-      cta: product.cta,
-      currency: product.billingCurrency || listingFeeCurrency(product.cta, product.location),
-      feeExempt: product.feeExempt,
-      paidUntil: product.paidUntil,
-      anchorDay: product.anchorDay,
-      status: product.status,
-      billingStatus: product.billingStatus,
-    })),
+    listings: billingListings.map((product) => {
+      const quoteRate = quoteRates.get(product.id);
+      return {
+        id: product.id,
+        title: product.title,
+        cta: product.cta,
+        currency: quoteRate?.currency || product.billingCurrency || listingFeeCurrency(product.cta, product.location),
+        feeExempt: product.feeExempt,
+        paidUntil: product.paidUntil,
+        anchorDay: product.anchorDay,
+        status: product.status,
+        billingStatus: product.billingStatus,
+        listingCents: quoteRate?.cents,
+      };
+    }),
     bills: bills.map((bill) => ({
       productId: bill.productId,
       title: bill.title,
@@ -259,9 +269,12 @@ export default async function Page({
               </summary>
               <div className="mt-4 min-w-0 space-y-8 border-t border-line pt-4 text-sm leading-6">
                 <section>
-                  <h3 className="font-serif text-xl">Each Twig</h3>
-                  <p className="mt-1 text-[13px] leading-5 text-muted">Next listing fee and the end of the current period. A quote Twig also shows requests so far. Paid charges are not included.</p>
+                  <h3 className="font-serif text-xl">Listing subscriptions</h3>
+                  <p className="mt-1 text-[13px] leading-5 text-muted">Next listing fee and the end of the current period. A Get a Quote listing shows its own price. Paid charges are not included.</p>
                   <ListingCharges currencies={listingCharges} />
+                </section>
+                <section className="border-t border-line pt-6">
+                  <FollowupFeeLines lines={followups} />
                 </section>
                 <section className="border-t border-line pt-6">
                   <h3 className="text-sm font-medium text-muted">Rates</h3>
@@ -270,16 +283,15 @@ export default async function Page({
                     <div className="min-w-0 rounded-xl border border-line px-4 py-3">
                       <p className="text-[13px] text-muted">Listing fee</p>
                       <p className="mt-1">New Get a Quote listing</p>
-                      <p className="font-sans text-[15px] font-semibold tabular-nums">C$4.99 CAD / month</p>
+                      <p className="font-sans text-[15px] font-semibold tabular-nums">{quoteListingRateLine(QUOTE_LISTING_CENTS, "CAD")}</p>
                       <p className="mt-2">US physical Buy Now listings already on a listing fee</p>
                       <p className="font-sans text-[15px] font-semibold tabular-nums">{formatListingFee("USD")}</p>
-                      <p className="mt-2 text-[13px] text-muted">A new Get a Quote publish uses C$4.99 CAD. An existing published Get a Quote listing keeps its current price. Buy Now bundles and Digital File plans are separate.</p>
+                      <p className="mt-2 text-[13px] text-muted">A new Get a Quote publish uses this price. An existing published Get a Quote listing keeps its current price. Renewal stays on the 15th or the 28th already chosen for that listing. Buy Now bundles and Digital File plans are separate.</p>
                     </div>
                     <div className="min-w-0 rounded-xl border border-line px-4 py-3">
                       <p className="text-[13px] text-muted">Follow-up fee</p>
-                      <p className="mt-1">First accepted follow-up on an inquiry</p>
-                      <p className="font-sans text-[15px] font-semibold tabular-nums">C$0.50 CAD</p>
-                      <p className="mt-2 text-[13px] text-muted">Added to the next listing bill. Later follow-ups for that inquiry are included. An existing unpaid request fee stays on its bill.</p>
+                      <p className="mt-1">{QUOTE_FOLLOWUP_PUBLIC_LINE}</p>
+                      <p className="mt-2 text-[13px] text-muted">{QUOTE_FOLLOWUP_INCLUDED_LINE} The fee is added to the next billing statement. An existing unpaid follow-up fee stays on its bill.</p>
                     </div>
                   </div>
                 </section>

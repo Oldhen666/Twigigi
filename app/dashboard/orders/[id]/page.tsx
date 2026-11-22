@@ -9,6 +9,8 @@ import { formatPickupChoice, listingPickupPlace } from "@/lib/pickup";
 import { CopyText } from "@/components/copy-text";
 import { buttonClass } from "@/components/ui";
 import { OrderPaymentFacts } from "@/components/order-payment-facts";
+import { PersonalizationFacts } from "@/components/personalization-facts";
+import { ProofPanel } from "@/components/proof-panel";
 import { OrderTrack } from "@/components/order-track";
 import { ReloadForm } from "@/components/reload-form";
 import { SellerOrderFlow } from "@/components/seller-order-flow";
@@ -68,8 +70,8 @@ async function OrderScreen({
           ))}
           <p className="text-muted">Items {formatMoney(order.subtotalCents, order.currency)} · Shipping {order.shippingCents === 0 ? "Free" : formatMoney(order.shippingCents, order.currency)}</p>
         </div>
-      ) : order.variantLabel ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
-      {order.customImages.length > 0 ? (
+      ) : order.variantLabel && !order.personalization ? <p className="mt-2 text-muted">{order.variantLabel}</p> : null}
+      {order.personalization ? <PersonalizationFacts snapshot={order.personalization} variantLabel={order.variantLabel} /> : order.customImages.length > 0 ? (
         <div className="mt-4">
           <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">Buyer image</p>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -81,6 +83,7 @@ async function OrderScreen({
           </div>
         </div>
       ) : null}
+      <ProofPanel orderId={order.id} snapshot={order.personalization} role="seller" paid={order.paymentStatus === "paid" || order.status === "paid" || order.status === "fulfilled"} />
       <OrderPaymentFacts order={order} cardPaymentUrl={product?.cardPaymentUrl ?? ""} />
       <p className="mt-2 text-sm text-muted">{order.quantity} {order.quantity === 1 ? "item" : "items"} · {fulfillWord}</p>
       <div className="mt-4 flex items-start justify-between gap-3">

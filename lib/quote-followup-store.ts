@@ -402,6 +402,56 @@ export function currentSentFollowup(database: DatabaseSync, quoteId: string, kin
   return row ? mapFollowup(row) : null;
 }
 
+export type FollowupFeeLine = {
+  quoteId: string;
+  billId: string;
+  amountCents: number;
+  currency: string;
+  kind: QuoteTool;
+  sentAt: string;
+  customerName: string;
+  title: string;
+  billStatus: string;
+  hasBill: boolean;
+};
+
+export function listFollowupFeeLines(database: DatabaseSync, userId: string): FollowupFeeLine[] {
+  ensureQuoteFollowup(database);
+  const billColumns = database.prepare(`PRAGMA table_info(twig_bills)`).all() as Array<{ name: string }>;
+  const quoteColumns = database.prepare(`PRAGMA table_info(quotes)`).all() as Array<{ name: string }>;
+  if (quoteColumns.length === 0) return [];
+  const bills = billColumns.some((column) => column.name === "id");
+  return rows(
+    database,
+    `SELECT f.quote_id, f.bill_id, f.amount_cents, f.currency, f.kind, f.created_at,
+            COALESCE(q.name, '') AS customer_name,
+            COALESCE(p.title, '') AS title,
+            ${bills ? "COALESCE(b.status, '')" : "''"} AS bill_status,
+            ${bills ? "CASE WHEN b.id IS NULL OR b.id = '' THEN 0 ELSE 1 END" : "0"} AS has_bill
+     FROM quote_followup_fees f
+     LEFT JOIN quotes q ON q.id = f.quote_id
+     LEFT JOIN products p ON p.id = f.product_id
+     ${bills ? "LEFT JOIN twig_bills b ON b.id = f.bill_id" : ""}
+     WHERE f.user_id = ?
+     ORDER BY f.created_at ASC, f.quote_id ASC`,
+    userId,
+  ).map((row) => {
+    const kind = text(row.kind);
+    return {
+      quoteId: text(row.quote_id),
+      billId: text(row.bill_id),
+      amountCents: num(row.amount_cents),
+      currency: text(row.currency) || QUOTE_FEE_CURRENCY,
+      kind: kind === "visit" || kind === "invoice" ? kind : "offer",
+      sentAt: text(row.created_at),
+      customerName: text(row.customer_name),
+      title: text(row.title),
+      billStatus: text(row.bill_status),
+      hasBill: num(row.has_bill) === 1,
+    };
+  });
+}
+
 export function listOpenFollowupFees(database: DatabaseSync, userId: string) {
   ensureQuoteFollowup(database);
   const billColumns = database.prepare(`PRAGMA table_info(twig_bills)`).all() as Array<{ name: string }>;

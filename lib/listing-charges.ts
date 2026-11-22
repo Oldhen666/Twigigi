@@ -24,6 +24,7 @@ export type ListingChargeSource = {
   anchorDay: number;
   status: string;
   billingStatus: string;
+  listingCents?: number;
 };
 
 export type ListingChargeRow = {
@@ -36,6 +37,7 @@ export type ListingChargeRow = {
   expiry: string;
   quoteCents: number;
   quoteCount: number;
+  rateCents: number;
   status: "Unpaid" | "Processing" | "Waived" | "Not scheduled";
 };
 
@@ -49,6 +51,11 @@ function batchKeyFrom(value: string) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const date = businessDate(value);
   return date ? dateKey(date) : "";
+}
+
+function scheduledListingCents(listing: ListingChargeSource) {
+  if (listing.cta === "quote" && typeof listing.listingCents === "number") return listing.listingCents;
+  return listingFeeCents(listing.cta, false);
 }
 
 function unpaid(bill: ListingChargeBill) {
@@ -105,7 +112,7 @@ function toRow(currency: string, productId: string, listings: ListingChargeSourc
     : waived || !listing
       ? 0
       : upcoming && !coveredByPlan
-        ? listingFeeCents(listing.cta, false)
+        ? scheduledListingCents(listing)
         : 0;
   const expiryKey = nextBill ? dueKey(nextBill) : upcoming;
   const processing = Boolean(nextBill && listingBills.filter((bill) => dueKey(bill) === dueKey(nextBill)).every((bill) => bill.status === "processing"));
@@ -126,6 +133,7 @@ function toRow(currency: string, productId: string, listings: ListingChargeSourc
     expiry: expiryKey ? formatBillingDate(expiryKey) : "",
     quoteCents: quotes.reduce((sum, bill) => sum + bill.amountCents, 0),
     quoteCount: quotes.length,
+    rateCents: listing?.cta === "quote" && typeof listing.listingCents === "number" ? listing.listingCents : 0,
     status,
   };
 }

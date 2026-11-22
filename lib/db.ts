@@ -23,13 +23,14 @@ import { listingPickupPlace, parsePickupChoice, parsePickupMessages, parsePickup
 import { fulfillmentDone, orderCanComplete, paymentNeedsConfirm } from "@/lib/order-flow";
 import { readStoredFileLinks } from "@/lib/files";
 import { parseQuoteForm } from "@/lib/quote-form";
+import { readPersonalization, readSnapshot } from "@/lib/personalization";
 import { DEACTIVATION_GRACE_DAYS, RESERVED_USERNAMES, addDays, isPrivateUsername, slugify } from "@/lib/format";
 import { saleCurrency } from "@/lib/billing";
 import { splitLocation } from "@/lib/places";
 import { BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
 import { firstCoverage } from "@/lib/billing-calendar";
 import { graceDeadline } from "@/lib/listing-cycle";
-import { applyPaymentResult, claimCollectionCharge, claimCollectionCheckout, collectionOwner, ensurePaymentLedger, noteCollectionHold, readCollection, releaseCollectionClaim, saveCollectionCheckout, saveCollectionPaymentId, stageBuyPlanCollection, stageDigitalPlanCollection, stageFeeCollection, type PaymentNotice } from "@/lib/payment-ledger";
+import { applyPaymentResult, claimCollectionCharge, claimCollectionCheckout, collectionOwner, ensurePaymentLedger, noteCollectionHold, readCollection, releaseCollectionClaim, saveCollectionCheckout, saveCollectionPaymentId, readOpenBuyPlanCheckout, readOpenListingCheckout, stageBuyPlanCollection, stageDigitalPlanCollection, stageFeeCollection, type PaymentNotice } from "@/lib/payment-ledger";
 import {
   accrueBuyRenewal,
   cancelBuyRenewal,
@@ -45,6 +46,7 @@ import type { BuySubscription } from "@/lib/buy-plans";
 import {
   ensureQuoteFollowup,
   followupFeeCovered,
+  listFollowupFeeLines,
   listOpenFollowupFees,
   listQuoteFollowups,
   lockQuoteListingRate,
@@ -575,6 +577,8 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "file_access", "file_access TEXT NOT NULL DEFAULT ''");
   add("products", "custom_product", "custom_product INTEGER NOT NULL DEFAULT 0");
   add("products", "buyer_upload", "buyer_upload INTEGER NOT NULL DEFAULT 0");
+  add("products", "personalization_json", "personalization_json TEXT NOT NULL DEFAULT ''");
+  add("orders", "personalization_json", "personalization_json TEXT NOT NULL DEFAULT ''");
   add("users", "publish_restricted", "publish_restricted INTEGER NOT NULL DEFAULT 0");
   add("users", "banned", "banned INTEGER NOT NULL DEFAULT 0");
   add("content_reports", "rights_holder", "rights_holder TEXT NOT NULL DEFAULT ''");
@@ -1040,6 +1044,7 @@ function mapProduct(row: Row): Product {
     filePassword: str(row.file_password),
     customProduct: num(row.custom_product) === 1,
     buyerUpload: num(row.custom_product) === 1 && num(row.buyer_upload) === 1,
+    personalization: readPersonalization(str(row.personalization_json), num(row.custom_product) === 1 && num(row.buyer_upload) === 1),
     viewCount: num(row.view_count),
     createdAt: str(row.created_at),
     updatedAt: str(row.updated_at),
@@ -1242,6 +1247,7 @@ function mapOrder(row: Row): OrderRecord {
     fileLinks: readStoredFileLinks(str(row.file_links)),
     filePassword: str(row.file_password),
     customImages: readCustomImages(str(row.custom_images)),
+    personalization: readSnapshot(str(row.personalization_json)),
     fileSentAt: row.file_sent_at ? str(row.file_sent_at) : null,
     fileIssue: str(row.file_issue),
     lines: parseOrderLines(str(row.lines_json)),
@@ -1983,7 +1989,12 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     input.filePassword,
   );
   db.prepare("UPDATE products SET paypal_email = ? WHERE id = ?").run(input.paypalEmail || "", id);
-  db.prepare("UPDATE products SET custom_product = ?, buyer_upload = ? WHERE id = ?").run(input.customProduct ? 1 : 0, input.customProduct && input.buyerUpload ? 1 : 0, id);
+  db.prepare("UPDATE products SET custom_product = ?, buyer_upload = ?, personalization_json = ? WHERE id = ?").run(
+    input.customProduct ? 1 : 0,
+    input.customProduct && input.buyerUpload ? 1 : 0,
+    JSON.stringify(input.personalization),
+    id,
+  );
   db.prepare("UPDATE products SET auto_renew = 0 WHERE id = ?").run(id);
 }
 
@@ -2065,9 +2076,10 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
     );
   if (result.changes > 0) {
     db.prepare("UPDATE products SET paypal_email = ? WHERE id = ? AND user_id = ?").run(input.paypalEmail || "", id, userId);
-    db.prepare("UPDATE products SET custom_product = ?, buyer_upload = ? WHERE id = ? AND user_id = ?").run(
+    db.prepare("UPDATE products SET custom_product = ?, buyer_upload = ?, personalization_json = ? WHERE id = ? AND user_id = ?").run(
       input.customProduct ? 1 : 0,
       input.customProduct && input.buyerUpload ? 1 : 0,
+      JSON.stringify(input.personalization),
       id,
       userId,
     );
@@ -2169,7 +2181,8 @@ export function voidWaivedOpenFees(productId = "") {
 }
 
 export function setBillingMethod(userId: string, method: string) {
-  db.prepare("UPDATE users SET billing_method = ? WHERE id = ?").run(method, userId);
+  const result = db.prepare("UPDATE users SET billing_method = ? WHERE id = ?").run(method, userId);
+  return Number(result.changes);
 }
 
 export function rememberStripeCustomer(userId: string, customerId: string) {
@@ -2465,6 +2478,27 @@ export function readDigitalSubscription(userId: string): DigitalSubscription | n
   return readDigitalSubscriptionRow(db, userId);
 }
 
+export function chargeableFileSales(userId: string, sinceIso: string): { currency: string; cents: number; orders: number } | null {
+  const rows = db.prepare(
+    `SELECT o.currency AS currency,
+            COALESCE(SUM(CASE WHEN o.total > 0 THEN o.total ELSE o.amount_cents END), 0) AS cents,
+            COUNT(*) AS n
+     FROM orders o
+     JOIN products p ON p.id = o.product_id
+     WHERE o.seller_id = ?
+       AND p.cta = 'file'
+       AND p.user_id = ?
+       AND o.payment_flow = 'twigigi_checkout'
+       AND o.refund_status = 'none'
+       AND (o.payment_status = 'paid' OR o.status IN ('paid', 'fulfilled'))
+       AND o.created_at >= ?
+     GROUP BY o.currency`,
+  ).all(userId, userId, sinceIso) as Array<{ currency: string; cents: number; n: number }>;
+  const positive = rows.filter((row) => num(row.cents) > 0);
+  if (positive.length !== 1) return null;
+  return { currency: str(positive[0].currency) || "CAD", cents: num(positive[0].cents), orders: num(positive[0].n) };
+}
+
 export function claimDigitalFilePublish(productId: string, userId: string, now = new Date().toISOString()): FilePublishResult {
   return claimFilePublish(db, productId, userId, now);
 }
@@ -2513,6 +2547,14 @@ export function stageBuyPlan(userId: string) {
   return stageBuyPlanCollection(db, { id: `col_${Buffer.from(bytes).toString("base64url")}`, userId, now: new Date().toISOString() });
 }
 
+export function openBuyPlanCheckout(userId: string) {
+  return readOpenBuyPlanCheckout(db, userId);
+}
+
+export function openListingCheckout(userId: string) {
+  return readOpenListingCheckout(db, userId);
+}
+
 export function legacyBuyBilling(userId = "") {
   return legacyBuyListingBilling(db, userId);
 }
@@ -2549,6 +2591,10 @@ export function reconcileQuoteFollowupFees(userId: string, now = new Date()) {
 
 export function openFollowupFees(userId: string) {
   return listOpenFollowupFees(db, userId);
+}
+
+export function followupFeeLines(userId: string) {
+  return listFollowupFeeLines(db, userId);
 }
 
 export function quoteFollowups(quoteId: string) {
@@ -3087,6 +3133,10 @@ export function insertOrder(input: {
     JSON.stringify(input.lines ?? []),
     new Date().toISOString(),
   );
+}
+
+export function setOrderPersonalization(id: string, snapshot: unknown) {
+  db.prepare("UPDATE orders SET personalization_json = ? WHERE id = ?").run(JSON.stringify(snapshot), id);
 }
 
 export function setOrderCustomImages(id: string, images: string[]) {

@@ -2,10 +2,11 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { TwigCard } from "@/components/twig-card";
 import { getImpersonation, requireSeller } from "@/lib/auth";
-import { platformFee } from "@/lib/billing";
-import { activePlanQuote, formatFeeRate, listingLimitLabel } from "@/lib/digital-plans";
+import { formatListingFee, listingFeeCurrency, platformFee } from "@/lib/billing";
+import { activePlanQuote } from "@/lib/digital-plans";
 import { activeBuyQuote } from "@/lib/buy-plans";
-import { listOrders, listSellerNotices, productHasActivity, readBuySubscription, readDigitalSubscription, sellerProducts, sellerSales, sellerStats } from "@/lib/db";
+import { legacyDigitalBilling, listOrders, listSellerNotices, productHasActivity, readBuySubscription, readDigitalSubscription, sellerProducts, sellerSales, sellerStats } from "@/lib/db";
+import type { Product } from "@/lib/types";
 import { formatMoney, isTwigLive, productUrl } from "@/lib/format";
 import { sellerAttention } from "@/lib/order-flow";
 
@@ -26,9 +27,12 @@ async function DashboardBody() {
   const fresh = products.length === 0;
   const waiting = products.length > 0 && totalOrders === 0;
   const notices = listSellerNotices(user.id);
-  const digitalPlan = activePlanQuote(readDigitalSubscription(user.id));
+  const digitalSubscription = readDigitalSubscription(user.id);
+  const digitalPlan = activePlanQuote(digitalSubscription);
   const publishedFiles = products.filter((product) => product.cta === "file" && product.status === "published").length;
-  const buyPlan = activeBuyQuote(readBuySubscription(user.id));
+  const digitalLegacy = legacyDigitalBilling(user.id);
+  const buySubscription = readBuySubscription(user.id);
+  const buyPlan = activeBuyQuote(buySubscription);
   const publishedBuy = products.filter((product) => product.cta === "buy" && product.status === "published").length;
 
   return (
@@ -37,31 +41,6 @@ async function DashboardBody() {
         <h1 className="font-serif text-4xl">Overview</h1>
         {fresh ? <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Create a Twig, then share the link.</p> : null}
       </div>
-      <section className="mt-6 max-w-xl rounded-3xl border border-line bg-card p-5">
-        <h2 className="font-serif text-2xl">Digital File plan</h2>
-        {digitalPlan ? (
-          <p className="mt-2 text-sm leading-6">
-            {digitalPlan.plan.name} × {digitalPlan.copies}: {listingLimitLabel(digitalPlan.listingLimit)} listings, {platformFee(digitalPlan.monthlyCents, "CAD")} / month, {formatFeeRate(digitalPlan.feeBps)} platform fee.
-            {" "}{publishedFiles} published.
-          </p>
-        ) : (
-          <p className="mt-2 text-sm leading-6 text-muted">No active plan. Drafts can be saved. Publishing a Digital File needs a plan. {publishedFiles} are published now.</p>
-        )}
-        <Link href="/dashboard/digital" className="mt-3 inline-flex text-sm font-medium text-forest">Review plans</Link>
-      </section>
-      <section className="mt-6 max-w-xl rounded-3xl border border-line bg-card p-5">
-        <h2 className="font-serif text-2xl">Buy Now bundle</h2>
-        {buyPlan ? (
-          <p className="mt-2 text-sm leading-6">
-            {buyPlan.plan.name}{buyPlan.extraSlots > 0 ? ` + ${buyPlan.extraSlots} slots` : ""}: {buyPlan.listingLimit == null ? "Unlimited" : buyPlan.listingLimit} listings, {platformFee(buyPlan.monthlyCents, "CAD")} / month.
-            {" "}{publishedBuy} published.
-          </p>
-        ) : (
-          <p className="mt-2 text-sm leading-6 text-muted">A published Buy Now listing uses one CAD bundle. Quote listings stay on the listing fee.</p>
-        )}
-        <Link href="/dashboard/buy" className="mt-3 inline-flex text-sm font-medium text-forest">Review bundles</Link>
-      </section>
-
       {notices.length > 0 ? (
         <section className="mt-6 max-w-xl space-y-3">
           {notices.map((notice) => (
@@ -130,6 +109,41 @@ async function DashboardBody() {
         </>
       ) : null}
 
+      <section className="mt-6 rounded-3xl border border-line bg-card px-4 sm:px-5">
+        <h2 className="pt-4 font-serif text-2xl">Listing plans</h2>
+        <div className="mt-1 divide-y divide-line">
+          <PlanRow
+            kind="Digital File"
+            status={digitalPlan ? digitalPlan.copies > 1 ? `${digitalPlan.plan.name} × ${digitalPlan.copies}` : digitalPlan.plan.name : "No active plan"}
+            usage={publishedUsage(publishedFiles, digitalPlan?.listingLimit)}
+            href="/dashboard/digital"
+            action={digitalPlan ? "Manage plan" : "View plans"}
+            note={digitalPlan
+              ? digitalSubscription?.status === "grace"
+                ? "Payment needs attention."
+                : digitalPlan.listingLimit != null && publishedFiles > digitalPlan.listingLimit
+                  ? "Over the listing limit."
+                  : ""
+              : digitalLegacy.fileListingsWithListingBills > 0
+                ? "Legacy listing"
+                : ""}
+          />
+          <PlanRow
+            kind="Buy Now"
+            status={buyPlan ? buyPlan.listingLimit == null ? "Unlimited bundle" : `${buyPlan.listingLimit}-listing bundle` : "Pay per listing"}
+            detail={buyPlan ? `${platformFee(buyPlan.monthlyCents, "CAD")} / month` : buyListingRate(products)}
+            usage={publishedUsage(publishedBuy, buyPlan?.listingLimit)}
+            href="/dashboard/buy"
+            action={buyPlan ? "Manage bundle" : "View bundles"}
+            note={buyPlan && buySubscription?.status === "grace"
+              ? "Payment needs attention."
+              : buyPlan && buyPlan.listingLimit != null && publishedBuy > buyPlan.listingLimit
+                ? "Over the listing limit."
+                : ""}
+          />
+        </div>
+      </section>
+
       {fresh ? null : (
       <section className="mt-8">
         <div className="flex items-end justify-between gap-3">
@@ -162,6 +176,49 @@ async function DashboardBody() {
       </section>
       )}
     </main>
+  );
+}
+
+function publishedUsage(count: number, limit?: number | null) {
+  if (typeof limit === "number") return `${count} of ${limit} published`;
+  return count === 1 ? "1 listing" : `${count} listings`;
+}
+
+function buyListingRate(products: Product[]) {
+  const published = products.filter((product) => product.cta === "buy" && product.status === "published");
+  const currencies = [...new Set(published.map((product) => listingFeeCurrency("buy", product.location)))].sort();
+  const amounts = (currencies.length > 0 ? currencies : ["CAD"]).map((currency) => formatListingFee(currency));
+  return `${amounts.join(" or ")} per listing / 30 days`;
+}
+
+function PlanRow({
+  kind,
+  status,
+  detail = "",
+  usage,
+  href,
+  action,
+  note = "",
+}: {
+  kind: string;
+  status: string;
+  detail?: string;
+  usage: string;
+  href: string;
+  action: string;
+  note?: string;
+}) {
+  return (
+    <div className="grid min-w-0 grid-cols-1 gap-1 py-4 sm:grid-cols-[minmax(7.5rem,0.8fr)_minmax(0,1.5fr)_minmax(0,10rem)_auto] sm:items-center sm:gap-4">
+      <p className="font-medium">{kind}</p>
+      <div className="min-w-0">
+        <p className="break-words">{status}</p>
+        {detail ? <p className="break-words text-sm text-muted">{detail}</p> : null}
+        {note ? <p className="break-words text-sm text-muted">{note}</p> : null}
+      </div>
+      <p className="text-sm text-muted">{usage}</p>
+      <Link href={href} className="text-sm font-medium text-forest sm:justify-self-end">{action}</Link>
+    </div>
   );
 }
 

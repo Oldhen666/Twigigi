@@ -66,7 +66,7 @@ export default async function Page({
               ? formatBillingDate(bill.createdAt) || bill.createdAt.slice(0, 10)
               : [formatBillingDate(bill.periodStart), formatBillingDate(bill.periodEnd)].filter(Boolean).join(" – ");
             return (
-              <li key={bill.id} className="min-w-0 py-3 text-sm">
+              <li id={bill.id} key={bill.id} className="min-w-0 scroll-mt-24 py-3 text-sm">
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
                   <p className="min-w-0 break-words font-medium">{bill.title}</p>
                   <p className="font-serif text-lg">{platformFee(bill.amountCents, bill.currency)}</p>

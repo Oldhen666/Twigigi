@@ -8,7 +8,12 @@ import {
   buyPlan,
   buyPlanChange,
   optionAllowed,
+  listingRecommendationCopy,
+  publishBuyOffer,
+  publishChoice,
+  publishRecommendationCopy,
   quoteBuyPlan,
+  buyExpansionCopy,
   recommendBuyTarget,
 } from "../lib/buy-plans.ts";
 import { claimBuyPublish, commitBuyChange, ensureBuyStore, readBuySubscriptionRow } from "../lib/buy-store.ts";
@@ -268,6 +273,117 @@ function shopDb() {
   `);
   return db;
 }
+
+test("publishing one new Twig stays on the C$1.49 listing fee and recommends the 10-listing plan", () => {
+  const offer = publishBuyOffer({ current: null, published: 0 });
+  assert.equal(offer.included, false);
+  assert.equal(offer.neededSlots, 1);
+  assert.equal(offer.baseline, null);
+  assert.equal(offer.recommendation?.kind, "more");
+  assert.equal(offer.recommendation?.option.planId, "buy_now_10");
+  assert.equal(offer.recommendation?.option.monthlyCents, 1299);
+  assert.equal(offer.recommendation?.addedSlots, 9);
+  assert.equal(
+    listingRecommendationCopy(offer.recommendation!, 1),
+    "The 10-listing plan is C$11.50/month more and includes 9 more listing slots than publishing this Twig for C$1.49.",
+  );
+  assert.deepEqual(offer.options.map((option) => option.planId), ["buy_now_10", "buy_now_20", "buy_now_50", "buy_now_unlimited"]);
+  assert.equal(publishChoice("", offer), null);
+  assert.equal(publishChoice("buy_now_20:0", offer)?.planId, "buy_now_20");
+});
+
+test("eleven Buy Now listings recommend a bundle that costs less than C$1.49 each", () => {
+  const offer = publishBuyOffer({ current: null, published: 10 });
+  assert.equal(offer.recommendation?.kind, "save");
+  assert.equal(offer.recommendation?.option.planId, "buy_now_10");
+  assert.equal(offer.recommendation?.option.extraSlots, 1);
+  assert.equal(offer.recommendation?.option.monthlyCents, 1429);
+  assert.equal(offer.recommendation?.savingsCents, 210);
+  assert.equal(
+    listingRecommendationCopy(offer.recommendation!, 11),
+    "Switch to the 10-listing plan + 1 slot and save C$2.10/month compared with C$1.49 for each Buy Now Twig.",
+  );
+});
+
+test("a plan with a free slot includes the Twig at C$0", () => {
+  const offer = publishBuyOffer({ current: quote("buy_now_10"), published: 3 });
+  assert.equal(offer.included, true);
+  assert.equal(offer.baseline, null);
+  assert.equal(offer.recommendation, null);
+});
+
+test("a full 20-listing plan adds one slot for C$1.15 and totals C$24.14", () => {
+  const offer = publishBuyOffer({ current: quote("buy_now_20"), published: 20 });
+  assert.ok(offer.baseline);
+  assert.equal(offer.baseline.heading, "Add 1 listing slot");
+  assert.equal(offer.baseline.extraSlots, 1);
+  assert.equal(offer.baseline.monthlyCents, 2414);
+  assert.equal(offer.baseline.monthlyCents - 2299, 115);
+  const due = buyPlanChange({
+    userId: "usr",
+    current: {
+      userId: "usr",
+      planId: "buy_now_20",
+      extraSlots: 0,
+      status: "active",
+      paidUntil: PAID_UNTIL,
+      anchorDay: 15,
+      autoRenew: true,
+      graceUntil: "",
+      pendingPlanId: "",
+      pendingExtraSlots: 0,
+      currency: "CAD",
+    },
+    planId: "buy_now_20",
+    extraSlots: 1,
+    published: 20,
+    now: NOW,
+  });
+  assert.equal(due.ok && due.kind === "bill" && due.mode === "add" && due.chargeCents, 115);
+  assert.equal(offer.recommendation?.kind, "more");
+  assert.equal(offer.recommendation?.option.planId, "buy_now_50");
+  assert.equal(
+    publishRecommendationCopy(offer.recommendation!, offer.baseline),
+    "The 50-listing plan is C$20.85/month more and includes 29 more listing slots than adding 1 slot to your current plan.",
+  );
+});
+
+test("adding 10 slots to the 10-listing bundle saves C$2.99 on the 20-listing bundle", () => {
+  const recommendation = recommendBuyTarget({ current: quote("buy_now_10"), published: 2, addSlots: 10 });
+  assert.ok(recommendation);
+  assert.equal(recommendation.stay?.monthlyCents, 2598);
+  assert.equal(recommendation.recommended.planId, "buy_now_20");
+  assert.equal(recommendation.savingsCents, 299);
+  assert.equal(
+    buyExpansionCopy(recommendation),
+    "Save C$2.99/month with the 20-listing bundle, compared with adding 10 slots to your current plan.",
+  );
+});
+
+test("the 18th slot recommends the 20-listing plan and saves C$0.39", () => {
+  const offer = publishBuyOffer({ current: quote("buy_now_10", 7), published: 17 });
+  assert.ok(offer.baseline && offer.recommendation);
+  assert.equal(offer.baseline.planId, "buy_now_10");
+  assert.equal(offer.baseline.extraSlots, 8);
+  assert.equal(offer.baseline.monthlyCents, 2338);
+  assert.equal(offer.recommendation.kind, "save");
+  assert.equal(offer.recommendation.option.heading, "20-listing plan");
+  assert.equal(offer.recommendation.option.monthlyCents, 2299);
+  assert.equal(offer.recommendation.savingsCents, 39);
+  assert.equal(
+    publishRecommendationCopy(offer.recommendation, offer.baseline),
+    "Save C$0.39/month with the 20-listing bundle, compared with adding 1 slot to your current plan.",
+  );
+  assert.equal(publishChoice("buy_now_20:0", offer)?.planId, "buy_now_20");
+  assert.equal(publishChoice("missing:3", offer)?.planId, offer.baseline.planId);
+});
+
+test("an add-on above C$59.99 offers Unlimited and keeps the blocked amount", () => {
+  const offer = publishBuyOffer({ current: quote("buy_now_50", 16), published: 66 });
+  assert.equal(offer.baseline?.planId, "buy_now_unlimited");
+  assert.equal(offer.baseline?.monthlyCents, 5999);
+  assert.equal(offer.blockedAddCents, 6029);
+});
 
 function seedBundle(db: DatabaseSync, planId: string, extraSlots: number) {
   ensureBuyStore(db);

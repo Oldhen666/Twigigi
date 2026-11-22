@@ -1,3 +1,5 @@
+import { LISTING_CENTS } from "@/lib/billing";
+
 export const BUY_PLAN_CURRENCY = "CAD";
 export const BUY_PLAN_CEILING_CENTS = 5999;
 
@@ -204,9 +206,209 @@ export function recommendBuyTarget(input: {
   };
 }
 
+export function buyExpansionCopy(recommendation: BuyRecommendation) {
+  if (recommendation.savingsCents < 1 || !recommendation.stay || sameOption(recommendation.stay, recommendation.recommended)) return "";
+  const price = (cents: number) => `C$${(cents / 100).toFixed(2)}`;
+  const slots = recommendation.addSlots === 1 ? "1 slot" : `${recommendation.addSlots} slots`;
+  return `Save ${price(recommendation.savingsCents)}/month with the ${bundleName(recommendation.recommended.listingLimit)}, compared with adding ${slots} to your current plan.`;
+}
+
 export function optionAllowed(recommendation: BuyRecommendation, planId: string, extraSlots: number) {
   const matches = (option: BuyOption | null) => Boolean(option && option.purchasable && option.planId === planId && option.extraSlots === extraSlots);
   return matches(recommendation.recommended) || matches(recommendation.unlimited) || matches(recommendation.stay);
+}
+
+export type PublishListingOption = {
+  planId: BuyPlanId;
+  name: string;
+  extraSlots: number;
+  listingLimit: number | null;
+  monthlyCents: number;
+  heading: string;
+};
+
+export type PublishRecommendation = {
+  option: PublishListingOption;
+  kind: "save" | "more";
+  savingsCents: number;
+  addedSlots: number | null;
+};
+
+export type PublishBuyOffer = {
+  neededSlots: number;
+  included: boolean;
+  baseline: PublishListingOption | null;
+  blockedAddCents: number | null;
+  options: PublishListingOption[];
+  recommendation: PublishRecommendation | null;
+};
+
+function coversNeeded(limit: number | null, needed: number) {
+  return limit == null || limit >= needed;
+}
+
+function listingHeading(option: BuyOption, current: BuyQuote | null) {
+  if (option.listingLimit == null) return "Unlimited";
+  const added = current && option.planId === current.plan.id ? option.extraSlots - current.extraSlots : 0;
+  if (added > 0) return added === 1 ? "Add 1 listing slot" : `Add ${added} listing slots`;
+  if (option.extraSlots === 0) return `${option.listingLimit}-listing plan`;
+  if (!current && option.listingLimit != null) {
+    const base = option.listingLimit - option.extraSlots;
+    return option.extraSlots === 1 ? `${base}-listing plan + 1 slot` : `${base}-listing plan + ${option.extraSlots} slots`;
+  }
+  return `${option.name} + ${option.extraSlots} slots`;
+}
+
+function asPublishOption(option: BuyOption, current: BuyQuote | null): PublishListingOption {
+  return {
+    planId: option.planId,
+    name: option.name,
+    extraSlots: option.extraSlots,
+    listingLimit: option.listingLimit,
+    monthlyCents: option.monthlyCents,
+    heading: listingHeading(option, current),
+  };
+}
+
+function coveringPublishOptions(needed: number, current: BuyQuote | null) {
+  const options: PublishListingOption[] = [];
+  for (const plan of BUY_PLANS) {
+    const extra = plan.listings == null ? 0 : Math.max(0, needed - plan.listings);
+    const quote = quoteBuyPlan(plan.id, extra);
+    if (!quote) continue;
+    const option = toOption(quote);
+    if (!option.purchasable || !coversNeeded(option.listingLimit, needed)) continue;
+    options.push(asPublishOption(option, current));
+  }
+  return options;
+}
+
+export function publishBuyOffer(input: { current: BuyQuote | null; published: number }): PublishBuyOffer {
+  const neededSlots = input.published + 1;
+  const open = !input.current || input.current.listingLimit == null || input.published < input.current.listingLimit;
+  if (input.current && open) {
+    return { neededSlots, included: true, baseline: null, blockedAddCents: null, options: [], recommendation: null };
+  }
+  const options = coveringPublishOptions(neededSlots, input.current);
+  if (!input.current) {
+    return {
+      neededSlots,
+      included: false,
+      baseline: null,
+      blockedAddCents: null,
+      options,
+      recommendation: recommendListingBundle(input.published),
+    };
+  }
+  let blockedAddCents: number | null = null;
+  let baseline = options.slice().sort((left, right) => left.monthlyCents - right.monthlyCents || slotRank(right.listingLimit) - slotRank(left.listingLimit))[0] ?? null;
+  if (input.current && input.current.plan.listings != null) {
+    const extra = Math.max(input.current.extraSlots, neededSlots - input.current.plan.listings);
+    const stay = quoteBuyPlan(input.current.plan.id, extra);
+    if (stay && stay.monthlyCents <= BUY_PLAN_CEILING_CENTS) baseline = asPublishOption(toOption(stay), input.current);
+    else if (stay) {
+      blockedAddCents = stay.monthlyCents;
+      baseline = options.find((option) => option.planId === "buy_now_unlimited") ?? baseline;
+    }
+  }
+  const recommendation = baseline ? publishRecommendation(input.current, baseline, options) : null;
+  return { neededSlots, included: false, baseline, blockedAddCents, options, recommendation };
+}
+
+function publishRecommendation(current: BuyQuote | null, baseline: PublishListingOption, options: PublishListingOption[]): PublishRecommendation | null {
+  const others = options.filter((option) => option.planId !== baseline.planId || option.extraSlots !== baseline.extraSlots);
+  const cheaper = others
+    .filter((option) => option.monthlyCents < baseline.monthlyCents)
+    .sort((left, right) => left.monthlyCents - right.monthlyCents || slotRank(right.listingLimit) - slotRank(left.listingLimit))[0];
+  if (cheaper && current) {
+    return {
+      option: cheaper,
+      kind: "save",
+      savingsCents: baseline.monthlyCents - cheaper.monthlyCents,
+      addedSlots: cheaper.listingLimit == null || baseline.listingLimit == null ? null : Math.max(0, cheaper.listingLimit - baseline.listingLimit),
+    };
+  }
+  if (!current) return null;
+  const larger = others
+    .filter((option) => option.monthlyCents > baseline.monthlyCents && (option.listingLimit == null || (baseline.listingLimit != null && option.listingLimit > baseline.listingLimit)))
+    .sort((left, right) => left.monthlyCents - right.monthlyCents)[0];
+  if (!larger) return null;
+  return {
+    option: larger,
+    kind: "more",
+    savingsCents: 0,
+    addedSlots: larger.listingLimit == null || baseline.listingLimit == null ? null : larger.listingLimit - baseline.listingLimit,
+  };
+}
+
+export function publishChoice(value: string, offer: PublishBuyOffer) {
+  const [planId, extraRaw] = value.split(":");
+  const extraSlots = Number(extraRaw);
+  return offer.options.find((option) => option.planId === planId && option.extraSlots === extraSlots) ?? offer.baseline;
+}
+
+export function recommendListingBundle(published: number): PublishRecommendation | null {
+  if (!Number.isInteger(published) || published < 0) return null;
+  const needed = published + 1;
+  const listingMonthly = needed * LISTING_CENTS;
+  const options = coveringPublishOptions(needed, null);
+  const cheaper = options
+    .filter((option) => option.monthlyCents < listingMonthly)
+    .sort((left, right) => left.monthlyCents - right.monthlyCents || slotRank(right.listingLimit) - slotRank(left.listingLimit))[0];
+  if (cheaper) {
+    return {
+      option: cheaper,
+      kind: "save",
+      savingsCents: listingMonthly - cheaper.monthlyCents,
+      addedSlots: cheaper.listingLimit == null ? null : Math.max(0, cheaper.listingLimit - needed),
+    };
+  }
+  const larger = options
+    .filter((option) => option.monthlyCents > listingMonthly && (option.listingLimit == null || option.listingLimit > needed))
+    .sort((left, right) => left.monthlyCents - right.monthlyCents)[0];
+  if (!larger) return null;
+  return {
+    option: larger,
+    kind: "more",
+    savingsCents: 0,
+    addedSlots: larger.listingLimit == null ? null : larger.listingLimit - needed,
+  };
+}
+
+export function listingRecommendationCopy(recommendation: PublishRecommendation, needed: number) {
+  const each = `C$${(LISTING_CENTS / 100).toFixed(2)}`;
+  const price = (cents: number) => `C$${(cents / 100).toFixed(2)}`;
+  if (recommendation.kind === "save") {
+    return `Switch to the ${recommendation.option.heading} and save ${price(recommendation.savingsCents)}/month compared with ${each} for each Buy Now Twig.`;
+  }
+  const slots = recommendation.option.listingLimit == null
+    ? "unlimited listings"
+    : `${recommendation.addedSlots} more listing slot${recommendation.addedSlots === 1 ? "" : "s"}`;
+  const compared = needed === 1 ? `publishing this Twig for ${each}` : `${each} for each of ${needed} Buy Now Twigs`;
+  return `The ${recommendation.option.heading} is ${price(recommendation.option.monthlyCents - needed * LISTING_CENTS)}/month more and includes ${slots} than ${compared}.`;
+}
+
+function bundleName(limit: number | null) {
+  return limit == null ? "Unlimited bundle" : `${limit}-listing bundle`;
+}
+
+function comparedWithAddedSlots(baseline: PublishListingOption) {
+  const match = /^Add (\d+) listing slots?$/.exec(baseline.heading);
+  if (!match) return `the ${baseline.heading}`;
+  const count = Number(match[1]);
+  return `adding ${count} ${count === 1 ? "slot" : "slots"} to your current plan`;
+}
+
+export function publishRecommendationCopy(recommendation: PublishRecommendation, baseline: PublishListingOption) {
+  const price = (cents: number) => `C$${(cents / 100).toFixed(2)}`;
+  if (recommendation.kind === "save") {
+    return `Save ${price(recommendation.savingsCents)}/month with the ${bundleName(recommendation.option.listingLimit)}, compared with ${comparedWithAddedSlots(baseline)}.`;
+  }
+  const slots = recommendation.option.listingLimit == null
+    ? "unlimited listings"
+    : `${recommendation.addedSlots} more listing slot${recommendation.addedSlots === 1 ? "" : "s"}`;
+  const compared = baseline.heading === "Add 1 listing slot" ? "adding 1 slot to your current plan" : `the ${baseline.heading}`;
+  return `The ${recommendation.option.heading} is ${price(recommendation.option.monthlyCents - baseline.monthlyCents)}/month more and includes ${slots} than ${compared}.`;
 }
 
 function withinQuota(limit: number | null, published: number) {

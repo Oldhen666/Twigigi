@@ -3,6 +3,7 @@ import { BILLING_CONSENT_VERSION, type IntentStatus, setupAuthorization } from "
 import { getOrder, markOrderPaid } from "@/lib/db";
 import { deliverPaidFile, fulfillStripeDigitalOrder } from "@/lib/file-delivery";
 import { appUrl } from "@/lib/format";
+import { stripeConnectUrls } from "@/lib/payments";
 
 export function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -76,7 +77,16 @@ function connectFailureMessage(raw: string) {
   return text.slice(0, 240) || "Stripe could not open the connection page.";
 }
 
-export async function createStripeConnectLink(input: { accountId: string; email: string; country: "CA" | "US" }) {
+export async function currentStripeConnect(input: { accountId: string; chargesEnabled: boolean; query?: string }) {
+  if (!input.accountId) return { accountId: "", chargesEnabled: false, refreshed: false };
+  const shouldRefresh = input.query === "return" || input.query === "refresh" || !input.chargesEnabled;
+  if (!shouldRefresh) return { accountId: input.accountId, chargesEnabled: input.chargesEnabled, refreshed: false };
+  const refreshed = await refreshStripeConnect(input.accountId);
+  if (!refreshed) return { accountId: input.accountId, chargesEnabled: input.chargesEnabled, refreshed: false };
+  return { accountId: refreshed.id, chargesEnabled: refreshed.chargesEnabled, refreshed: true };
+}
+
+export async function createStripeConnectLink(input: { accountId: string; email: string; country: "CA" | "US"; returnPath?: string }) {
   const stripe = getStripe();
   if (!stripe) return null;
   let accountId = input.accountId;
@@ -104,10 +114,7 @@ export async function createStripeConnectLink(input: { accountId: string; email:
       account: accountId,
       use_case: {
         type: "account_onboarding",
-        account_onboarding: {
-          refresh_url: `${appUrl()}/dashboard/payments?stripe=refresh`,
-          return_url: `${appUrl()}/dashboard/payments?stripe=return`,
-        },
+        account_onboarding: stripeConnectUrls(input.returnPath || "", appUrl()),
       },
     }, { apiVersion: CONNECT_API_VERSION });
     if (!link.url) return { accountId, url: "", message: "Stripe did not return a connection page." };

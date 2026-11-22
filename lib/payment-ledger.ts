@@ -331,6 +331,33 @@ export function stageBuyPlanCollection(
   }
 }
 
+export function readOpenListingCheckout(database: DatabaseSync, userId: string) {
+  ensurePaymentLedger(database);
+  const row = oneOf(
+    database,
+    `SELECT checkout_url FROM fee_collections
+     WHERE user_id = ? AND status IN ('processing', 'unknown', 'action_required') AND checkout_url != ''
+       AND idempotency_key NOT LIKE 'digital-plan-%' AND idempotency_key NOT LIKE 'buy-now-plan-%'
+     ORDER BY created_at DESC LIMIT 1`,
+    userId,
+  );
+  if (!row) return null;
+  return { url: text(row.checkout_url) };
+}
+
+export function readOpenBuyPlanCheckout(database: DatabaseSync, userId: string) {
+  ensurePaymentLedger(database);
+  const row = oneOf(
+    database,
+    `SELECT checkout_url FROM fee_collections
+     WHERE user_id = ? AND status IN ('processing', 'unknown', 'action_required') AND idempotency_key LIKE 'buy-now-plan-%'
+     ORDER BY created_at DESC LIMIT 1`,
+    userId,
+  );
+  if (!row) return null;
+  return { url: text(row.checkout_url) };
+}
+
 export function claimCollectionCheckout(database: DatabaseSync, collectionId: string, userId: string) {
   ensurePaymentLedger(database);
   const result = database.prepare(

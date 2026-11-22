@@ -104,6 +104,20 @@ test("quote fees stay with their Twig and currencies stay separate", () => {
   assert.equal(cad?.balanceCents, 149 + 149 + 25);
 });
 
+test("a scheduled quote listing uses its locked price", () => {
+  const listings = [listing({
+    cta: "quote",
+    billingStatus: "active",
+    anchorDay: 15,
+    paidUntil: billingInstant("2026-12-15"),
+    listingCents: 499,
+  })];
+  const [currency] = listingChargeView({ listings, bills: [] });
+  assert.equal(currency.rows[0].nextFeeCents, 499);
+  assert.equal(currency.rows[0].rateCents, 499);
+  assert.equal(currency.rows[0].quoteCents, 0);
+});
+
 test("a scheduled period shows the upcoming listing fee before the bill exists", () => {
   const listings = [listing({
     cta: "quote",

@@ -5,6 +5,7 @@ import { BackButton } from "@/components/back-button";
 import { saveProduct } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { readCta } from "@/lib/format";
+import { quotePublishOffer } from "@/lib/quote-followup";
 
 async function NewPage({
   searchParams,
@@ -16,12 +17,12 @@ async function NewPage({
   if (!cta) redirect("/start");
   const user = await getCurrentUser();
   if (user) redirect(`/dashboard/products/new?cta=${cta}`);
-  const title = cta === "buy" ? "New Product" : cta === "file" ? "New digital file" : cta === "quote" ? "New Quote" : "New Contact";
+  const title = cta === "buy" ? "New Product" : cta === "file" ? "New digital file" : cta === "quote" ? "Create a quote listing" : "New Contact";
   return (
     <main className="mx-auto w-full max-w-xl px-5 py-6">
       <BackButton />
       <h1 className="mt-4 font-serif text-4xl">{title}</h1>
-      <ProductForm action={saveProduct} defaultEmail="" sellerName="" cta={cta} guest />
+      <ProductForm action={saveProduct} defaultEmail="" sellerName="" cta={cta} guest quoteOffer={cta === "quote" ? quotePublishOffer({ now: new Date().toISOString(), settings: null }) : null} />
     </main>
   );
 }

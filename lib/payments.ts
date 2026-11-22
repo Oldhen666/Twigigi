@@ -32,6 +32,20 @@ export function paymentsForDigitalFile(): PayMethod[] {
   ];
 }
 
+export function stripeConnectUrls(returnPath: string, origin: string) {
+  const safe = /^\/dashboard\/products\/[A-Za-z0-9_-]+$/.test(returnPath) ? returnPath : "";
+  const base = safe || "/dashboard/payments";
+  const step = safe ? "&step=2" : "";
+  return {
+    refresh_url: `${origin}${base}?stripe=refresh${step}`,
+    return_url: `${origin}${base}?stripe=return${step}`,
+  };
+}
+
+export function stripeConnectCountry(user: { payoutInterac?: string; payoutVenmo?: string; payoutZelle?: string }) {
+  return user.payoutInterac || (!user.payoutVenmo && !user.payoutZelle) ? "CA" : "US";
+}
+
 export function digitalPayMethods(input: { paypalEmail: string; stripeReady: boolean }) {
   const methods: string[] = [];
   if (safeEmail(input.paypalEmail)) methods.push("paypal");
