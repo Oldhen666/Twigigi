@@ -6,7 +6,7 @@ import { readPayoutSaved } from "@/lib/payments";
 import { ReceivePayments } from "@/components/receive-payments";
 import { buttonClass, ghostClass } from "@/components/ui";
 import { payHeldCollection, payOpenFees } from "@/lib/actions";
-import { formatListingFee, listingFeeCents, listingFeeCurrency, platformFee, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
+import { formatListingFee, listingFeeCents, listingFeeCurrency, platformFee } from "@/lib/billing";
 import { settlementView } from "@/lib/billing-calendar";
 import { listingChargeView } from "@/lib/listing-charges";
 import { cardCanRenew, BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
@@ -173,8 +173,6 @@ export default async function Page({
       dueAt: bill.dueAt,
     })),
   });
-  const quoteCad = platformFee(QUOTE_SUBMISSION_CENTS, "CAD");
-  const quoteUsd = platformFee(QUOTE_SUBMISSION_CENTS, "USD");
 
   return (
     <main className="page-frame pb-16">
@@ -271,19 +269,17 @@ export default async function Page({
                   <div className="mt-3 grid gap-4 sm:grid-cols-2">
                     <div className="min-w-0 rounded-xl border border-line px-4 py-3">
                       <p className="text-[13px] text-muted">Listing fee</p>
-                      <p className="mt-1">Canadian quote listings</p>
-                      <p className="font-sans text-[15px] font-semibold tabular-nums">{formatListingFee("CAD")}</p>
-                      <p className="mt-2">US physical listings</p>
+                      <p className="mt-1">New Get a Quote listing</p>
+                      <p className="font-sans text-[15px] font-semibold tabular-nums">C$4.99 CAD / month</p>
+                      <p className="mt-2">US physical Buy Now listings already on a listing fee</p>
                       <p className="font-sans text-[15px] font-semibold tabular-nums">{formatListingFee("USD")}</p>
-                      <p className="mt-2 text-[13px] text-muted">First charge at paid publish, then the 15th or the 28th. Buy Now bundles and Digital File plans are separate. An existing per-listing bill is not repriced.</p>
+                      <p className="mt-2 text-[13px] text-muted">A new Get a Quote publish uses C$4.99 CAD. An existing published Get a Quote listing keeps its current price. Buy Now bundles and Digital File plans are separate.</p>
                     </div>
                     <div className="min-w-0 rounded-xl border border-line px-4 py-3">
-                      <p className="text-[13px] text-muted">Quote fee</p>
-                      <p className="mt-1">Canadian listing or digital file</p>
-                      <p className="font-sans text-[15px] font-semibold tabular-nums">{quoteCad}</p>
-                      <p className="mt-2">US listing</p>
-                      <p className="font-sans text-[15px] font-semibold tabular-nums">{quoteUsd}</p>
-                      <p className="mt-2 text-[13px] text-muted">Each valid request. Added to the next listing payment in the same currency. Not charged alone.</p>
+                      <p className="text-[13px] text-muted">Follow-up fee</p>
+                      <p className="mt-1">First accepted follow-up on an inquiry</p>
+                      <p className="font-sans text-[15px] font-semibold tabular-nums">C$0.50 CAD</p>
+                      <p className="mt-2 text-[13px] text-muted">Added to the next listing bill. Later follow-ups for that inquiry are included. An existing unpaid request fee stays on its bill.</p>
                     </div>
                   </div>
                 </section>

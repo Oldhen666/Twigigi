@@ -13,6 +13,8 @@ import {
   pauseExpiredGrace,
   readDigitalSubscription,
   readBuySubscription,
+  readQuoteListingCharge,
+  reconcileQuoteFollowupFees,
   recordTwigBill,
   renewBuyPlan,
   renewDigitalPlan,
@@ -59,7 +61,9 @@ export function prepareRenewalBills(userId: string, now = new Date()) {
   for (const product of listFeeListings(userId)) {
     if (fileListingUsesStorePlan(product.cta, storeCovered)) continue;
     if (buyListingUsesBundle(product.cta, buyCovered)) continue;
-    if (listingFeeCents(product.cta, product.feeExempt) < 1) continue;
+    const quoteCharge = product.cta === "quote" ? readQuoteListingCharge(product.id) : null;
+    const feeCents = quoteCharge ? quoteCharge.cents : listingFeeCents(product.cta, product.feeExempt);
+    if (feeCents < 1) continue;
     if (!shouldAccrueNextPeriod({
       status: "published",
       billingStatus: product.billingStatus,
@@ -73,8 +77,8 @@ export function prepareRenewalBills(userId: string, now = new Date()) {
       id: feeId(),
       userId,
       productId: product.id,
-      amountCents: listingFeeCents(product.cta),
-      currency: product.billingCurrency || listingFeeCurrency(product.cta, product.location),
+      amountCents: feeCents,
+      currency: quoteCharge?.currency || product.billingCurrency || listingFeeCurrency(product.cta, product.location),
       method: "",
       kind: "listing",
       periodStart: next.periodStart,
@@ -86,6 +90,7 @@ export function prepareRenewalBills(userId: string, now = new Date()) {
   }
   renewDigitalPlan(userId, now);
   renewBuyPlan(userId, now);
+  reconcileQuoteFollowupFees(userId, now);
 }
 
 export function plansFor(userId: string): FeePlan[] {

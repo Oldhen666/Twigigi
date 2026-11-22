@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { closeQuoteRequest, markQuoteContacted, sendSellerQuote } from "@/lib/actions";
+import { FOLLOWUP_COVERED_NOTICE, FOLLOWUP_FEE_NOTICE } from "@/lib/quote-followup";
 import { formatMoney } from "@/lib/format";
 import type { FormState } from "@/lib/types";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
@@ -11,11 +12,15 @@ export function SellerQuoteActions({
   status,
   currency,
   offer,
+  offerEnabled,
+  covered,
 }: {
   quoteId: string;
   status: "new" | "contacted" | "closed";
   currency: string;
   offer: { kind: "fixed" | "estimate"; cents: number; scope: string; note: string; timeline: string; validDays: number } | null;
+  offerEnabled: boolean;
+  covered: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
@@ -43,6 +48,8 @@ export function SellerQuoteActions({
       {open ? (
         <form action={send} className="mt-3 space-y-4">
           <input type="hidden" name="id" value={quoteId} />
+          <input type="hidden" name="currency" value={currency === "USD" ? "USD" : "CAD"} />
+          <p className="text-sm leading-6">{covered ? FOLLOWUP_COVERED_NOTICE : FOLLOWUP_FEE_NOTICE}</p>
           <fieldset className="space-y-2">
             <legend className={labelClass}>Quote type</legend>
             {(["fixed", "estimate"] as const).map((option) => (
@@ -91,12 +98,12 @@ export function SellerQuoteActions({
           <button disabled={sending} className={`${buttonClass} w-full`}>{sending ? "Sending…" : "Send quote"}</button>
           <button type="button" onClick={() => setOpen(false)} className={`${ghostClass} w-full`}>Cancel</button>
         </form>
-      ) : (
+      ) : offerEnabled ? (
         <button type="button" onClick={() => setOpen(true)} className={`${buttonClass} mt-3 h-auto w-full flex-col gap-0.5 py-3`}>
-          <span>Create quote</span>
+          <span>Send a Quote</span>
           <span className="text-xs font-normal text-card/80">Send a price and scope of work to the buyer</span>
         </button>
-      )}
+      ) : null}
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         {status === "closed" ? (

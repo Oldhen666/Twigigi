@@ -5,7 +5,7 @@ import { saveProduct } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { DeleteTwig } from "@/components/delete-twig";
 import { ProductForm } from "@/components/product-form";
-import { findUserById, getProductById } from "@/lib/db";
+import { findUserById, getProductById, readQuoteTwigSettings } from "@/lib/db";
 
 async function Editor({
   params,
@@ -40,7 +40,7 @@ async function Editor({
           A live Twig cannot be deleted. Deactivate it from the dashboard first.
         </p>
       ) : null}
-      <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} cta={product.cta} stripeReady={owner.stripeChargesEnabled} paymentDefaults={{ interac: owner.payoutInterac, venmo: owner.payoutVenmo, paypalMe: owner.payoutPaypalMe, paypalEmail: owner.payoutPaypalEmail }} initialStep={query.step === "2" ? 2 : query.step === "3" ? 3 : 1} />
+      <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} sellerBio={owner.bio} quoteSettings={product.cta === "quote" ? readQuoteTwigSettings(product.id) : null} cta={product.cta} stripeReady={owner.stripeChargesEnabled} paymentDefaults={{ interac: owner.payoutInterac, venmo: owner.payoutVenmo, paypalMe: owner.payoutPaypalMe, paypalEmail: owner.payoutPaypalEmail }} initialStep={query.step === "2" ? 2 : query.step === "3" ? 3 : query.step === "4" ? 4 : 1} />
       {product.status === "published" ? (
         <p className="mt-6 text-sm text-muted">
           This Twig is live, so it cannot be deleted. Deactivate it from the dashboard. The page becomes inactive. Turn it back on before the next charge date and you will not be charged again. If you do not reactivate, it is permanently deleted 30 days after it deactivates.

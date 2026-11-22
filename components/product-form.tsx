@@ -45,6 +45,8 @@ export function ProductForm({
   stripeReady = false,
   paymentDefaults,
   initialStep = 1,
+  sellerBio = "",
+  quoteSettings = null,
 }: {
   action: Action;
   product?: Product;
@@ -54,7 +56,18 @@ export function ProductForm({
   guest?: boolean;
   stripeReady?: boolean;
   paymentDefaults?: PaymentDefaults;
-  initialStep?: 1 | 2 | 3;
+  initialStep?: 1 | 2 | 3 | 4;
+  sellerBio?: string;
+  quoteSettings?: {
+    businessName: string;
+    businessBio: string;
+    businessLogo: string;
+    caseImages: string[];
+    profileSkipped: boolean;
+    visitEnabled: boolean;
+    offerEnabled: boolean;
+    invoiceEnabled: boolean;
+  } | null;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const refreshRef = useRef<(form: HTMLFormElement) => void>(() => {});
@@ -74,7 +87,8 @@ export function ProductForm({
   }, {} as FormState);
   const [photos, setPhotos] = useState<ListingPhoto[]>(() => (product?.images ?? []).map((src) => ({ id: src, kind: "kept" as const, src })));
   const [framing, setFraming] = useState<FrameRequest | null>(null);
-  const [step, setStep] = useState<1 | 2 | 3>(initialStep);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(initialStep);
+  const [profileSkipped, setProfileSkipped] = useState(quoteSettings?.profileSkipped ?? false);
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<PagePreviewDraft | null>(null);
   const [draft, setDraft] = useState<NewPageDraft | null>(null);
@@ -117,8 +131,7 @@ export function ProductForm({
     setPreviewing(false);
     const details = ["title", "description", "videoUrl", "images", "category", "fileLinks", "digitalRights"].some((key) => errors[key]);
     if (quote) {
-      if (details) setStep(1);
-      else if (["location", "fulfillment", "contactEmail", "contactPhone", "shippingNote", "sellerContact"].some((key) => errors[key])) setStep(2);
+      if (details || ["location", "fulfillment", "contactEmail", "contactPhone", "shippingNote", "sellerContact"].some((key) => errors[key])) setStep(2);
       else setStep(3);
       return;
     }
@@ -474,8 +487,9 @@ export function ProductForm({
   }
   refreshRef.current = refreshHints;
 
-  function showStep(next: 1 | 2 | 3) {
-    if (step === 1 && next > 1) {
+  function showStep(next: 1 | 2 | 3 | 4) {
+    const leavingDetails = quote ? step === 2 && next > 2 : step === 1 && next > 1;
+    if (leavingDetails) {
       const errors = detailProblems();
       if (Object.keys(errors).length > 0) {
         setLive((current) => {
@@ -915,15 +929,39 @@ export function ProductForm({
         </div>
       ) : null}
       {quote ? (
-        <div className="mt-6 grid grid-cols-3 gap-1 rounded-full bg-paper-deep p-1">
-          <StepTab current={step} step={1} label="Description" onClick={() => showStep(1)} />
-          <StepTab current={step} step={2} label="Detail" onClick={() => showStep(2)} />
-          <StepTab current={step} step={3} label="Quote field" onClick={() => showStep(3)} />
+        <div className="mt-6 grid grid-cols-4 gap-1 rounded-full bg-paper-deep p-1">
+          <StepTab current={step} step={1} label="Profile" onClick={() => showStep(1)} />
+          <StepTab current={step} step={2} label="Service" onClick={() => showStep(2)} />
+          <StepTab current={step} step={3} label="Quote" onClick={() => showStep(3)} />
+          <StepTab current={step} step={4} label="Follow-up" onClick={() => showStep(4)} />
         </div>
       ) : null}
 
-      <div className={stepped && step !== 1 ? "hidden" : undefined}>
-      <Section title={cta === "quote" ? "Product/Service Title" : cta === "contact" ? "What can they ask about?" : ""} required={cta === "quote"}>
+      {quote ? (
+        <div className={step === 1 ? undefined : "hidden"}>
+          <input type="hidden" name="profileSkipped" value={profileSkipped ? "1" : "0"} />
+          <Section title="Business Profile">
+            <p className="text-sm text-muted">Optional. Skip this step and the public page uses your seller name. Empty details are left off the page.</p>
+            <Field label="Business name">
+              <input name="businessName" defaultValue={quoteSettings?.profileSkipped ? "" : quoteSettings?.businessName || sellerName} className={inputClass} />
+            </Field>
+            <Field label="Short introduction">
+              <textarea name="businessBio" defaultValue={quoteSettings?.profileSkipped ? "" : quoteSettings?.businessBio || sellerBio} rows={3} className={`${inputClass} h-auto py-3`} />
+            </Field>
+            <Field label="Logo">
+              {quoteSettings?.businessLogo ? <input type="hidden" name="businessLogoKept" value={quoteSettings.businessLogo} /> : null}
+              <input name="businessLogo" type="file" accept="image/jpeg,image/png,image/webp" className="text-sm" />
+            </Field>
+            <Field label="Case photos">
+              {(quoteSettings?.caseImages ?? []).map((src) => <input key={src} type="hidden" name="caseKept" value={src} />)}
+              <input name="caseImages" type="file" accept="image/jpeg,image/png,image/webp" multiple className="text-sm" />
+            </Field>
+          </Section>
+        </div>
+      ) : null}
+
+      <div className={quote ? (step === 2 ? undefined : "hidden") : stepped && step !== 1 ? "hidden" : undefined}>
+      <Section title={cta === "quote" ? "Service or Product" : cta === "contact" ? "What can they ask about?" : ""} required={cta === "quote"}>
         <Field label={cta === "quote" ? "" : "Product Title"} required={cta !== "quote"} error={visibleErrors.title}>
           <input name="title" defaultValue={textValue(draft, "title", product?.title)} placeholder="Cedar planter box (at least 2 characters)" aria-label={cta === "quote" ? "Product/Service Title" : undefined} className={inputClass} />
         </Field>
@@ -1054,6 +1092,9 @@ export function ProductForm({
             <ProvideChoice name="atLocationEnabled" checked={boxChecked(draft, "atLocationEnabled", product?.atLocationEnabled)} title="At my location" detail="Customer comes to your business/location" />
           </Section>
           <Section title="How customers reach you">
+            <Field label="Starting price" optional>
+              <input name="price" inputMode="decimal" defaultValue={product?.priceCents != null ? (product.priceCents / 100).toFixed(2) : ""} placeholder="Optional, such as 80" className={inputClass} />
+            </Field>
             <Field label="Contact email" required error={visibleErrors.contactEmail}>
               <input name="contactEmail" type="email" defaultValue={emailValue(draft, product, defaultEmail)} placeholder="name@email.com (email)" className={inputClass} />
               <span className="mt-1 block text-xs text-muted">Twigigi will send the quote request to this email.</span>
@@ -1067,7 +1108,21 @@ export function ProductForm({
 
       {quote ? (
         <div className={step !== 3 ? "hidden" : undefined}>
+          <Section title="Quote Requirements">
+            <p className="text-sm text-muted">Choose what the customer fills in. Email stays required. Custom fields can be required. Customers can also attach photos or files.</p>
+          </Section>
           <QuoteFormFields value={quoteDraft(draft, product)} onChange={remember} />
+        </div>
+      ) : null}
+
+      {quote ? (
+        <div className={step !== 4 ? "hidden" : undefined}>
+          <Section title="Follow-up Tools">
+            <p className="text-sm text-muted">Optional. You can receive the inquiry and contact the customer yourself. After an inquiry arrives, send any enabled tool from that inquiry. They do not have to be used in order.</p>
+            <ProvideChoice name="visitEnabled" checked={quoteSettings?.visitEnabled} title="Schedule a Site Visit" detail="Propose a date and time" />
+            <ProvideChoice name="offerEnabled" checked={quoteSettings ? quoteSettings.offerEnabled : false} title="Send a Quote" detail="Send a price and scope" />
+            <ProvideChoice name="invoiceEnabled" checked={quoteSettings?.invoiceEnabled} title="Send an Invoice" detail="Send an amount and payment instructions" />
+          </Section>
         </div>
       ) : null}
 
@@ -1108,6 +1163,11 @@ export function ProductForm({
           {draftButton}
           {publishButton}
         </div>
+      ) : quote && step === 1 ? (
+        <div className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg">
+          <button type="button" onClick={() => { setProfileSkipped(true); showStep(2); }} className={`${ghostClass} flex-1`}>Skip</button>
+          <button type="button" onClick={() => { setProfileSkipped(false); showStep(2); }} className={`${buttonClass} flex-1`}>Next</button>
+        </div>
       ) : stepped && step === 1 ? (
         <div className="sticky bottom-3 z-10 mt-8 rounded-full border border-line bg-card p-2 shadow-lg">
           <button type="button" onClick={() => showStep(2)} className={`${buttonClass} w-full`}>
@@ -1116,17 +1176,18 @@ export function ProductForm({
         </div>
       ) : quote && step === 2 ? (
         <div className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg">
-          <button type="button" onClick={() => showStep(1)} className={`${ghostClass} flex-1`}>
-            Back
-          </button>
-          <button type="button" onClick={() => showStep(3)} className={`${buttonClass} flex-1`}>
-            Next
-          </button>
+          <button type="button" onClick={() => showStep(1)} className={`${ghostClass} flex-1`}>Back</button>
+          <button type="button" onClick={() => showStep(3)} className={`${buttonClass} flex-1`}>Next</button>
+        </div>
+      ) : quote && step === 3 ? (
+        <div className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg">
+          <button type="button" onClick={() => showStep(2)} className={`${ghostClass} flex-1`}>Back</button>
+          <button type="button" onClick={() => showStep(4)} className={`${buttonClass} flex-1`}>Next</button>
         </div>
       ) : (
       <div key="edit-actions" className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg">
         {stepped ? (
-          <button type="button" onClick={() => showStep(quote ? 2 : 1)} className={ghostClass}>
+          <button type="button" onClick={() => showStep(quote ? 3 : 1)} className={ghostClass}>
             Back
           </button>
         ) : null}

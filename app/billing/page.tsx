@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { saveBillingMethod } from "@/lib/actions";
-import { QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
 import { requireUser } from "@/lib/auth";
 import { BackButton } from "@/components/back-button";
 import { Logo } from "@/components/logo";
 import { buttonClass } from "@/components/ui";
-import { formatMoney, safeNext } from "@/lib/format";
+import { safeNext } from "@/lib/format";
 
 async function BillingScreen({
   searchParams,
@@ -16,7 +15,6 @@ async function BillingScreen({
   const params = await searchParams;
   const next = safeNext(typeof params.next === "string" ? params.next : "/dashboard");
   const user = await requireUser();
-  const quoteRequest = formatMoney(QUOTE_SUBMISSION_CENTS);
   const cardSelected = user.billingMethod !== "paypal";
 
   return (
@@ -31,17 +29,17 @@ async function BillingScreen({
             <span>Buy now bundle</span>
             <span>C$12.99 to C$59.99 / month</span>
           </div>
-          <p className="text-muted">A new published Buy Now listing uses a CAD bundle. Quote listings stay on the listing fee. A digital file uses a shop plan in CAD. An existing per-listing Buy Now bill is not repriced.</p>
+          <p className="text-muted">A new published Buy Now listing uses a CAD bundle. A digital file uses a shop plan in CAD. An existing per-listing Buy Now bill is not repriced.</p>
           <div className="flex items-baseline justify-between gap-6">
-            <span>Quote listing</span>
-            <span>C$1.49 or USD$1.49 / 30 days</span>
+            <span>Get a Quote listing</span>
+            <span>C$4.99 / month</span>
           </div>
-          <p className="text-muted">A Canadian quote listing is CAD. A United States quote listing is USD.</p>
+          <p className="text-muted">A new published Get a Quote listing is CAD. The first accepted follow-up email on an inquiry adds C$0.50 to the next listing bill. An existing published listing keeps its current price.</p>
           <div className="flex items-baseline justify-between gap-6">
-            <span>Valid quote request</span>
-            <span>{quoteRequest} each</span>
+            <span>Follow-up fee</span>
+            <span>C$0.50 once per inquiry</span>
           </div>
-          <p className="text-muted">Quote fees stay unpaid until the next listing payment in the same currency. Twigigi does not charge a quote by itself.</p>
+          <p className="text-muted">It is added to the next listing bill after Twigigi accepts the first follow-up email. Later follow-ups for that inquiry are included. An unpaid historical quote fee stays on its bill.</p>
         </div>
         <form action={saveBillingMethod} className="mt-8">
           <input type="hidden" name="next" value={next} />

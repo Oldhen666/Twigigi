@@ -57,6 +57,17 @@ import {
   setOrderFileIssue,
   getProductById,
   getQuote,
+  writeQuoteTwigSettings,
+  readQuoteTwigSettings,
+  readQuoteListingCharge,
+  quoteFollowups,
+  quoteFollowupCovered,
+  quoteFollowupByToken,
+  draftQuoteFollowup,
+  sendQuoteFollowup,
+  chargeQuoteFollowup,
+  answerQuoteFollowup,
+  payQuoteInvoice,
   insertContentReport,
   insertModerationEvent,
   insertMessage,
@@ -182,7 +193,7 @@ import { COPYRIGHT_POLICY_VERSION, IP_POLICY_VERSION, LISTING_REPORT_REASONS, PR
 import { digitalContentVersion, digitalRightsDue, enforcementLabel, enforcementNeedsConfirm, enforcementNotice, sellerMayPublish, twigigiFileHeld, type EnforcementAction, ENFORCEMENT_ACTIONS } from "@/lib/copyright";
 import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { ensureVisitor } from "@/lib/visitor";
-import { billingCurrency, isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid, quoteWindow, QUOTE_SUBMISSION_CENTS } from "@/lib/billing";
+import { isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid } from "@/lib/billing";
 import { BILLING_CONSENT_VERSION, cardCanRenew } from "@/lib/billing-auth";
 import { normalizeQuoteForm } from "@/lib/quote-form";
 import { cancelFeeIntent, createBillingSetupSession, createDigitalStripeCheckout, createStripeConnectLink, createStripePayoutLink, getStripe, publicStripeError, retrieveFeeIntent } from "@/lib/stripe";
@@ -869,6 +880,33 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   if (existing && existing.slug !== slug) updateTag(productTag(owner.publicId, existing.slug));
   updateTag(productTag(owner.publicId, slug));
   updateTag(sellerTag(owner.publicId));
+  if (cta === "quote") {
+    const skipped = text(formData, "profileSkipped") === "1";
+    let businessLogo = "";
+    const caseImages = formData.getAll("caseKept").filter((item): item is string => typeof item === "string").map(safeImagePath).filter((item): item is string => Boolean(item));
+    if (!skipped) {
+      const logo = formData.get("businessLogo");
+      if (logo instanceof File && logo.size > 0) {
+        const saved = await saveImages([logo]);
+        businessLogo = saved[0] || "";
+      } else {
+        businessLogo = safeImagePath(text(formData, "businessLogoKept")) || "";
+      }
+      const caseFiles = formData.getAll("caseImages").filter((item): item is File => item instanceof File && item.size > 0).slice(0, 4);
+      if (caseFiles.length > 0) caseImages.push(...await saveImages(caseFiles));
+    }
+    writeQuoteTwigSettings({
+      productId: savedProductId,
+      businessName: text(formData, "businessName").trim().slice(0, 80),
+      businessBio: text(formData, "businessBio").trim().slice(0, 400),
+      businessLogo,
+      caseImages: caseImages.slice(0, 4),
+      profileSkipped: skipped,
+      visitEnabled: formData.get("visitEnabled") === "on",
+      offerEnabled: formData.get("offerEnabled") === "on",
+      invoiceEnabled: formData.get("invoiceEnabled") === "on",
+    });
+  }
 
   if (needsBilling) redirect(`/billing?next=${encodeURIComponent(`/dashboard/products/${savedProductId}`)}`);
   if (publishingNewFile) {
@@ -895,7 +933,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   if (input.status === "published") redirect(`/${owner.publicId}/${slug}`);
   if (existing?.status === "published") redirect(`/dashboard/products/${savedProductId}?saved=1`);
   const requestedStep = text(formData, "editorStep");
-  const editorStep = requestedStep === "2" || requestedStep === "3" ? requestedStep : "1";
+  const editorStep = requestedStep === "2" || requestedStep === "3" || requestedStep === "4" ? requestedStep : "1";
   redirect(`/dashboard/products/${savedProductId}?saved=1&step=${editorStep}`);
 }
 
@@ -1070,8 +1108,9 @@ async function redirectListingFee(
   user: { id: string; billingMethod: string; stripeCustomerId?: string },
   product: { id: string; title: string; cta: string; location: string; feeExempt?: boolean; paidUntil?: string | null; billingStatus?: string; graceUntil?: string | null; autoRenew?: boolean; billingAnchorDay?: number },
 ) {
-  const cents = listingFeeCents(product.cta, Boolean(product.feeExempt));
-  const currency = listingFeeCurrency(product.cta, product.location);
+  const quoteRate = product.cta === "quote" ? readQuoteListingCharge(product.id) : null;
+  const cents = quoteRate ? quoteRate.cents : listingFeeCents(product.cta, Boolean(product.feeExempt));
+  const currency = quoteRate ? quoteRate.currency : listingFeeCurrency(product.cta, product.location);
   if (cents < 1) return;
   const now = new Date().toISOString();
   const repeat = product.billingAnchorDay === 15 || product.billingAnchorDay === 28;
@@ -2079,9 +2118,6 @@ export async function requestQuote(_prev: FormState, formData: FormData): Promis
   const emailMatch = findUserByEmail(parsed.data.email);
   const projectDetails = lines.join("\n").slice(0, 2000);
   const requestKey = quoteRequestKey(parsed.data.email, projectDetails);
-  const duplicate = hasBillableQuote(product.id, requestKey);
-  const feeReason = product.quoteFeeExempt ? "waived" : duplicate ? "duplicate" : "";
-  const billable = feeReason === "";
   insertQuote({
     id,
     productId: product.id,
@@ -2093,29 +2129,11 @@ export async function requestQuote(_prev: FormState, formData: FormData): Promis
     projectDetails,
     documents,
     src: await trafficSource(),
-    billable,
+    billable: false,
     requestKey,
-    feeReason,
+    feeReason: "included",
   });
   const quoteSeller = findUserById(product.userId);
-  const quotedAt = new Date().toISOString();
-  if (billable) {
-    const window = quoteWindow(quotedAt);
-    recordTwigBill({
-      id: newId("bill"),
-      userId: product.userId,
-      productId: product.id,
-      amountCents: QUOTE_SUBMISSION_CENTS,
-      currency: billingCurrency(product.location),
-      method: quoteSeller?.billingMethod || "",
-      kind: "quote",
-      periodStart: window.start,
-      periodEnd: window.end,
-      eventKey: id,
-      quoteId: id,
-      status: "pending",
-    });
-  }
   openInteraction({
     kind: "quote",
     sourceId: id,
@@ -3033,6 +3051,63 @@ export async function closeQuoteRequest(_prev: FormState, formData: FormData): P
   return { next: `/dashboard/quotes/${owned.quote.id}` };
 }
 
+function followupToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(18));
+  return Buffer.from(bytes).toString("base64url");
+}
+
+function toolEnabled(productId: string, kind: "visit" | "offer" | "invoice") {
+  const settings = readQuoteTwigSettings(productId);
+  if (!settings) return kind === "offer";
+  if (kind === "visit") return settings.visitEnabled;
+  if (kind === "invoice") return settings.invoiceEnabled;
+  return settings.offerEnabled;
+}
+
+async function deliverFollowup(input: {
+  quoteId: string;
+  userId: string;
+  productId: string;
+  customerEmail: string;
+  replyTo: string;
+  kind: "visit" | "offer" | "invoice";
+  payload: Record<string, string | number>;
+  subject: string;
+  body: string;
+  send: boolean;
+}) {
+  if (!toolEnabled(input.productId, input.kind)) return { error: "Turn on this follow-up tool for the Twig before sending it." };
+  const draft = draftQuoteFollowup({
+    id: newId("fol"),
+    quoteId: input.quoteId,
+    userId: input.userId,
+    kind: input.kind,
+    payload: input.payload,
+    token: followupToken(),
+  });
+  if (!input.send) return { next: `/dashboard/quotes/${input.quoteId}?notice=draft` };
+  const saved = quoteFollowups(input.quoteId).find((item) => item.id === draft.id);
+  const token = saved?.token || "";
+  const mailed = token
+    ? await sendOrderEmail(input.customerEmail, {
+        subject: input.subject,
+        replyTo: input.replyTo,
+        text: `${input.body}\n\nOpen it: ${appUrl()}/q/${token}\n`,
+      })
+    : false;
+  if (!mailed) return { next: `/dashboard/quotes/${input.quoteId}?notice=saved` };
+  if (sendQuoteFollowup(draft.id)) {
+    chargeQuoteFollowup({
+      quoteId: input.quoteId,
+      userId: input.userId,
+      productId: input.productId,
+      kind: input.kind,
+      billId: newId("bill"),
+    });
+  }
+  return { next: `/dashboard/quotes/${input.quoteId}?notice=sent` };
+}
+
 export async function sendSellerQuote(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireSeller();
   const owned = ownedQuote(text(formData, "id"), user.id);
@@ -3040,9 +3115,9 @@ export async function sendSellerQuote(_prev: FormState, formData: FormData): Pro
   const kind = text(formData, "quoteKind");
   const days = Number(text(formData, "validDays"));
   const scope = text(formData, "scope").trim().slice(0, 2000);
-  const timeline = text(formData, "timeline").trim().replace(/\s+/g, " ").slice(0, 80);
   const note = text(formData, "note").trim().slice(0, 1000);
   const amount = text(formData, "amount").trim();
+  const currency = text(formData, "currency") === "USD" ? "USD" : "CAD";
   const fieldErrors: Record<string, string> = {};
   if (kind !== "fixed" && kind !== "estimate") fieldErrors.quoteKind = "Choose a quote type.";
   if (![7, 14, 30].includes(days)) fieldErrors.validDays = "Choose how long this quote stays valid.";
@@ -3051,41 +3126,134 @@ export async function sendSellerQuote(_prev: FormState, formData: FormData): Pro
   const cents = amountMatch ? Number(amountMatch[1]) * 100 + Number((amountMatch[2] ?? "").padEnd(2, "0")) : 0;
   if (!amountMatch || cents < 1) fieldErrors.amount = "Enter an amount.";
   if (Object.keys(fieldErrors).length > 0) return { fieldErrors };
-  const saved = saveQuoteOffer(owned.quote.id, user.id, {
-    kind: kind as "fixed" | "estimate",
-    cents,
-    scope,
-    note,
-    timeline,
-    validDays: days,
-  });
-  if (!saved) return { error: "That quote is not yours." };
-  const currency = owned.product.currency || "CAD";
-  const price = formatMoney(cents, currency);
-  const label = kind === "fixed" ? "Fixed price" : "Estimated price";
-  const replyTo = owned.product.contactEmail || user.email;
-  const mailed = await sendOrderEmail(owned.quote.email, {
+  const result = await deliverFollowup({
+    quoteId: owned.quote.id,
+    userId: user.id,
+    productId: owned.product.id,
+    customerEmail: owned.quote.email,
+    replyTo: owned.product.contactEmail || user.email,
+    kind: "offer",
+    payload: { quoteKind: kind, cents, currency, scope, note, validDays: days },
     subject: `Quote for ${owned.product.title}`,
-    replyTo,
-    text: [
+    body: [
       `${user.displayName} sent you a quote for ${owned.product.title}.`,
       "",
-      `${label}: ${price}`,
+      `${kind === "fixed" ? "Fixed price" : "Estimated price"}: ${formatMoney(cents, currency)}`,
       `Valid for ${days} days.`,
-      timeline ? `Time to complete: ${timeline}` : null,
       "",
       "Scope of work",
       scope,
-      note ? "" : null,
-      note ? "Note" : null,
-      note || null,
-      "",
-      `View this quote: ${appUrl()}/quote/${owned.quote.id}`,
-      "",
-      "Reply to this email to reach the seller.",
-    ].filter((line): line is string => line !== null).join("\n"),
+      note,
+    ].filter(Boolean).join("\n"),
+    send: text(formData, "intent") !== "draft",
   });
-  return { next: `/dashboard/quotes/${owned.quote.id}?notice=${mailed ? "sent" : "saved"}` };
+  if ("error" in result && result.error) return { error: result.error };
+  if (result.next?.includes("notice=sent")) {
+    saveQuoteOffer(owned.quote.id, user.id, { kind: kind as "fixed" | "estimate", cents, scope, note, timeline: "", validDays: days });
+  }
+  return result;
+}
+
+function goFollowup(quoteId: string, result: { error?: string; next?: string }) {
+  if (result.next) redirect(result.next);
+  redirect(`/dashboard/quotes/${quoteId}?notice=invalid`);
+}
+
+export async function sendSiteVisit(formData: FormData) {
+  const user = await requireSeller();
+  const owned = ownedQuote(text(formData, "id"), user.id);
+  if (!owned) redirect("/dashboard/quotes");
+  const date = text(formData, "visitDate").trim().slice(0, 20);
+  const time = text(formData, "visitTime").trim().slice(0, 20);
+  const timezone = text(formData, "timezone").trim().slice(0, 80);
+  const note = text(formData, "note").trim().slice(0, 1000);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !time || timezone.length < 2) redirect(`/dashboard/quotes/${owned.quote.id}?notice=invalid`);
+  goFollowup(owned.quote.id, await deliverFollowup({
+    quoteId: owned.quote.id,
+    userId: user.id,
+    productId: owned.product.id,
+    customerEmail: owned.quote.email,
+    replyTo: owned.product.contactEmail || user.email,
+    kind: "visit",
+    payload: { date, time, timezone, note },
+    subject: `Site visit for ${owned.product.title}`,
+    body: [
+      `${user.displayName} asked to schedule a site visit for ${owned.product.title}.`,
+      "",
+      `Date: ${date}`,
+      `Time: ${time}`,
+      `Time zone: ${timezone}`,
+      note,
+      "",
+      "Use the link to confirm this time or ask for a different one.",
+    ].filter(Boolean).join("\n"),
+    send: text(formData, "intent") !== "draft",
+  }));
+}
+
+export async function sendQuoteInvoice(formData: FormData) {
+  const user = await requireSeller();
+  const owned = ownedQuote(text(formData, "id"), user.id);
+  if (!owned) redirect("/dashboard/quotes");
+  const amount = text(formData, "amount").trim();
+  const currency = text(formData, "currency") === "USD" ? "USD" : "CAD";
+  const dueOn = text(formData, "dueOn").trim().slice(0, 20);
+  const note = text(formData, "note").trim().slice(0, 1000);
+  const amountMatch = amount.match(/^(\d{1,7})(?:\.(\d{1,2}))?$/);
+  const cents = amountMatch ? Number(amountMatch[1]) * 100 + Number((amountMatch[2] ?? "").padEnd(2, "0")) : 0;
+  if (!amountMatch || cents < 1 || !/^\d{4}-\d{2}-\d{2}$/.test(dueOn) || note.length < 2) {
+    redirect(`/dashboard/quotes/${owned.quote.id}?notice=invalid`);
+  }
+  goFollowup(owned.quote.id, await deliverFollowup({
+    quoteId: owned.quote.id,
+    userId: user.id,
+    productId: owned.product.id,
+    customerEmail: owned.quote.email,
+    replyTo: owned.product.contactEmail || user.email,
+    kind: "invoice",
+    payload: { cents, currency, dueOn, note },
+    subject: `Invoice for ${owned.product.title}`,
+    body: [
+      `${user.displayName} sent an invoice for ${owned.product.title}.`,
+      "",
+      `Amount: ${formatMoney(cents, currency)}`,
+      `Due: ${dueOn}`,
+      "",
+      "Payment",
+      note,
+    ].join("\n"),
+    send: text(formData, "intent") !== "draft",
+  }));
+}
+
+export async function markQuoteInvoicePaid(formData: FormData) {
+  const user = await requireSeller();
+  const owned = ownedQuote(text(formData, "quoteId"), user.id);
+  if (!owned) redirect("/dashboard/quotes");
+  payQuoteInvoice(text(formData, "id"), user.id);
+  redirect(`/dashboard/quotes/${owned.quote.id}?notice=paid`);
+}
+
+export async function respondToFollowup(formData: FormData) {
+  const token = text(formData, "token");
+  const choice = text(formData, "choice");
+  const followup = quoteFollowupByToken(token);
+  const allowed = followup?.kind === "visit"
+    ? choice === "confirmed" || choice === "reschedule"
+    : followup?.kind === "offer"
+      ? choice === "accepted" || choice === "changes"
+      : false;
+  if (!followup || followup.status !== "sent" || !allowed) redirect(`/q/${encodeURIComponent(token)}?notice=closed`);
+  if (followup.kind === "offer" && choice === "accepted") {
+    const latest = quoteFollowups(followup.quoteId).filter((item) => item.kind === "offer" && item.status === "sent");
+    const current = latest[latest.length - 1];
+    if (!current || current.id !== followup.id) redirect(`/q/${encodeURIComponent(token)}?notice=closed`);
+    const days = Number(followup.payload.validDays || 0);
+    const sent = Date.parse(followup.sentAt);
+    if (Number.isFinite(sent) && days > 0 && Date.now() > sent + days * 86_400_000) redirect(`/q/${encodeURIComponent(token)}?notice=expired`);
+  }
+  answerQuoteFollowup(token, choice);
+  redirect(`/q/${encodeURIComponent(token)}?notice=${choice}`);
 }
 
 export async function setLeadStatus(formData: FormData) {

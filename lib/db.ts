@@ -43,6 +43,23 @@ import {
 } from "@/lib/buy-store";
 import type { BuySubscription } from "@/lib/buy-plans";
 import {
+  ensureQuoteFollowup,
+  followupFeeCovered,
+  listOpenFollowupFees,
+  listQuoteFollowups,
+  lockQuoteListingRate,
+  markFollowupSent,
+  markInvoicePaid,
+  readFollowupByToken,
+  readQuoteSettings,
+  reconcileFollowupFees,
+  recordFollowupFee,
+  saveFollowupDraft,
+  saveQuoteSettings,
+  setFollowupStatus,
+} from "@/lib/quote-followup-store";
+import type { QuoteTool } from "@/lib/quote-followup";
+import {
   accruePlanRenewal,
   cancelPlanRenewal,
   claimFilePublish,
@@ -428,6 +445,7 @@ function ensureColumns(database: DatabaseSync) {
   ensurePaymentLedger(database);
   ensureDigitalStore(database);
   ensureBuyStore(database);
+  ensureQuoteFollowup(database);
   database.prepare(`UPDATE twig_bills SET status = 'pending' WHERE kind = 'quote' AND status IN ('accrued', 'recorded', 'due')`).run();
   add("quotes", "documents_json", "documents_json TEXT NOT NULL DEFAULT '[]'");
   add("quotes", "billable", "billable INTEGER NOT NULL DEFAULT 1");
@@ -2497,6 +2515,72 @@ export function stageBuyPlan(userId: string) {
 
 export function legacyBuyBilling(userId = "") {
   return legacyBuyListingBilling(db, userId);
+}
+
+export function readQuoteTwigSettings(productId: string) {
+  return readQuoteSettings(db, productId);
+}
+
+export function writeQuoteTwigSettings(input: {
+  productId: string;
+  businessName: string;
+  businessBio: string;
+  businessLogo: string;
+  caseImages: string[];
+  profileSkipped: boolean;
+  visitEnabled: boolean;
+  offerEnabled: boolean;
+  invoiceEnabled: boolean;
+}) {
+  saveQuoteSettings(db, { ...input, now: new Date().toISOString() });
+}
+
+export function readQuoteListingCharge(productId: string) {
+  return lockQuoteListingRate(db, productId);
+}
+
+export function reconcileQuoteFollowupFees(userId: string, now = new Date()) {
+  const stamp = now.toISOString();
+  return reconcileFollowupFees(db, userId, () => {
+    const bytes = crypto.getRandomValues(new Uint8Array(9));
+    return `bill_${Buffer.from(bytes).toString("base64url")}`;
+  }, stamp);
+}
+
+export function openFollowupFees(userId: string) {
+  return listOpenFollowupFees(db, userId);
+}
+
+export function quoteFollowups(quoteId: string) {
+  return listQuoteFollowups(db, quoteId);
+}
+
+export function quoteFollowupCovered(quoteId: string) {
+  return followupFeeCovered(db, quoteId);
+}
+
+export function quoteFollowupByToken(token: string) {
+  return readFollowupByToken(db, token);
+}
+
+export function draftQuoteFollowup(input: { id: string; quoteId: string; userId: string; kind: QuoteTool; payload: Record<string, string | number>; token: string }) {
+  return saveFollowupDraft(db, { ...input, now: new Date().toISOString() });
+}
+
+export function sendQuoteFollowup(id: string) {
+  return markFollowupSent(db, id, new Date().toISOString());
+}
+
+export function chargeQuoteFollowup(input: { quoteId: string; userId: string; productId: string; kind: QuoteTool; billId: string }) {
+  return recordFollowupFee(db, { ...input, now: new Date().toISOString() });
+}
+
+export function answerQuoteFollowup(token: string, status: string) {
+  return setFollowupStatus(db, token, status, new Date().toISOString());
+}
+
+export function payQuoteInvoice(id: string, userId: string) {
+  return markInvoicePaid(db, id, userId, new Date().toISOString());
 }
 
 export function legacyDigitalBilling(userId = "") {

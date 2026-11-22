@@ -2,16 +2,30 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { SellerQuotes } from "@/components/seller-quotes";
 import { requireSeller } from "@/lib/auth";
-import { getProductById, listQuotes } from "@/lib/db";
+import { getProductById, listQuotes, openFollowupFees } from "@/lib/db";
+import { platformFee } from "@/lib/billing";
 import { formatDate, formatMoney } from "@/lib/format";
 
 async function QuotesScreen() {
   const user = await requireSeller();
   const quotes = listQuotes(user.id, 1000);
+  const fees = openFollowupFees(user.id);
+  const feeTotal = fees.reduce((sum, fee) => sum + fee.amountCents, 0);
   const currency = new Map<string, string>();
   return (
     <main className="page-frame pb-16">
       <h1 className="mt-6 font-serif text-4xl">Quotes</h1>
+      {fees.length > 0 ? (
+        <section className="mt-4 max-w-xl rounded-3xl border border-line bg-card p-5 text-sm leading-6">
+          <h2 className="font-serif text-2xl">Follow-up fees this period</h2>
+          <p className="mt-2">{platformFee(feeTotal, "CAD")} will join the next Get a Quote listing bill. Sending a follow-up is not a completed sale.</p>
+          <ul className="mt-3 space-y-1">
+            {fees.map((fee) => (
+              <li key={fee.id}>{fee.title || "Inquiry"} · {fee.customerName} · {platformFee(fee.amountCents, fee.currency)}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {quotes.length === 0 ? (
         <div className="mt-6 max-w-xl rounded-3xl border border-dashed border-line bg-card p-6">
           <h2 className="font-serif text-2xl">No quotes yet</h2>

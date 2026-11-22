@@ -9,6 +9,11 @@ export default function Page() {
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-10">
       <h1 className="font-serif text-4xl">Pricing</h1>
+      <h2 className="mt-8 font-serif text-3xl">Get a Quote</h2>
+      <p className="mt-3 max-w-2xl text-sm leading-6">C$4.99 CAD per published listing / month</p>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+        A one-time C$0.50 CAD follow-up fee is added to the next bill the first time Twigigi accepts an email for a site visit, quote, or invoice on that inquiry. Later follow-ups for the same inquiry are included. Receiving an inquiry does not add that fee.
+      </p>
       <h2 className="mt-8 font-serif text-3xl">Buy Now bundles</h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
         A Buy Now bundle is the seller subscription for published Buy Now listings. Prices are CAD per month. C$59.99 is the highest monthly price. Buyer checkout stays with the seller and is not this subscription.

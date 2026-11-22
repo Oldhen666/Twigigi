@@ -18,7 +18,8 @@ import { Stars } from "@/components/stars";
 import { toggleLikeAction, toggleSaved } from "@/lib/actions";
 import { twigigiFileHeld } from "@/lib/copyright";
 import { getCurrentUser } from "@/lib/auth";
-import { findUserById, getProductById, isFavorite, isGuestLiked, isLiked, likeCount, listProductReviews, sellerReviewSummary, soldCount } from "@/lib/db";
+import { findUserById, getProductById, isFavorite, isGuestLiked, isLiked, likeCount, listProductReviews, readQuoteTwigSettings, sellerReviewSummary, soldCount } from "@/lib/db";
+import { publicBusinessName } from "@/lib/quote-followup";
 import { digitalPayMethods } from "@/lib/payments";
 import { readVisitor } from "@/lib/visitor";
 import { categoryHref, categoryLabel, resolveCategory } from "@/lib/categories";
@@ -65,6 +66,8 @@ export async function ProductView({
   const soldOut = (product.cta === "buy" || product.cta === "file") && product.quantityAvailable === 0;
   const category = categoryLabel(product.categoryKind, product.categoryGroup, product.category);
   const categoryLink = resolveCategory(product.categoryKind, product.categoryGroup, product.category, true);
+  const quoteProfile = product.cta === "quote" ? readQuoteTwigSettings(product.id) : null;
+  const businessName = quoteProfile ? publicBusinessName({ skipped: quoteProfile.profileSkipped, businessName: quoteProfile.businessName, displayName: product.displayName }) : "";
   const embed = videoEmbed(product.videoUrl);
   const image = product.images[0] ? `${appUrl()}${product.images[0]}` : undefined;
   const jsonLd = {
@@ -185,8 +188,21 @@ export async function ProductView({
           ) : (
             <>
               <p className="mt-2 font-serif text-3xl text-forest">
-                {product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}
+                {product.cta === "quote" && product.priceCents != null ? `Starting at ${formatMoney(product.priceCents, product.currency)}` : product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}
               </p>
+              {quoteProfile && !quoteProfile.profileSkipped && (quoteProfile.businessName || quoteProfile.businessBio || quoteProfile.businessLogo || quoteProfile.caseImages.length > 0) ? (
+                <section className="mt-4">
+                  <h2 className="font-serif text-2xl">{businessName}</h2>
+                  {quoteProfile.businessBio ? <p className="mt-2 text-sm leading-6">{quoteProfile.businessBio}</p> : null}
+                  {quoteProfile.caseImages.length > 0 ? (
+                    <div className="mt-3 flex gap-2">
+                      {quoteProfile.caseImages.map((src) => (
+                        <Image key={src} src={src} alt="" width={72} height={72} unoptimized={storedUpload(src)} className="h-[72px] w-[72px] rounded-xl object-cover" />
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
               {product.cta === "file" ? (
                 <p className="mt-2 text-sm text-muted">Pay the seller with PayPal or a card. The file is emailed as soon as the payment is confirmed.</p>
               ) : null}

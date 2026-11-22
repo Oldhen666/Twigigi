@@ -1,10 +1,13 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { markQuoteInvoicePaid, sendQuoteInvoice, sendSiteVisit } from "@/lib/actions";
 import { QuoteContact } from "@/components/quote-contact";
 import { SellerQuoteActions } from "@/components/seller-quote-actions";
 import { requireSeller } from "@/lib/auth";
-import { getInteractionBySource, getProductById, getQuote } from "@/lib/db";
+import { getInteractionBySource, getProductById, getQuote, quoteFollowupCovered, quoteFollowups, readQuoteTwigSettings } from "@/lib/db";
 import { formatDate, formatMoney, srcLabel } from "@/lib/format";
+import { FOLLOWUP_COVERED_NOTICE, FOLLOWUP_FEE_NOTICE } from "@/lib/quote-followup";
+import { buttonClass, ghostClass, inputClass } from "@/components/ui";
 
 const STATUS_LABEL = { new: "New", contacted: "Contacted", closed: "Closed" } as const;
 
@@ -26,6 +29,18 @@ async function QuoteScreen({
   const phone = quote.phone.trim();
   const contact = [quote.name, quote.email, phone].filter(Boolean).join("\n");
   const details = detailCards(quote.projectDetails);
+  const settings = readQuoteTwigSettings(product.id);
+  const tools = {
+    visit: settings?.visitEnabled ?? false,
+    offer: settings ? settings.offerEnabled : true,
+    invoice: settings?.invoiceEnabled ?? false,
+  };
+  const followups = quoteFollowups(quote.id);
+  const covered = quoteFollowupCovered(quote.id);
+  const offerState = followups.filter((item) => item.kind === "offer" && item.status !== "draft").at(-1);
+  const visitState = followups.filter((item) => item.kind === "visit" && item.status !== "draft").at(-1);
+  const invoiceState = followups.filter((item) => item.kind === "invoice" && item.status !== "draft").at(-1);
+  const acceptedOffer = [...followups].reverse().find((item) => item.kind === "offer" && item.status === "accepted");
   const currency = product.currency || "CAD";
   const offer = quote.offerSentAt && quote.offerKind
     ? { kind: quote.offerKind, cents: quote.offerCents, scope: quote.offerScope, note: quote.offerNote, timeline: quote.offerTimeline, validDays: quote.offerValidDays }
@@ -41,8 +56,17 @@ async function QuoteScreen({
       </div>
       <h1 className="mt-1 font-serif text-4xl">{quote.productTitle}</h1>
 
-      {notice === "sent" ? <p className="mt-4 rounded-2xl bg-forest/10 px-4 py-3 text-sm text-forest">Quote sent to the buyer.</p> : null}
-      {notice === "saved" ? <p className="mt-4 rounded-2xl bg-clay/10 px-4 py-3 text-sm">Quote saved. Email was not sent from this server.</p> : null}
+      {notice === "sent" ? <p className="mt-4 rounded-2xl bg-forest/10 px-4 py-3 text-sm text-forest">Sent. The customer email was accepted by the mail service.</p> : null}
+      {notice === "saved" ? <p className="mt-4 rounded-2xl bg-clay/10 px-4 py-3 text-sm">Saved. The email was not accepted, so no follow-up fee was added.</p> : null}
+      {notice === "draft" ? <p className="mt-4 rounded-2xl bg-paper-deep px-4 py-3 text-sm">Draft saved. Nothing was sent and no fee was added.</p> : null}
+      {notice === "paid" ? <p className="mt-4 rounded-2xl bg-forest/10 px-4 py-3 text-sm text-forest">Invoice marked paid.</p> : null}
+      <p className="mt-4 text-sm leading-6">
+        Inquiry received.
+        {visitState?.status === "confirmed" ? " Site visit confirmed." : visitState ? " Site visit sent." : ""}
+        {offerState?.status === "accepted" ? " Quote accepted." : offerState?.status === "sent" ? " Quote sent." : ""}
+        {invoiceState?.status === "sent" ? " Invoice sent." : ""}
+        {invoiceState?.status === "paid" ? " Invoice paid." : ""}
+      </p>
 
       <section className="mt-4 rounded-3xl border border-line bg-card p-5">
         <div className="flex items-start justify-between gap-3">
@@ -89,7 +113,49 @@ async function QuoteScreen({
           </div>
         ) : null}
 
-        <SellerQuoteActions quoteId={quote.id} status={quote.status} currency={currency} offer={offer} />
+        <SellerQuoteActions quoteId={quote.id} status={quote.status} currency={currency} offer={offer} offerEnabled={tools.offer} covered={covered} />
+        {tools.visit ? (
+          <form action={sendSiteVisit} className="mt-4 space-y-3 rounded-2xl border border-line p-4">
+            <h3 className="text-sm font-medium">Schedule a Site Visit</h3>
+            <p className="text-sm leading-6">{covered ? FOLLOWUP_COVERED_NOTICE : FOLLOWUP_FEE_NOTICE}</p>
+            <input type="hidden" name="id" value={quote.id} />
+            <input name="visitDate" type="date" required className={inputClass} />
+            <input name="visitTime" type="time" required className={inputClass} />
+            <input name="timezone" placeholder="Time zone, such as America/Edmonton" className={inputClass} />
+            <textarea name="note" rows={2} placeholder="Note, optional" className={`${inputClass} h-auto py-3`} />
+            <button name="intent" value="draft" className={`${ghostClass} w-full`}>Save visit draft</button>
+            <button name="intent" value="send" className={`${buttonClass} w-full`}>Send site visit</button>
+          </form>
+        ) : null}
+        {tools.invoice ? (
+          <form action={sendQuoteInvoice} className="mt-4 space-y-3 rounded-2xl border border-line p-4">
+            <h3 className="text-sm font-medium">Send an Invoice</h3>
+            <p className="text-sm leading-6">{covered ? FOLLOWUP_COVERED_NOTICE : FOLLOWUP_FEE_NOTICE}</p>
+            <input type="hidden" name="id" value={quote.id} />
+            <input type="hidden" name="currency" value={acceptedOffer ? String(acceptedOffer.payload.currency || currency) : currency} />
+            <input name="amount" inputMode="decimal" defaultValue={acceptedOffer ? (Number(acceptedOffer.payload.cents || 0) / 100).toFixed(2) : ""} placeholder="Amount" className={inputClass} />
+            <input name="dueOn" type="date" required className={inputClass} />
+            <textarea name="note" rows={3} placeholder="Payment instructions" className={`${inputClass} h-auto py-3`} />
+            <button name="intent" value="draft" className={`${ghostClass} w-full`}>Save invoice draft</button>
+            <button name="intent" value="send" className={`${buttonClass} w-full`}>Send invoice</button>
+          </form>
+        ) : null}
+        {invoiceState?.status === "sent" ? (
+          <form action={markQuoteInvoicePaid} className="mt-3">
+            <input type="hidden" name="quoteId" value={quote.id} />
+            <input type="hidden" name="id" value={invoiceState.id} />
+            <button className={`${ghostClass} w-full`}>Mark invoice paid</button>
+          </form>
+        ) : null}
+        {followups.length > 0 ? (
+          <ul className="mt-4 space-y-2 text-sm">
+            {followups.map((item) => (
+              <li key={item.id} className="rounded-2xl bg-white px-4 py-3">
+                {item.kind === "visit" ? "Site visit" : item.kind === "offer" ? "Quote" : "Invoice"} · {item.status}{item.sentAt ? ` · ${formatDate(item.sentAt)}` : ""}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </section>
     </main>
   );

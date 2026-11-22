@@ -286,7 +286,7 @@ export function readCta(value: string | undefined): Cta | null {
 export function ctaCopy(cta: Cta) {
   if (cta === "buy") return { label: "Buy now", href: "buy" };
   if (cta === "file") return { label: "Get the file", href: "buy" };
-  if (cta === "quote") return { label: "Get a quote", href: "quote" };
+  if (cta === "quote") return { label: "Request a Quote", href: "quote" };
   return { label: "Contact seller", href: "contact" };
 }
 
