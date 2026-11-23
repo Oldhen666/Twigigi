@@ -80,7 +80,7 @@ export default async function Page({
         </p>
       ) : null}
       {noticeText ? <p className="mt-3 text-sm leading-6 text-muted">{noticeText}</p> : null}
-      <p className="mt-3 text-sm leading-6 text-muted">Plans that cannot cover the published listings are left out. Extra copies are included only when that plan allows them. <Link href="/pricing" className="text-forest">View pricing</Link></p>
+      <p className="mt-3 text-sm leading-6 text-muted">Plans that cannot cover the published listings are left out. Extra copies are included only when that plan allows them. <Link href="/pricing?cta=file" className="text-forest">View pricing</Link></p>
       <DigitalPlanPicker choices={choices} salesCents={sales && sales.currency === "CAD" ? sales.cents : null} salesLabel={sales && sales.currency !== "CAD" ? "Confirmed file sales use more than one currency, so they are not combined. Enter one CAD amount to estimate." : salesLabel} />
     </main>
   );

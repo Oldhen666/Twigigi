@@ -104,7 +104,8 @@ export function SellerQuotes({ quotes }: { quotes: SellerQuoteRow[] }) {
           }} />
           <ul className="mt-3 space-y-3">
             {shown.map((quote) => (
-              <li key={quote.id} className="flex items-start gap-3 rounded-2xl border border-line bg-card p-4 text-sm">
+              <li key={quote.id} className="relative flex items-start gap-3 rounded-2xl border border-line bg-card p-4 text-sm">
+                {quote.status === "new" ? <QuoteMark /> : null}
                 <input
                   type="checkbox"
                   checked={selected.has(quote.id)}
@@ -151,6 +152,21 @@ function SelectVisible({
       />
       <span>{selectedCount === 0 ? "Select all" : selectedCount === 1 ? "1 selected" : `${selectedCount} selected`}</span>
     </label>
+  );
+}
+
+function QuoteMark() {
+  return (
+    <span className="group/mark absolute right-3 top-3">
+      <button type="button" className="grid h-11 w-11 cursor-help place-items-center" aria-label="How to clear this mark">
+        <span className="text-3xl font-bold leading-none text-danger">!</span>
+      </button>
+      <span className="absolute right-0 top-full z-20 hidden w-64 pt-2 group-hover/mark:block group-focus-within/mark:block">
+        <span className="block rounded-2xl border border-line bg-card px-3 py-2 text-left text-xs font-normal leading-5 text-ink shadow-sm">
+          Open this quote. Mark it as contacted, send a quote, or close the request. The mark goes away.
+        </span>
+      </span>
+    </span>
   );
 }
 

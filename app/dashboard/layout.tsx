@@ -1,7 +1,5 @@
 import { Suspense } from "react";
 import { requireSeller } from "@/lib/auth";
-import { listOrders } from "@/lib/db";
-import { sellerAttention } from "@/lib/order-flow";
 import { AccountNav } from "@/components/account-nav";
 import { BackButton } from "@/components/back-button";
 import { Logo } from "@/components/logo";
@@ -19,8 +17,7 @@ async function Header() {
 
 async function Sections() {
   const user = await requireSeller();
-  const attention = listOrders(user.id).filter((order) => sellerAttention(order)).length;
-  return <SellerNav attention={attention} profileHref={`/${user.publicId}`} />;
+  return <SellerNav profileHref={`/${user.publicId}`} />;
 }
 
 export default function Layout({ children }: { children: React.ReactNode }) {

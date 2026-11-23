@@ -26,10 +26,10 @@ test("pricing and the server use the same four CAD Buy Now bundles", () => {
   assert.deepEqual(
     BUY_PLANS.map((plan) => [plan.id, plan.name, plan.listings, plan.monthlyCents]),
     [
-      ["buy_now_10", "10 Listings", 10, 1299],
-      ["buy_now_20", "20 Listings", 20, 2299],
-      ["buy_now_50", "50 Listings", 50, 4499],
-      ["buy_now_unlimited", "Unlimited", null, 5999],
+      ["buy_now_10", "Sprout 10", 10, 1299],
+      ["buy_now_20", "Branch 20", 20, 2299],
+      ["buy_now_50", "Grove 50", 50, 4499],
+      ["buy_now_unlimited", "Canopy - Unlimited", null, 5999],
     ],
   );
 });

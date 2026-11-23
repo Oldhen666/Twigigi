@@ -13,10 +13,10 @@ export type BuyPlan = {
 };
 
 export const BUY_PLANS: readonly BuyPlan[] = [
-  { id: "buy_now_10", name: "10 Listings", listings: 10, monthlyCents: 1299 },
-  { id: "buy_now_20", name: "20 Listings", listings: 20, monthlyCents: 2299 },
-  { id: "buy_now_50", name: "50 Listings", listings: 50, monthlyCents: 4499 },
-  { id: "buy_now_unlimited", name: "Unlimited", listings: null, monthlyCents: 5999 },
+  { id: "buy_now_10", name: "Sprout 10", listings: 10, monthlyCents: 1299 },
+  { id: "buy_now_20", name: "Branch 20", listings: 20, monthlyCents: 2299 },
+  { id: "buy_now_50", name: "Grove 50", listings: 50, monthlyCents: 4499 },
+  { id: "buy_now_unlimited", name: "Canopy - Unlimited", listings: null, monthlyCents: 5999 },
 ];
 
 export type BuySubscription = {

@@ -6,6 +6,7 @@ import {
   DIGITAL_PLANS,
   planChange,
   platformOrderFeeCents,
+  compareDigitalCoverage,
   coveringDigitalQuotes,
   digitalMonthlyTotal,
   quoteDigitalPlan,
@@ -47,6 +48,19 @@ test("18 listings at C$1,500 chargeable sales price Creator x2 below Growth", ()
   assert.equal(digitalMonthlyTotal(creator!, 150_000), 5248);
   assert.equal(digitalMonthlyTotal(growth!, 150_000), 5999);
   assert.equal(digitalMonthlyTotal(growth!, 150_000) - digitalMonthlyTotal(creator!, 150_000), 751);
+});
+
+test("many listings and low sales follow the lower total, not the lowest order fee", () => {
+  const ranked = compareDigitalCoverage(40, 2_000);
+  const unlimited = ranked.find((quote) => quote.plan.id === "unlimited");
+  assert.equal(ranked[0]?.plan.id, "pro");
+  assert.equal(ranked[0]?.copies, 1);
+  assert.ok(unlimited);
+  assert.ok(ranked[0] && ranked[0].feeBps > unlimited.feeBps);
+  assert.ok(ranked[0].totalCents < unlimited.totalCents);
+  assert.equal(ranked[0].totalCents, 2639);
+  assert.equal(compareDigitalCoverage(18, 150_000)[0]?.plan.id, "creator");
+  assert.equal(compareDigitalCoverage(18, 150_000)[0]?.copies, 2);
 });
 
 test("stacked copies multiply listings and price once, and keep one order rate", () => {

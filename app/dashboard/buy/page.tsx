@@ -109,7 +109,7 @@ export default async function Page({
     : "";
   const perListing = !active && legacy.buyListingsWithListingBills > 0;
   const status = active
-    ? `${active.listingLimit == null ? "Unlimited bundle" : `${active.listingLimit}-listing bundle`} · ${active.listingLimit == null ? publishedLabel(published) : `${published} of ${active.listingLimit} published`} · ${platformFee(active.monthlyCents, "CAD")}/month`
+    ? `${active.plan.name}${active.extraSlots > 0 && active.listingLimit != null ? ` · ${active.listingLimit} listings` : ""} · ${active.listingLimit == null ? publishedLabel(published) : `${published} of ${active.listingLimit} published`} · ${platformFee(active.monthlyCents, "CAD")}/month`
     : perListing
       ? `Pay per listing · ${publishedLabel(published)}`
       : `No active bundle · ${publishedLabel(published)}`;
@@ -120,7 +120,7 @@ export default async function Page({
     const dueCents = change.ok && change.kind === "bill" ? change.chargeCents : 0;
     return {
       id: plan.id,
-      label: plan.listings == null ? "Unlimited listings" : `${plan.listings} listings`,
+      label: plan.name,
       price: `${platformFee(plan.monthlyCents, "CAD")}/month`,
       due: platformFee(dueCents, "CAD"),
       renewal: `${platformFee(plan.monthlyCents, "CAD")}/month`,

@@ -199,7 +199,8 @@ function OrderList({
 function OrderRow({ order, checked, onToggle }: { order: SellerOrderRow; checked: boolean; onToggle: (id: string) => void }) {
   const label = order.publicRef || order.buyerName;
   return (
-    <li className="flex items-start gap-3 rounded-2xl border border-line bg-card p-4 text-sm">
+    <li className="relative flex items-start gap-3 rounded-2xl border border-line bg-card p-4 text-sm">
+      {order.attention ? <OrderMark attention={order.attention} /> : null}
       <input
         type="checkbox"
         checked={checked}
@@ -216,6 +217,33 @@ function OrderRow({ order, checked, onToggle }: { order: SellerOrderRow; checked
       </Link>
     </li>
   );
+}
+
+function OrderMark({ attention }: { attention: string }) {
+  return (
+    <span className="group/mark absolute right-3 top-3">
+      <button type="button" className="grid h-11 w-11 cursor-help place-items-center" aria-label="How to clear this mark">
+        <span className="text-3xl font-bold leading-none text-danger">!</span>
+      </button>
+      <span className="absolute right-0 top-full z-20 hidden w-64 pt-2 group-hover/mark:block group-focus-within/mark:block">
+        <span className="block rounded-2xl border border-line bg-card px-3 py-2 text-left text-xs font-normal leading-5 text-ink shadow-sm">
+          {orderMarkCopy(attention)}
+        </span>
+      </span>
+    </span>
+  );
+}
+
+function orderMarkCopy(attention: string) {
+  if (attention === "Review this order") return "Open this order and accept it, or decline it. The mark goes away.";
+  if (attention === "Confirm payment") return "Open this order and choose Payment received. The mark goes away.";
+  if (attention === "Confirm pickup time") return "Open this order and confirm the pickup time. The mark goes away.";
+  if (attention === "Mark ready for pickup") return "Open this order and mark it ready for pickup. The mark goes away.";
+  if (attention === "Ship this order") return "Open this order and choose Ship out. The mark goes away.";
+  if (attention === "Send the file") return "Open this order and send the file. The mark goes away.";
+  if (attention === "Confirm handover") return "Open this order and choose Confirm handover. The mark goes away.";
+  if (attention === "Confirm payment and handover") return "Open this order and choose Confirm payment & handover. The mark goes away.";
+  return `Open this order and finish “${attention}”. The mark goes away.`;
 }
 
 function matchesFilter(order: SellerOrderRow, filter: string) {

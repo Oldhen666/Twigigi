@@ -533,7 +533,7 @@ export function ProductForm({
   refreshRef.current = refreshHints;
 
   function showStep(next: 1 | 2 | 3 | 4) {
-    const leavingDetails = quote ? step === 2 && next > 2 : step === 1 && next > 1;
+    const leavingDetails = quote && step === 2 && next > 2;
     if (leavingDetails) {
       const errors = detailProblems();
       if (Object.keys(errors).length > 0) {

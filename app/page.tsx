@@ -27,6 +27,36 @@ const fallbacks = [
     seller: "Ava Chen",
   },
   {
+    href: "/ava/custom-t-shirt",
+    slug: "custom-t-shirt",
+    title: "Custom T-shirt",
+    location: "Edmonton, Alberta",
+    price: "$42.00",
+    cta: "Buy now",
+    image: "/seed/tee-1.jpg",
+    seller: "Ava Chen",
+  },
+  {
+    href: "/ava/office-desk",
+    slug: "office-desk",
+    title: "Office desk",
+    location: "Edmonton, Alberta",
+    price: "$180.00",
+    cta: "Buy now",
+    image: "/seed/desk-1.jpg",
+    seller: "Ava Chen",
+  },
+  {
+    href: "/ava/garden-bed-plan",
+    slug: "garden-bed-plan",
+    title: "Garden bed plan",
+    location: "Digital file",
+    price: "$12.00",
+    cta: "Get the file",
+    image: "/seed/consult-1.jpg",
+    seller: "Ava Chen",
+  },
+  {
     href: "/ava/landscape",
     slug: "landscape",
     title: "Landscape service",
@@ -87,12 +117,12 @@ function cardFromProduct(product: PublicProduct, seller: string, ratingAverage: 
     href,
     image: product.images[0] || "/seed/cedar-1.jpg",
     title: product.title,
-    location: product.location,
+    location: product.location || (product.cta === "file" ? "Digital file" : ""),
     price: product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request",
     seller,
     ratingAverage,
     ratingCount,
-    cta: product.cta === "buy" && product.buttonLabel ? product.buttonLabel : ctaCopy(product.cta).label,
+    cta: product.buttonLabel || ctaCopy(product.cta).label,
     linkLabel: `${appUrl().replace(/^https?:\/\//, "")}${href}`,
     shareHref: `${appUrl()}${href}`,
   };
@@ -115,31 +145,22 @@ async function HomeScreen() {
   const seller = ava ? await getPublicSeller(ava.publicId) : null;
   const ratingAverage = seller?.ratingAverage ?? null;
   const ratingCount = seller?.ratingCount ?? 0;
-  const live = (slug: string) => seller?.products.find((product) => product.slug === slug) ?? null;
-  const cedarProduct = live("cedar-planter");
-  const landscapeProduct = live("landscape") ?? live("garden-bench");
-  const cedar = await withQr(
-    cedarProduct
-      ? cardFromProduct(cedarProduct, seller?.displayName || "Ava Chen", ratingAverage, ratingCount)
-      : {
-          ...fallbacks[0],
+  const demos = (seller?.products ?? []).filter((product) => product.demo);
+  const ordered = [
+    ...fallbacks.map((item) => demos.find((product) => product.slug === item.slug) ?? item),
+    ...demos.filter((product) => !fallbacks.some((item) => item.slug === product.slug)),
+  ];
+  const slides = await Promise.all(ordered.map((item) => withQr(
+    "slug" in item && !("userId" in item)
+      ? {
+          ...item,
           ratingAverage,
           ratingCount,
-          linkLabel: `${appUrl().replace(/^https?:\/\//, "")}${fallbacks[0].href}`,
-          shareHref: `${appUrl()}${fallbacks[0].href}`,
-        },
-  );
-  const landscape = await withQr(
-    landscapeProduct
-      ? cardFromProduct(landscapeProduct, seller?.displayName || "Ava Chen", ratingAverage, ratingCount)
-      : {
-          ...fallbacks[1],
-          ratingAverage,
-          ratingCount,
-          linkLabel: `${appUrl().replace(/^https?:\/\//, "")}${fallbacks[1].href}`,
-          shareHref: `${appUrl()}${fallbacks[1].href}`,
-        },
-  );
+          linkLabel: `${appUrl().replace(/^https?:\/\//, "")}${item.href}`,
+          shareHref: `${appUrl()}${item.href}`,
+        }
+      : cardFromProduct(item, seller?.displayName || "Ava Chen", ratingAverage, ratingCount),
+  )));
 
   return (
     <>
@@ -177,7 +198,7 @@ async function HomeScreen() {
             </Link>
             <HomeTicker />
           </div>
-          <HomeDemo slides={[cedar, landscape]} />
+          <HomeDemo slides={slides} />
         </section>
 
         <section id="how" className="scroll-mt-36 border-t border-line/80">
@@ -205,18 +226,16 @@ async function HomeScreen() {
           <div className="grid items-stretch gap-4 md:grid-cols-3">
             <article className="flex h-full flex-col rounded-[28px] border border-line bg-card p-5">
               <p className="text-sm font-medium text-forest">Local shops & makers</p>
-              <h3 className="mt-2 font-serif text-2xl">Take orders for local pickup</h3>
-              <p className="mt-3 text-sm leading-6 text-muted">Share a product link by text or QR code. Customers can choose their options and select pickup if you offer it.</p>
-              <p className="mt-3 text-sm leading-6">A customer orders a custom cap and enters the name to embroider.</p>
+              <h3 className="mt-2 font-serif text-2xl">Take orders for pickup or shipping</h3>
+              <p className="mt-3 text-sm leading-6 text-muted">Share a product link so customers can choose options like size or colour, add personalization details, and select pickup or shipping based on what you offer.</p>
               <div className="mt-auto flex min-h-28 flex-col justify-end pt-5">
-                <Link href={createHref("buy", Boolean(user))} className={`${buttonClass} w-full`}>Create a product listing</Link>
+                <Link href={createHref("buy", Boolean(user))} className={`${buttonClass} w-full`}>Create a buy now twig</Link>
               </div>
             </article>
             <article className="flex h-full flex-col rounded-[28px] border border-line bg-moss/70 p-5">
-              <p className="text-sm font-medium text-forest">Instagram & TikTok sellers</p>
+              <p className="text-sm font-medium text-forest">Instagram & TikTok online sellers</p>
               <h3 className="mt-2 font-serif text-2xl">Give followers a direct way to buy</h3>
-              <p className="mt-3 text-sm leading-6 text-muted">Put a product link in your bio or send it in a DM. Sell a physical product or offer a digital download.</p>
-              <p className="mt-3 text-sm leading-6">Share an STL in your bio and let buyers download it once payment is confirmed.</p>
+              <p className="mt-3 text-sm leading-6 text-muted">Share a link in your bio or DMs. Followers can order products or get digital downloads, from handmade goods to templates and guides.</p>
               <div className="mt-auto flex min-h-28 flex-col justify-end gap-2 pt-5">
                 <Link href={createHref("buy", Boolean(user))} className={`${ghostClass} w-full`}>Sell a product</Link>
                 <Link href={createHref("file", Boolean(user))} className={`${ghostClass} w-full`}>Sell a digital file</Link>
@@ -224,17 +243,19 @@ async function HomeScreen() {
             </article>
             <article className="flex h-full flex-col rounded-[28px] border border-line bg-card p-5">
               <p className="text-sm font-medium text-forest">Local contractors & service businesses</p>
-              <h3 className="mt-2 font-serif text-2xl">Get the details you need to quote</h3>
-              <p className="mt-3 text-sm leading-6 text-muted">Share a service link. Ask for the job details you need, such as a postal code and the scope of work.</p>
-              <p className="mt-3 text-sm leading-6">A homeowner describes a two-car driveway so you can prepare a snow removal quote.</p>
+              <h3 className="mt-2 font-serif text-2xl">Customer get your quotation in one step</h3>
+              <p className="mt-3 text-sm leading-6 text-muted">Share a business profile link, gathering the info that you preset to give quotation.</p>
               <div className="mt-auto flex min-h-28 flex-col justify-end pt-5">
                 <Link href={createHref("quote", Boolean(user))} className={`${buttonClass} w-full`}>Create a quote listing</Link>
               </div>
             </article>
           </div>
-          <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="max-w-xl text-sm leading-6 text-muted">Start with one product or service. Share it with customers you already reach.</p>
-            <Link href="/pricing" className="inline-flex h-12 items-center text-sm font-medium text-forest">See seller pricing</Link>
+          <div className="mt-4 flex flex-col gap-4 rounded-[28px] border border-line bg-moss px-5 py-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium text-forest">Pricing &amp; Plans</p>
+              <p className="mt-1 text-sm leading-6 text-forest">Find the right plan for the way you sell.</p>
+            </div>
+            <Link href="/pricing" className="inline-flex h-12 w-full shrink-0 items-center justify-center rounded-full border border-forest px-5 text-base font-medium text-forest transition hover:bg-forest/5 md:w-auto">View pricing →</Link>
           </div>
         </section>
       </main>

@@ -153,6 +153,23 @@ export function digitalMonthlyTotal(quote: PlanQuote, salesCents: number) {
   return quote.monthlyCents + platformOrderFeeCents(salesCents, quote.feeBps);
 }
 
+export type DigitalCoverageQuote = PlanQuote & {
+  orderFeeCents: number;
+  totalCents: number;
+};
+
+export function compareDigitalCoverage(neededListings: number, salesCents: number): DigitalCoverageQuote[] {
+  if (!Number.isInteger(neededListings) || neededListings < 1) return [];
+  if (!Number.isInteger(salesCents) || salesCents < 0) return [];
+  return coveringDigitalQuotes(neededListings)
+    .map((quote) => ({
+      ...quote,
+      orderFeeCents: platformOrderFeeCents(salesCents, quote.feeBps),
+      totalCents: digitalMonthlyTotal(quote, salesCents),
+    }))
+    .sort((left, right) => left.totalCents - right.totalCents || left.monthlyCents - right.monthlyCents || left.feeBps - right.feeBps);
+}
+
 export function platformFeeCapability(path: PlatformFeePath) {
   if (path === "stripe_connect") {
     return {
