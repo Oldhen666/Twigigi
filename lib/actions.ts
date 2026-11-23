@@ -38,6 +38,7 @@ import {
   clearDeactivatedAt,
   adminDeleteProduct,
   deleteProduct,
+  deleteUserAccount,
   duplicateProduct,
   confirmListingRights,
   confirmDigitalRights,
@@ -2345,6 +2346,38 @@ async function recordMoneyAction(formData: FormData, run: (id: string) => { ok: 
   const result = run(id);
   const next = text(formData, "next") || `/admin/payments/${id}`;
   if (!result.ok) redirect(`${next}?error=${encodeURIComponent(result.error)}`);
+  redirect(next);
+}
+
+export async function adminRemoveUser(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = text(formData, "id");
+  const next = "/admin/users";
+  if (text(formData, "confirm") !== "yes") redirect(next);
+  if (id === admin.id) redirect(`${next}?error=${encodeURIComponent("You can't remove your own account.")}`);
+  const user = findUserById(id);
+  if (!user) redirect(`${next}?error=${encodeURIComponent("That account was not found.")}`);
+  if (user.role === "admin" && !listUsers().some((item) => item.role === "admin" && item.id !== user.id)) {
+    redirect(`${next}?error=${encodeURIComponent("Keep at least one admin.")}`);
+  }
+  let removed: { publicId: string; slugs: string[] } | null = null;
+  try {
+    removed = deleteUserAccount(user.id);
+  } catch (error) {
+    unstable_rethrow(error);
+    redirect(`${next}?error=${encodeURIComponent("That account was not removed.")}`);
+  }
+  if (!removed) redirect(`${next}?error=${encodeURIComponent("That account was not removed.")}`);
+  insertModerationEvent({
+    actorId: admin.id,
+    action: "remove_user",
+    targetKind: "user",
+    targetId: user.id,
+    note: user.publicId,
+    toStatus: "removed",
+  });
+  updateTag(sellerTag(removed.publicId.toLowerCase()));
+  for (const slug of removed.slugs) updateTag(productTag(removed.publicId.toLowerCase(), slug.toLowerCase()));
   redirect(next);
 }
 

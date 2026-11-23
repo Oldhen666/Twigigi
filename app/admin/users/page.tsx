@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AdminListTools } from "@/components/admin-list-tools";
+import { RemoveUserForm } from "@/components/remove-user-form";
 import { adminRenameUser, adminSuspendAccount, enterSellerAccount, setUserRole } from "@/lib/actions";
 import { emptyListMessage, includesText, pick, queryValue, sortRows } from "@/lib/admin-list";
 import { requireAdmin } from "@/lib/auth";
@@ -118,6 +119,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                         <button className="text-sm text-forest">{user.suspended ? "Unsuspend" : "Suspend"}</button>
                       </form>
                     )}
+                    {yours ? null : <RemoveUserForm id={user.id} name={user.displayName} />}
                   </td>
                 </tr>
               );

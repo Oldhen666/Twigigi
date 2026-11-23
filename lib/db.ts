@@ -1438,6 +1438,61 @@ export function setUserSuspended(id: string, suspended: boolean) {
   db.prepare("UPDATE users SET suspended = ? WHERE id = ?").run(suspended ? 1 : 0, id);
 }
 
+export function deleteUserAccount(userId: string) {
+  const person = one("SELECT id, public_id FROM users WHERE id = ?", userId);
+  if (!person) return null;
+  const slugs = many("SELECT slug FROM products WHERE user_id = ?", userId).map((row) => str(row.slug));
+  const owned = "SELECT id FROM products WHERE user_id = ?";
+  const has = (table: string) => Boolean(one("SELECT 1 AS n FROM sqlite_master WHERE type = 'table' AND name = ?", table));
+  const run = (table: string, sql: string, params: string[]) => {
+    if (!has(table)) return;
+    db.prepare(sql).run(...params);
+  };
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    run("quote_followups", `DELETE FROM quote_followups WHERE user_id = ? OR quote_id IN (SELECT id FROM quotes WHERE product_id IN (${owned}))`, [userId, userId]);
+    run("quote_followup_fees", `DELETE FROM quote_followup_fees WHERE user_id = ? OR product_id IN (${owned})`, [userId, userId]);
+    run("quote_twig_settings", `DELETE FROM quote_twig_settings WHERE product_id IN (${owned})`, [userId]);
+    run("favorites", `DELETE FROM favorites WHERE user_id = ? OR product_id IN (${owned})`, [userId, userId]);
+    run("likes", `DELETE FROM likes WHERE user_id = ? OR product_id IN (${owned})`, [userId, userId]);
+    run("guest_likes", `DELETE FROM guest_likes WHERE product_id IN (${owned})`, [userId]);
+    run("follows", "DELETE FROM follows WHERE follower_id = ? OR seller_id = ?", [userId, userId]);
+    run("reviews", `DELETE FROM reviews WHERE user_id = ? OR seller_id = ? OR product_id IN (${owned})`, [userId, userId, userId]);
+    run("page_views", `DELETE FROM page_views WHERE user_id = ? OR product_id IN (${owned})`, [userId, userId]);
+    run("payment_link_events", `DELETE FROM payment_link_events WHERE user_id = ? OR product_id IN (${owned})`, [userId, userId]);
+    run("messages", `DELETE FROM messages WHERE product_id IN (${owned})`, [userId]);
+    run("ledger_entries", "UPDATE ledger_entries SET buyer_id = NULL WHERE buyer_id = ? AND seller_id != ?", [userId, userId]);
+    run("ledger_entries", `DELETE FROM ledger_entries WHERE seller_id = ? OR order_id IN (SELECT id FROM orders WHERE seller_id = ? OR product_id IN (${owned}))`, [userId, userId, userId]);
+    run("interactions", "UPDATE interactions SET buyer_id = NULL WHERE buyer_id = ? AND seller_id != ?", [userId, userId]);
+    run("interactions", `DELETE FROM interactions WHERE seller_id = ? OR product_id IN (${owned})`, [userId, userId]);
+    run("orders", "UPDATE orders SET buyer_id = NULL WHERE buyer_id = ? AND seller_id != ?", [userId, userId]);
+    run("orders", `DELETE FROM orders WHERE seller_id = ? OR product_id IN (${owned})`, [userId, userId]);
+    run("quotes", `DELETE FROM quotes WHERE product_id IN (${owned})`, [userId]);
+    run("twig_bills", `DELETE FROM twig_bills WHERE user_id = ? OR product_id IN (${owned})`, [userId, userId]);
+    run("seller_notices", "DELETE FROM seller_notices WHERE user_id = ?", [userId]);
+    run("copyright_appeals", "DELETE FROM copyright_appeals WHERE user_id = ?", [userId]);
+    run("legal_acceptances", "DELETE FROM legal_acceptances WHERE user_id = ?", [userId]);
+    run("password_resets", "DELETE FROM password_resets WHERE user_id = ?", [userId]);
+    run("billing_notices", "DELETE FROM billing_notices WHERE user_id = ?", [userId]);
+    run("fee_collections", "DELETE FROM fee_collections WHERE user_id = ?", [userId]);
+    run("provider_payments", "DELETE FROM provider_payments WHERE user_id = ?", [userId]);
+    run("buy_subscriptions", "DELETE FROM buy_subscriptions WHERE user_id = ?", [userId]);
+    run("digital_subscriptions", "DELETE FROM digital_subscriptions WHERE user_id = ?", [userId]);
+    run("content_reports", `DELETE FROM content_reports WHERE product_id IN (${owned})`, [userId]);
+    run("content_reports", "UPDATE content_reports SET reporter_user_id = NULL WHERE reporter_user_id = ?", [userId]);
+    run("content_reports", "UPDATE content_reports SET owner_user_id = NULL WHERE owner_user_id = ?", [userId]);
+    db.prepare("UPDATE products SET rights_user_id = '' WHERE rights_user_id = ? AND user_id != ?").run(userId, userId);
+    db.prepare("DELETE FROM products WHERE user_id = ?").run(userId);
+    const removed = db.prepare("DELETE FROM users WHERE id = ?").run(userId);
+    if (removed.changes < 1) throw new Error("account was not removed");
+    db.exec("COMMIT");
+    return { publicId: str(person.public_id), slugs };
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export function setProductModeration(id: string, status: "" | "restricted") {
   db.prepare("UPDATE products SET moderation_status = ?, updated_at = ? WHERE id = ?").run(status, new Date().toISOString(), id);
 }
