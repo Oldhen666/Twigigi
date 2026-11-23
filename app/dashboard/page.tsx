@@ -138,7 +138,7 @@ async function DashboardBody({
         <>
           <nav className="mt-8 flex gap-4 border-b border-line text-sm">
             {(selected.id === "quote"
-              ? [["quotes", "Quotes", quoteAttention], ["twigs", "Twigs", 0]]
+              ? [["quotes", "Quotes", quoteAttention], ["twigs", "Twigs", 0]] as const
               : [["orders", "Orders", attention], ["twigs", "Twigs", 0]] as const).map(([id, label, count]) => (
               <Link
                 key={id}
