@@ -260,14 +260,24 @@ async function startSession(userId: string): Promise<string | null> {
   }
 }
 
-async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
+function readSignup(formData: FormData) {
   const parsed = signupSchema.safeParse({
     displayName: text(formData, "displayName"),
     username: text(formData, "username"),
     email: text(formData, "email"),
     password: text(formData, "password"),
   });
-  if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
+  const errors = parsed.success ? {} : fieldErrors(parsed.error);
+  if (text(formData, "password") !== text(formData, "passwordConfirm")) {
+    errors.passwordConfirm = "Those passwords do not match.";
+  }
+  if (!parsed.success || errors.passwordConfirm) return { fieldErrors: errors };
+  return { data: parsed.data };
+}
+
+async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
+  const parsed = readSignup(formData);
+  if (!parsed.data) return { fieldErrors: parsed.fieldErrors };
   if (RESERVED_USERNAMES.has(parsed.data.username)) {
     return { fieldErrors: { username: "That username is reserved." } };
   }
@@ -302,13 +312,8 @@ async function createSellerAccount(formData: FormData): Promise<OpenedAccount> {
 }
 
 async function createAccount(formData: FormData): Promise<OpenedAccount> {
-  const parsed = signupSchema.safeParse({
-    displayName: text(formData, "displayName"),
-    username: text(formData, "username"),
-    email: text(formData, "email"),
-    password: text(formData, "password"),
-  });
-  if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
+  const parsed = readSignup(formData);
+  if (!parsed.data) return { fieldErrors: parsed.fieldErrors };
   if (RESERVED_USERNAMES.has(parsed.data.username) || isPrivateUsername(parsed.data.username)) {
     return { fieldErrors: { username: "That username is reserved." } };
   }

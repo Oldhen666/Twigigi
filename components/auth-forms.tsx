@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
 import { signIn, signUp } from "@/lib/actions";
 import type { FormState } from "@/lib/types";
+import { PasswordInput } from "@/components/password-input";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 
 function useContinue(next?: string) {
@@ -112,8 +113,13 @@ export function SignupForm({ cta, email = "", nextPath = "" }: { cta?: string; e
       </label>
       <label className="block">
         <span className={labelClass}>Password</span>
-        <input name="password" type="password" autoComplete="new-password" className={inputClass} />
+        <PasswordInput name="password" autoComplete="new-password" />
         <ErrorText message={state.fieldErrors?.password} />
+      </label>
+      <label className="block">
+        <span className={labelClass}>Confirm password</span>
+        <PasswordInput name="passwordConfirm" autoComplete="new-password" />
+        <ErrorText message={state.fieldErrors?.passwordConfirm} />
       </label>
       <p className="text-sm leading-6 text-muted">
         By creating an account, you agree to Twigigi&apos;s <Link href="/legal/terms" className="text-forest">Terms of Service</Link> and <Link href="/legal/privacy" className="text-forest">Privacy Policy</Link>.

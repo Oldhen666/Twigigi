@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { PasswordInput } from "@/components/password-input";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import type { FormState } from "@/lib/types";
 
-const ACCOUNT_INPUTS = ["displayName", "username", "email", "password"] as const;
+const ACCOUNT_INPUTS = ["displayName", "username", "email", "password", "passwordConfirm"] as const;
 
 export function PublishAccount({
   open,
@@ -27,6 +28,7 @@ export function PublishAccount({
     username: "",
     email: "",
     password: "",
+    passwordConfirm: "",
   });
 
   useEffect(() => {
@@ -80,8 +82,17 @@ export function PublishAccount({
             <input name="email" type="email" autoComplete="email" defaultValue={values.current.email} onInput={remember} className={inputClass} />
           </Field>
           <Field label="Password" error={accountError?.password}>
-            <input name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} defaultValue={values.current.password} onInput={remember} className={inputClass} />
+            {mode === "register" ? (
+              <PasswordInput name="password" autoComplete="new-password" defaultValue={values.current.password} onInput={remember} />
+            ) : (
+              <input name="password" type="password" autoComplete="current-password" defaultValue={values.current.password} onInput={remember} className={inputClass} />
+            )}
           </Field>
+          {mode === "register" ? (
+            <Field label="Confirm password" error={accountError?.passwordConfirm}>
+              <PasswordInput name="passwordConfirm" autoComplete="new-password" defaultValue={values.current.passwordConfirm} onInput={remember} />
+            </Field>
+          ) : null}
         </div>
         {mode === "login" ? null : (
           <p className="mt-4 text-sm leading-6 text-muted">
