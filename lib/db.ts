@@ -4584,8 +4584,8 @@ function seedIfEmpty() {
     const now = "2026-10-01T15:00:00.000Z";
     const passwordHash = bcrypt.hashSync("planter-demo", 10);
     db.prepare(
-      "INSERT INTO users (id, email, password_hash, username, display_name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run("usr_ava", "ava@twigigi.demo", passwordHash, "ava", "Ava Chen", now);
+      "INSERT INTO users (id, email, password_hash, username, public_id, display_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run("usr_ava", "ava@twigigi.demo", passwordHash, "ava", allocatePublicId(), "Ava Chen", now);
 
     const insert = db.prepare(
       `INSERT INTO products (
@@ -4784,12 +4784,12 @@ function ensureDemoReviews() {
     ["usr_demo_priya", "priya.shah@twigigi.demo", "priya-shah", "Priya Shah", "2026-09-10T15:00:00.000Z"],
   ] as const;
   const insertUser = db.prepare(
-    `INSERT INTO users (id, email, password_hash, username, display_name, role, created_at)
-     SELECT ?, ?, ?, ?, ?, 'user', ?
+    `INSERT INTO users (id, email, password_hash, username, public_id, display_name, role, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, 'user', ?
      WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = ? OR lower(email) = lower(?) OR lower(username) = lower(?))`,
   );
   for (const [id, email, username, displayName, createdAt] of people) {
-    insertUser.run(id, email, passwordHash, username, displayName, createdAt, id, email, username);
+    insertUser.run(id, email, passwordHash, username, allocatePublicId(), displayName, createdAt, id, email, username);
   }
   const insertInteraction = db.prepare(
     `INSERT INTO interactions (
