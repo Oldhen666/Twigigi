@@ -1,7 +1,7 @@
 import Link from "next/link";
 import QRCode from "qrcode";
 import { Suspense } from "react";
-import { BuyerMenu } from "@/components/buyer-menu";
+import { accountLinkClass } from "@/components/account-nav";
 import { HomeDemo, type HomeSlide } from "@/components/home-demo";
 import { HomeTicker } from "@/components/home-ticker";
 import { Logo } from "@/components/logo";
@@ -171,8 +171,8 @@ async function HomeScreen() {
           <a href="#how" className="text-ink hover:text-forest">How it works</a>
           {user ? (
             <>
-              <Link href="/dashboard" className="text-ink hover:text-forest">Selling</Link>
-              <BuyerMenu active={false} />
+              <Link href="/dashboard" className={accountLinkClass(false)}>Selling</Link>
+              <Link href="/orders" className={accountLinkClass(false)}>Buying</Link>
               {user.role === "admin" ? <Link href="/admin/users" className="text-ink hover:text-forest">Admin</Link> : null}
             </>
           ) : (
