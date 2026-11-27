@@ -200,9 +200,10 @@ import { COPYRIGHT_POLICY_VERSION, IP_POLICY_VERSION, LISTING_REPORT_REASONS, PR
 import { digitalContentVersion, digitalRightsDue, enforcementLabel, enforcementNeedsConfirm, enforcementNotice, sellerMayPublish, twigigiFileHeld, type EnforcementAction, ENFORCEMENT_ACTIONS } from "@/lib/copyright";
 import { sendOrderEmail, sendResetEmail } from "@/lib/mail";
 import { ensureVisitor } from "@/lib/visitor";
-import { isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid } from "@/lib/billing";
+import { isBillingMethod, listingFeeCents, listingFeeCurrency, listingStillPaid, saleCurrency } from "@/lib/billing";
 import { BILLING_CONSENT_VERSION, cardCanRenew } from "@/lib/billing-auth";
 import { normalizeQuoteForm } from "@/lib/quote-form";
+import { quotePriceFromForm } from "@/lib/quote-price";
 import { cancelFeeIntent, createBillingSetupSession, createDigitalStripeCheckout, createStripeConnectLink, createStripePayoutLink, getStripe, publicStripeError, retrieveFeeIntent } from "@/lib/stripe";
 import { DIGITAL_FILE_CATEGORY, categoryProblem, resolveCategory } from "@/lib/categories";
 import { readBuyOffer, resolveSelection } from "@/lib/variants";
@@ -588,7 +589,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const cta: Cta = ctaValue === "buy" || ctaValue === "contact" || ctaValue === "file" ? ctaValue : "quote";
   const connectStripe = text(formData, "connectStripe") === "1" && cta === "file";
   const priced = cta === "buy" || cta === "file";
-  const price = parseMoney(text(formData, "price"));
+  const price = cta === "quote" ? null : parseMoney(text(formData, "price"));
+  const quotePricing = cta === "quote" ? quotePriceFromForm(formData, saleCurrency({ cta, location }), intent !== "draft") : null;
   const deliveryRadius = parseWhole(text(formData, "deliveryRadiusKm"));
   const deliveryFee = parseMoney(text(formData, "deliveryFee"));
   const shippingFee = parseMoney(text(formData, "shippingFee"));
@@ -620,6 +622,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
         : `Add ${remaining} more character${remaining === 1 ? "" : "s"} (at least 10).`;
   }
   if (price === "invalid") errors.price = "Enter a price like 128 or 128.50.";
+  if (quotePricing) Object.assign(errors, quotePricing.errors);
   if (deliveryRadius === "invalid") errors.deliveryRadiusKm = "Enter a radius in kilometres.";
   if (deliveryFee === "invalid") errors.deliveryFee = "Enter a delivery fee like 18 or 0.";
   if (shippingFee === "invalid") errors.shippingFee = "Enter a shipping fee like 20 or leave it blank.";
@@ -874,7 +877,11 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     categoryGroup: chosenCategory?.groupId ?? "",
     category: chosenCategory?.itemId ?? "",
     description: savedDescription,
-    priceCents: typeof savedPrice === "number" ? savedPrice : null,
+    priceCents: quotePricing ? quotePricing.price.amountCents : typeof savedPrice === "number" ? savedPrice : null,
+    quotePriceMode: quotePricing?.price.mode ?? "",
+    quotePriceMaxCents: quotePricing?.price.mode === "range" ? quotePricing.price.maxCents : null,
+    quotePriceUnit: quotePricing && quotePricing.price.mode !== "custom" ? quotePricing.price.unit : "",
+    quotePriceUnitCustom: quotePricing?.price.unitName ?? "",
     location: cta === "file" ? "" : location,
     videoUrl,
     pickupEnabled,

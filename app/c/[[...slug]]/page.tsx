@@ -8,7 +8,8 @@ import { Logo } from "@/components/logo";
 import { categoryHref, categoryLabel, groupsFor, isCategoryKind, listingTypes, parseCategoryPath, resolveCategory } from "@/lib/categories";
 import { filterLiveTwigs } from "@/lib/catalog";
 import { listPublishedMatching } from "@/lib/db";
-import { ctaCopy, formatMoney } from "@/lib/format";
+import { ctaCopy } from "@/lib/format";
+import { listingPrice } from "@/lib/quote-price";
 import { storedUpload } from "@/lib/uploads";
 
 function first(value: string | string[] | undefined) {
@@ -153,7 +154,7 @@ export default async function Page({
                     <p className="mt-1 text-sm text-forest">{categoryLabel(product.categoryKind, product.categoryGroup, product.category)}</p>
                     <p className="mt-1 text-sm text-muted">{product.location}</p>
                     <p className="mt-2 font-serif text-xl text-forest">
-                      {product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}
+                      {listingPrice(product)}
                     </p>
                     <p className="mt-2 text-sm text-forest">{ctaCopy(product.cta).label}</p>
                   </div>

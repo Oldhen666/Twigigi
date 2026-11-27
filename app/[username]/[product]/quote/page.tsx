@@ -6,7 +6,7 @@ import { getPublicProduct, listedParams, requireLiveTwig } from "@/lib/catalog";
 import { sellerPath } from "@/lib/seller-route";
 import { CheckoutForm } from "@/components/checkout-form";
 import { ProductFallback, Stage } from "@/components/stage";
-import { formatMoney } from "@/lib/format";
+import { listingPrice } from "@/lib/quote-price";
 
 export function generateStaticParams() {
   return listedParams((cta) => cta === "quote");
@@ -31,9 +31,7 @@ async function QuoteDetails({ params }: { params: Promise<{ username: string; pr
           ← {product.title}
         </Link>
         <h1 className="mt-3 font-serif text-4xl">Get a quote</h1>
-        <p className="mt-2 text-forest">
-          {product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Tell the seller what you need."}
-        </p>
+        <p className="mt-2 text-forest">{listingPrice(product)}</p>
         {product.brand ? (
           <>
             <p className="mt-4 text-xs font-medium uppercase tracking-[0.14em] text-muted">Service/product provider</p>

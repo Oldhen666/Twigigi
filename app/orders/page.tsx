@@ -11,6 +11,7 @@ import { UsernameForm } from "@/components/username-form";
 import { requireUser } from "@/lib/auth";
 import { claimBuyerOrders, getInteraction, listBrowseHistory, listBuyerInteractions, listBuyerOrders, listBuyerQuotes, listFavorites, listFollowing, listUserReviews, openInteraction } from "@/lib/db";
 import { formatDate, formatMoney, orderHeading } from "@/lib/format";
+import { listingPrice } from "@/lib/quote-price";
 import { fulfillmentDone, orderStage } from "@/lib/order-flow";
 import { storedUpload } from "@/lib/uploads";
 
@@ -140,7 +141,7 @@ async function Saved({ userId }: { userId: string }) {
         id: product.id,
         title: product.title,
         seller: product.displayName,
-        price: product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request",
+        price: listingPrice(product),
         priceCents: product.priceCents,
         href: `/${product.publicId}/${product.slug}`,
         image: product.images[0] ?? "",
@@ -173,7 +174,7 @@ async function History({ userId }: { userId: string }) {
                 <span className="min-w-0">
                   <span className="block font-serif text-2xl">{product.title}</span>
                   <span className="block text-sm text-muted">{product.displayName}</span>
-                  <span className="mt-1 block">{product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}</span>
+                  <span className="mt-1 block">{listingPrice(product)}</span>
                   <span className="block text-sm text-muted">{formatDate(seenAt)}</span>
                 </span>
               </Link>

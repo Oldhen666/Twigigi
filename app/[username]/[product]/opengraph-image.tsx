@@ -3,7 +3,7 @@ import path from "node:path";
 import { ImageResponse } from "next/og";
 import { getPublicProduct, requireLiveTwig, staticProductParams } from "@/lib/catalog";
 import { sellerPath } from "@/lib/seller-route";
-import { formatMoney } from "@/lib/format";
+import { listingPrice } from "@/lib/quote-price";
 import { resolveUpload } from "@/lib/uploads";
 
 export const size = { width: 1200, height: 630 };
@@ -35,7 +35,7 @@ export default async function Image({
   const publicId = sellerPath(username, `/${slug}`);
   const product = publicId ? await requireLiveTwig(await getPublicProduct(publicId, slug)) : null;
   const title = product?.title ?? "Twigigi";
-  const price = product?.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request";
+  const price = product ? listingPrice(product) : "Pricing on request";
   const location = product?.location ?? "";
   const photo = photoData(product?.images[0]);
 

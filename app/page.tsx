@@ -9,7 +9,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { getPublicSeller } from "@/lib/catalog";
 import { resolveSellerRoute } from "@/lib/db";
 import { buttonClass, ghostClass } from "@/components/ui";
-import { appUrl, ctaCopy, formatMoney } from "@/lib/format";
+import { appUrl, ctaCopy } from "@/lib/format";
+import { listingPrice } from "@/lib/quote-price";
 import type { PublicProduct } from "@/lib/types";
 
 const createClass =
@@ -118,7 +119,7 @@ function cardFromProduct(product: PublicProduct, seller: string, ratingAverage: 
     image: product.images[0] || "/seed/cedar-1.jpg",
     title: product.title,
     location: product.location || (product.cta === "file" ? "Digital file" : ""),
-    price: product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request",
+    price: listingPrice(product),
     seller,
     ratingAverage,
     ratingCount,

@@ -1,5 +1,6 @@
 import { RichDescription } from "@/components/rich-description";
 import { saleCurrency } from "@/lib/billing";
+import { quotePriceFromForm, quotePriceLabel } from "@/lib/quote-price";
 import { categoryLabel } from "@/lib/categories";
 import { ctaCopy, formatMoney, pickupDetail, videoEmbed } from "@/lib/format";
 import { normalizeQuoteForm } from "@/lib/quote-form";
@@ -31,15 +32,18 @@ export type PagePreviewDraft = {
   sellerName: string;
 };
 
-function previewPrice(cta: Cta, price: string, location: string) {
+function previewPrice(cta: Cta, formData: FormData) {
+  if (cta === "quote") {
+    const priced = quotePriceFromForm(formData, saleCurrency({ cta, location: text(formData, "location") }), false);
+    return quotePriceLabel(priced.price);
+  }
+  const price = text(formData, "price");
   if (!/^\d+(\.\d{1,2})?$/.test(price)) return cta === "buy" || cta === "file" ? "Add a price" : "Pricing on request";
-  const formatted = formatMoney(Math.round(Number(price) * 100), saleCurrency({ cta, location }));
-  return cta === "quote" ? `Starting at ${formatted}` : formatted;
+  return formatMoney(Math.round(Number(price) * 100), saleCurrency({ cta, location: text(formData, "location") }));
 }
 
 export function readPagePreview(formData: FormData, images: string[], cta: Cta, sellerName: string): PagePreviewDraft {
   const title = text(formData, "title") || "Untitled";
-  const price = text(formData, "price");
   const methods =
     cta === "file"
       ? [{ label: "Digital file", detail: "Link and password are emailed after payment." }]
@@ -67,7 +71,7 @@ export function readPagePreview(formData: FormData, images: string[], cta: Cta, 
     description: text(formData, "description"),
     location: text(formData, "location"),
     images,
-    priceLabel: previewPrice(cta, price, text(formData, "location")),
+    priceLabel: previewPrice(cta, formData),
     methods,
     ctaLabel: ctaCopy(cta).label,
     phone: text(formData, "contactPhone"),

@@ -7,7 +7,8 @@ import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
 import { TwigCheckbox } from "@/components/twig-selection";
 import { TwigMore } from "@/components/twig-more";
-import { addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatDate, formatMoney, isTwigLive, productUrl } from "@/lib/format";
+import { addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatDate, isTwigLive, productUrl } from "@/lib/format";
+import { listingPrice } from "@/lib/quote-price";
 import { storedUpload } from "@/lib/uploads";
 import type { Product } from "@/lib/types";
 
@@ -44,7 +45,7 @@ export function TwigCard({
   const deactivatedLabel = product.deactivatedAt ? shortDate(product.deactivatedAt) : "";
   const deleteAnchor = product.status === "deactivated" && product.deactivatedAt ? product.deactivatedAt : product.deactivatesAt || product.paidUntil || "";
   const deleteLabel = deleteAnchor ? formatBillingDate(addDays(deleteAnchor, DEACTIVATION_GRACE_DAYS), true) : "";
-  const price = product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request";
+  const price = listingPrice(product);
   const views = `${product.viewCount} ${product.viewCount === 1 ? "view" : "views"}`;
   const publishLabel = product.cta === "buy" || product.cta === "file" || skipPay || fee === 0 ? "Publish" : `Publish · ${listingLabel} / 30 days`;
   const paidThrough = product.status === "deactivated" && listingStillPaid(product);

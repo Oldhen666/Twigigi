@@ -26,6 +26,7 @@ import { parseQuoteForm } from "@/lib/quote-form";
 import { readPersonalization, readSnapshot } from "@/lib/personalization";
 import { DEACTIVATION_GRACE_DAYS, RESERVED_USERNAMES, addDays, isPrivateUsername, slugify } from "@/lib/format";
 import { saleCurrency } from "@/lib/billing";
+import { quotePriceMode, quotePriceUnit } from "@/lib/quote-price";
 import { splitLocation } from "@/lib/places";
 import { BILLING_CONSENT_VERSION } from "@/lib/billing-auth";
 import { firstCoverage } from "@/lib/billing-calendar";
@@ -399,6 +400,10 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "fee_exempt", "fee_exempt INTEGER NOT NULL DEFAULT 0");
   add("products", "demo", "demo INTEGER NOT NULL DEFAULT 0");
   add("products", "quote_fee_exempt", "quote_fee_exempt INTEGER NOT NULL DEFAULT 0");
+  add("products", "quote_price_mode", "quote_price_mode TEXT NOT NULL DEFAULT ''");
+  add("products", "quote_price_max_cents", "quote_price_max_cents INTEGER");
+  add("products", "quote_price_unit", "quote_price_unit TEXT NOT NULL DEFAULT ''");
+  add("products", "quote_price_unit_custom", "quote_price_unit_custom TEXT NOT NULL DEFAULT ''");
   add("users", "role", "role TEXT NOT NULL DEFAULT 'seller'");
   add("users", "billing_method", "billing_method TEXT NOT NULL DEFAULT ''");
   add("users", "payout_interac", "payout_interac TEXT NOT NULL DEFAULT ''");
@@ -1007,6 +1012,10 @@ function mapProduct(row: Row): Product {
     category: str(row.category),
     description: str(row.description),
     priceCents,
+    quotePriceMode: quotePriceMode(row.quote_price_mode),
+    quotePriceMaxCents: nullableNum(row.quote_price_max_cents),
+    quotePriceUnit: quotePriceUnit(row.quote_price_unit),
+    quotePriceUnitCustom: str(row.quote_price_unit_custom),
     currency: saleCurrency({ cta, location: str(row.location) }),
     location: str(row.location),
     videoUrl: row.video_url ? str(row.video_url) : null,
@@ -2067,6 +2076,23 @@ export function claimDraftKey(id: string, userId: string, draftKey: string, onCo
   }
 }
 
+function writeQuotePrice(id: string, userId: string | null, input: ProductInput) {
+  const quote = input.cta === "quote";
+  const mode = quote ? input.quotePriceMode : "";
+  const max = quote && input.quotePriceMode === "range" ? input.quotePriceMaxCents : null;
+  const unit = quote && input.quotePriceMode !== "custom" ? input.quotePriceUnit : "";
+  const custom = quote && input.quotePriceMode !== "custom" && input.quotePriceUnit === "custom" ? input.quotePriceUnitCustom : "";
+  if (userId) {
+    db.prepare(
+      `UPDATE products SET quote_price_mode = ?, quote_price_max_cents = ?, quote_price_unit = ?, quote_price_unit_custom = ? WHERE id = ? AND user_id = ?`,
+    ).run(mode, max, unit, custom, id, userId);
+    return;
+  }
+  db.prepare(
+    `UPDATE products SET quote_price_mode = ?, quote_price_max_cents = ?, quote_price_unit = ?, quote_price_unit_custom = ? WHERE id = ?`,
+  ).run(mode, max, unit, custom, id);
+}
+
 export function insertProduct(id: string, userId: string, input: ProductInput) {
   const now = new Date().toISOString();
   db.prepare(
@@ -2148,6 +2174,7 @@ export function insertProduct(id: string, userId: string, input: ProductInput) {
     id,
   );
   db.prepare("UPDATE products SET auto_renew = 0 WHERE id = ?").run(id);
+  writeQuotePrice(id, null, input);
 }
 
 export function updateProduct(id: string, userId: string, input: ProductInput) {
@@ -2235,6 +2262,7 @@ export function updateProduct(id: string, userId: string, input: ProductInput) {
       id,
       userId,
     );
+    writeQuotePrice(id, userId, input);
   }
   return result.changes > 0;
 }

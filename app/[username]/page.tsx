@@ -16,7 +16,8 @@ import { UsernameForm } from "@/components/username-form";
 import { filterLiveTwigs, getPublicSeller, staticProductParams } from "@/lib/catalog";
 import { sellerPath } from "@/lib/seller-route";
 import { findUserById, findUserByUsername, followerCount, isFollowing, sellerBusinessProfiles, sellerProducts } from "@/lib/db";
-import { addDays, ctaCopy, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive } from "@/lib/format";
+import { addDays, ctaCopy, DEACTIVATION_GRACE_DAYS, formatBillingDate, isTwigLive } from "@/lib/format";
+import { listingPrice } from "@/lib/quote-price";
 import { PROVINCES } from "@/lib/places";
 import type { Product } from "@/lib/types";
 
@@ -123,7 +124,7 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
             slug: product.slug,
             title: product.title,
             location: product.location,
-            priceLabel: product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request",
+            priceLabel: listingPrice(product),
             ctaLabel: ctaCopy(product.cta).label,
             ctaHref: ctaCopy(product.cta).href,
             image: product.images[0] ?? "",

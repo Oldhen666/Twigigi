@@ -14,6 +14,7 @@ import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/component
 import { PhotoFrame } from "@/components/photo-frame";
 import { PublishAccount } from "@/components/publish-account";
 import { QuoteFormFields } from "@/components/quote-form-fields";
+import { QuotePriceFields } from "@/components/quote-price-fields";
 import { DescriptionEditor } from "@/components/description-editor";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { categoryProblem } from "@/lib/categories";
@@ -198,7 +199,7 @@ export function ProductForm({
     const details = ["title", "description", "videoUrl", "images", "category", "fileLinks", "digitalRights"].some((key) => errors[key]);
     if (quote) {
       if (["businessName", "businessBio", "businessLogo", "caseImages"].some((key) => errors[key])) setStep(1);
-      else if (details || ["location", "fulfillment", "contactEmail", "contactPhone", "shippingNote", "sellerContact"].some((key) => errors[key])) setStep(2);
+      else if (details || ["location", "fulfillment", "contactEmail", "contactPhone", "shippingNote", "sellerContact", "quotePriceAmount", "quotePriceMin", "quotePriceMax", "quotePriceUnitName"].some((key) => errors[key])) setStep(2);
       else setStep(3);
       return;
     }
@@ -1406,10 +1407,8 @@ export function ProductForm({
             <ProvideChoice name="remoteEnabled" checked={boxChecked(draft, "remoteEnabled", product?.remoteEnabled)} title="Remote service" detail="Provided online or remotely" />
             <ProvideChoice name="atLocationEnabled" checked={boxChecked(draft, "atLocationEnabled", product?.atLocationEnabled)} title="At my location" detail="Customer comes to your business/location" />
           </Section>
-          <Section title="How customers reach you">
-            <Field label="Starting price" optional>
-              <input name="price" inputMode="decimal" defaultValue={product?.priceCents != null ? (product.priceCents / 100).toFixed(2) : ""} placeholder="Optional, such as 80" className={inputClass} />
-            </Field>
+          <Section title="Pricing & contact">
+            <QuotePriceFields product={product} errors={visibleErrors} />
             <Field label="Contact email" required error={visibleErrors.contactEmail}>
               <input name="contactEmail" type="email" defaultValue={emailValue(draft, product, defaultEmail)} placeholder="name@email.com (email)" className={inputClass} />
               <span className="mt-1 block text-xs text-muted">Twigigi will send the quote request to this email.</span>

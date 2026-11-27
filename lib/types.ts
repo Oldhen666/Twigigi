@@ -101,6 +101,10 @@ export type ProductInput = {
   category: string;
   description: string;
   priceCents: number | null;
+  quotePriceMode: "" | "custom" | "starting" | "range" | "set";
+  quotePriceMaxCents: number | null;
+  quotePriceUnit: "" | "project" | "hour" | "day" | "visit" | "sqft" | "item" | "custom";
+  quotePriceUnitCustom: string;
   location: string;
   videoUrl: string | null;
   pickupEnabled: boolean;

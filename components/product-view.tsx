@@ -23,10 +23,44 @@ import { digitalPayMethods } from "@/lib/payments";
 import { collectsPersonalization } from "@/lib/personalization";
 import { readVisitor } from "@/lib/visitor";
 import { categoryHref, categoryLabel, resolveCategory } from "@/lib/categories";
-import { appUrl, ctaCopy, formatDate, formatMoney, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
+import { appUrl, ctaCopy, formatDate, fulfillmentOptions, productUrl, videoEmbed, withSrc } from "@/lib/format";
+import { listingPrice, quotePriceFromProduct, quotePriceReady } from "@/lib/quote-price";
 import { sellerPath } from "@/lib/seller-route";
 import { storedUpload } from "@/lib/uploads";
 import { descriptionPlain } from "@/lib/rich-text";
+
+function listingOffer(product: {
+  cta: string;
+  priceCents: number | null;
+  currency: string;
+  location: string;
+  quotePriceMode: string;
+  quotePriceMaxCents: number | null;
+  quotePriceUnit: string;
+  quotePriceUnitCustom: string;
+}, canonical: string) {
+  if (product.cta === "quote") {
+    const price = quotePriceFromProduct(product);
+    if (!quotePriceReady(price) || price.mode === "custom" || price.mode === "range" || price.amountCents == null) return undefined;
+    return {
+      "@type": "Offer",
+      priceCurrency: price.currency,
+      price: (price.amountCents / 100).toFixed(2),
+      availability: "https://schema.org/InStock",
+      url: canonical,
+      areaServed: product.location,
+    };
+  }
+  if (product.priceCents == null) return undefined;
+  return {
+    "@type": "Offer",
+    priceCurrency: product.currency,
+    price: (product.priceCents / 100).toFixed(2),
+    availability: "https://schema.org/InStock",
+    url: canonical,
+    areaServed: product.cta === "file" ? undefined : product.location,
+  };
+}
 
 export async function ProductView({
   params,
@@ -80,16 +114,7 @@ export async function ProductView({
     image: product.images.map((item) => `${appUrl()}${item}`),
     url: canonical,
     brand: product.brand || product.displayName,
-    offers: product.priceCents
-      ? {
-          "@type": "Offer",
-          priceCurrency: product.currency,
-          price: (product.priceCents / 100).toFixed(2),
-          availability: "https://schema.org/InStock",
-          url: canonical,
-          areaServed: product.cta === "file" ? undefined : product.location,
-        }
-      : undefined,
+    offers: listingOffer(product, canonical),
   };
 
   return (
@@ -189,7 +214,7 @@ export async function ProductView({
           ) : (
             <>
               <p className="mt-2 font-serif text-3xl text-forest">
-                {product.cta === "quote" && product.priceCents != null ? `Starting at ${formatMoney(product.priceCents, product.currency)}` : product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}
+                {listingPrice(product)}
               </p>
               {product.cta === "file" ? (
                 <p className="mt-2 text-sm text-muted">Pay the seller with PayPal or a card. The file is emailed as soon as the payment is confirmed.</p>
