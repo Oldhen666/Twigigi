@@ -93,6 +93,7 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
             <p className="mt-1 text-sm text-muted">
               {owner && account ? <UsernameForm username={account.username} next={pagePath} /> : seller.username}
             </p>
+            {owner && account ? <p className="mt-1 text-sm text-muted">Logged in as {account.email}</p> : null}
           </div>
         </div>
         {owner ? <SellerBio bio={profile?.bio ?? ""} next={pagePath} /> : profile?.bio ? <p className="mt-3 text-sm leading-6 text-muted">{profile.bio}</p> : null}

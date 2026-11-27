@@ -571,7 +571,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const location = text(formData, "location").trim();
   const ctaValue = text(formData, "cta");
   const cta: Cta = ctaValue === "buy" || ctaValue === "contact" || ctaValue === "file" ? ctaValue : "quote";
-  const connectStripe = text(formData, "intent") === "stripe" && cta === "file";
+  const connectStripe = text(formData, "connectStripe") === "1" && cta === "file";
   const priced = cta === "buy" || cta === "file";
   const price = parseMoney(text(formData, "price"));
   const deliveryRadius = parseWhole(text(formData, "deliveryRadiusKm"));
@@ -772,7 +772,16 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     }
   }
 
+  if (connectStripe) {
+    for (const key of Object.keys(errors)) {
+      if (key !== "images") delete errors[key];
+    }
+  }
   if (Object.keys(errors).length > 0) return { fieldErrors: errors };
+
+  const savedTitle = connectStripe && (title.length < 2 || title.length > 80) ? existing?.title || "Untitled" : title;
+  const savedDescription = connectStripe && descriptionLength > 2000 ? existing?.description || "" : description;
+  const savedPrice = connectStripe && (typeof price !== "number" || price < 50) ? existing?.priceCents ?? null : price;
 
   let user = await getCurrentUser();
   let sessionStamp: FormState = {};
@@ -831,17 +840,17 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     return { error: error instanceof Error ? error.message : "Could not save the photos.", ...sessionStamp };
   }
 
-  const requestedSlug = slugify(text(formData, "slug") || title);
+  const requestedSlug = slugify(text(formData, "slug") || savedTitle);
   const slug = uniqueSlug(owner.id, requestedSlug, existing?.id);
   const input: ProductInput = {
     slug,
-    title,
+    title: savedTitle,
     brand: cta === "contact" ? "" : text(formData, "brand").trim().slice(0, 80),
     categoryKind: chosenCategory?.kind === "service" ? "service" : chosenCategory ? "product" : "",
     categoryGroup: chosenCategory?.groupId ?? "",
     category: chosenCategory?.itemId ?? "",
-    description,
-    priceCents: typeof price === "number" ? price : null,
+    description: savedDescription,
+    priceCents: typeof savedPrice === "number" ? savedPrice : null,
     location: cta === "file" ? "" : location,
     videoUrl,
     pickupEnabled,
@@ -968,6 +977,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   if (connectStripe) {
     const back = `/dashboard/products/${savedProductId}`;
     const country = text(formData, "stripeCountry") === "US" ? "US" : stripeConnectCountry(owner);
+    const kept = { productId: savedProductId, slug, ...sessionStamp };
     try {
       const linked = await createStripeConnectLink({
         accountId: owner.stripeAccountId,
@@ -975,13 +985,13 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
         country,
         returnPath: back,
       });
-      if (!linked) redirect(`${back}?stripe=setup&step=2`);
+      if (!linked) return { error: "Stripe is not set up on this server yet.", ...kept };
       if (linked.accountId) setStripeAccount(owner.id, linked.accountId, owner.stripeChargesEnabled);
-      if (!linked.url) redirect(`${back}?stripe=error&step=2&reason=${encodeURIComponent(linked.message || "Stripe could not open the connection page. Try again in a moment.")}`);
-      redirect(linked.url);
+      if (!linked.url) return { error: linked.message || "Stripe could not open the connection page. Try again in a moment.", ...kept };
+      return { stripeUrl: linked.url, ...kept };
     } catch (error) {
       unstable_rethrow(error);
-      redirect(`${back}?stripe=error&step=2`);
+      return { error: "Stripe could not open the connection page. Try again in a moment.", ...kept };
     }
   }
 

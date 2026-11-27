@@ -6,7 +6,7 @@ export async function AccountFrame({
   lede,
   children,
 }: {
-  title: string;
+  title?: string;
   lede?: string;
   children: React.ReactNode;
 }) {
@@ -17,7 +17,7 @@ export async function AccountFrame({
         <AccountNav current="buyer" />
       </header>
       <main className="page-frame pb-16">
-        <h1 className="font-serif text-4xl">{title}</h1>
+        {title ? <h1 className="font-serif text-4xl">{title}</h1> : null}
         {lede ? <p className="mt-2 text-sm text-muted">{lede}</p> : null}
         {children}
       </main>

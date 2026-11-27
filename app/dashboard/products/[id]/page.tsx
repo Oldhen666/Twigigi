@@ -3,7 +3,6 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { saveProduct } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
-import { DeleteTwig } from "@/components/delete-twig";
 import { ProductForm } from "@/components/product-form";
 import { findUserById, getProductById, readQuoteTwigSettings, setStripeAccount } from "@/lib/db";
 import { stripeConnectCountry } from "@/lib/payments";
@@ -45,7 +44,6 @@ async function Editor({
           <Link href="/admin/twigs" className="mt-2 block font-medium text-forest">Back to Admin Twigs</Link>
         </p>
       ) : null}
-      {query.saved === "1" ? <p className="mt-3 rounded-xl bg-moss px-3 py-2 text-sm text-forest">Draft saved.</p> : null}
       {query.blocked === "1" ? (
         <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">
           This draft has orders or leads, so it stays in your records.
@@ -56,21 +54,16 @@ async function Editor({
           A live Twig cannot be deleted. Deactivate it from the dashboard first.
         </p>
       ) : null}
-      <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} sellerBio={owner.bio} quoteSettings={quoteSettings} quoteOffer={quoteOffer} cta={product.cta} stripeReady={stripe.chargesEnabled} stripeStarted={Boolean(stripe.accountId) && !stripe.chargesEnabled} stripeCountry={stripeConnectCountry(owner)} stripeNotice={stripeNotice} stripeReason={stripeReason} paymentDefaults={{ interac: owner.payoutInterac, venmo: owner.payoutVenmo, paypalMe: owner.payoutPaypalMe, paypalEmail: owner.payoutPaypalEmail }} initialStep={initialStep} />
+      <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} sellerBio={owner.bio} quoteSettings={quoteSettings} quoteOffer={quoteOffer} cta={product.cta} stripeReady={stripe.chargesEnabled} stripeStarted={Boolean(stripe.accountId) && !stripe.chargesEnabled} stripeCountry={stripeConnectCountry(owner)} stripeNotice={stripeNotice} stripeReason={stripeReason} paymentDefaults={{ interac: owner.payoutInterac, venmo: owner.payoutVenmo, paypalMe: owner.payoutPaypalMe, paypalEmail: owner.payoutPaypalEmail }} initialStep={initialStep} announceSaved={query.saved === "1"} />
       {product.status === "published" ? (
         <p className="mt-6 text-sm text-muted">
           This Twig is live, so it cannot be deleted. Deactivate it from the dashboard. The page becomes inactive. Turn it back on before the next charge date and you will not be charged again. If you do not reactivate, it is permanently deleted 30 days after it deactivates.
         </p>
-      ) : (
-        <div className="mt-6">
-          {product.status === "deactivated" ? (
-            <p className="mb-2 text-sm text-muted">
-              This Twig is deactivated. You can delete it now, or reactivate it from the dashboard before it is permanently deleted.
-            </p>
-          ) : null}
-          <DeleteTwig productId={product.id} mode={product.status === "deactivated" ? "deactivated" : "draft"} />
-        </div>
-      )}
+      ) : product.status === "deactivated" ? (
+        <p className="mt-6 text-sm text-muted">
+          This Twig is deactivated. You can discard it now, or reactivate it from the dashboard before it is permanently deleted.
+        </p>
+      ) : null}
     </main>
   );
 }

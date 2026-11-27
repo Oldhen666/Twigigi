@@ -20,6 +20,7 @@ export type FormState = {
   signedIn?: boolean;
   displayName?: string;
   next?: string;
+  stripeUrl?: string;
 };
 
 export type User = {

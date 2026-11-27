@@ -6,6 +6,8 @@ import { BuyerFollowing } from "@/components/buyer-following";
 import { BuyerOrders } from "@/components/buyer-orders";
 import { BuyerSaved } from "@/components/buyer-saved";
 import { BuyerSection } from "@/components/buyer-section";
+import { DisplayNameForm } from "@/components/display-name-form";
+import { UsernameForm } from "@/components/username-form";
 import { requireUser } from "@/lib/auth";
 import { claimBuyerOrders, getInteraction, listBrowseHistory, listBuyerInteractions, listBuyerOrders, listBuyerQuotes, listFavorites, listFollowing, listUserReviews, openInteraction } from "@/lib/db";
 import { formatDate, formatMoney, orderHeading } from "@/lib/format";
@@ -21,13 +23,6 @@ const SECTIONS = [
 
 type BuyerSectionId = (typeof SECTIONS)[number][0];
 
-const TITLES: Record<BuyerSectionId, string> = {
-  orders: "My purchases & quote requests",
-  saved: "Saved",
-  following: "Following",
-  history: "Browse history",
-};
-
 function readSection(value: string | string[] | undefined): BuyerSectionId {
   const raw = Array.isArray(value) ? value[0] : value;
   if (raw === "saved" || raw === "following" || raw === "history") return raw;
@@ -36,9 +31,24 @@ function readSection(value: string | string[] | undefined): BuyerSectionId {
 
 async function OrdersScreen({ section }: { section: BuyerSectionId }) {
   const user = await requireUser();
+  const pagePath = section === "orders" ? "/orders" : `/orders?section=${section}`;
   return (
-    <AccountFrame title={TITLES[section]}>
-      <nav className="mt-8 flex gap-4 border-b border-line text-sm">
+    <AccountFrame>
+      <section className="rounded-3xl border border-line bg-card p-4 sm:p-5">
+        <div className="flex gap-4">
+          <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-moss text-forest" aria-hidden>
+            <PersonIcon />
+          </span>
+          <div className="min-w-0">
+            <DisplayNameForm name={user.displayName} next={pagePath} />
+            <p className="mt-1 text-sm text-muted">
+              <UsernameForm username={user.username} next={pagePath} />
+            </p>
+            <p className="mt-1 text-sm text-muted">Logged in as {user.email}</p>
+          </div>
+        </div>
+      </section>
+      <nav className="mt-6 flex gap-4 border-b border-line text-sm">
         {SECTIONS.map(([id, label]) => (
           <Link
             key={id}
@@ -181,6 +191,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     <Suspense fallback={<p className="p-8 text-muted">Loading…</p>}>
       <OrdersScreen section={section} />
     </Suspense>
+  );
+}
+
+function PersonIcon() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M5.5 19.2c1.2-3 3.5-4.4 6.5-4.4s5.3 1.4 6.5 4.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
   );
 }
 

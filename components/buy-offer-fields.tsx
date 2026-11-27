@@ -11,6 +11,19 @@ import { readPersonalization } from "@/lib/personalization";
 import { CA_PROVINCES, US_STATES, joinLocation, lookupCurrentPlace, lookupIpPlace, splitLocation } from "@/lib/places";
 import { isCashMethod, parsePaymentMethods, paymentsForCountry, paymentsForDigitalFile, paypalMeName, venmoProfileUrl, venmoUsernameFrom } from "@/lib/payments";
 
+let pendingStripePopup: Window | null = null;
+
+export function holdStripePopup(popup: Window | null) {
+  if (pendingStripePopup && pendingStripePopup !== popup) pendingStripePopup.close();
+  pendingStripePopup = popup;
+}
+
+export function consumeStripePopup() {
+  const popup = pendingStripePopup;
+  pendingStripePopup = null;
+  return popup;
+}
+
 export type PaymentDefaults = {
   interac: string;
   venmo: string;
@@ -662,7 +675,14 @@ function PaymentChoices({
                   submitter.dataset.stripeConnect = "1";
                   form.append(submitter);
                 }
+                const marker = document.createElement("input");
+                marker.type = "hidden";
+                marker.name = "connectStripe";
+                marker.value = "1";
+                form.append(marker);
+                holdStripePopup(window.open("about:blank", "_blank"));
                 form.requestSubmit(submitter);
+                marker.remove();
               }}
             >
               {stripeStarted ? "Finish Stripe setup" : "Connect Stripe"}
@@ -673,7 +693,7 @@ function PaymentChoices({
           <details className="mt-3">
             <summary className="cursor-pointer text-sm font-medium text-forest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">How do I set up card payments?</summary>
             <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-muted">
-              <li>Select “Connect Stripe” to open the setup on Stripe.</li>
+              <li>Select “Connect Stripe” to open the setup in a new page.</li>
               <li>Follow Stripe’s prompts to provide the requested account details and add a bank account for payouts.</li>
               <li>Return to Twigigi and check your status. Once card payments are enabled, buyers can choose card at checkout.</li>
             </ol>

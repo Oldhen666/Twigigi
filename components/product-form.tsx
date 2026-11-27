@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { useActionState } from "react";
+import { createPortal } from "react-dom";
+import { removeProduct } from "@/lib/actions";
 import { captureDraft, readDraftImage, type DraftImage, type NewPageDraft } from "@/lib/new-page-draft";
 import type { Cta, FormState, Product, QuoteForm } from "@/lib/types";
-import { BuyOfferFields, type PaymentDefaults } from "@/components/buy-offer-fields";
+import { BuyOfferFields, consumeStripePopup, type PaymentDefaults } from "@/components/buy-offer-fields";
 import { CategoryFields } from "@/components/category-fields";
 import { FileLinkFields } from "@/components/file-link-fields";
 import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/components/page-preview";
@@ -75,6 +77,7 @@ export function ProductForm({
   sellerBio = "",
   quoteSettings = null,
   quoteOffer = null,
+  announceSaved = false,
 }: {
   action: Action;
   product?: Product;
@@ -101,6 +104,7 @@ export function ProductForm({
     invoiceEnabled: boolean;
   } | null;
   quoteOffer?: { cents: number; currency: string; anchor: 15 | 28 } | null;
+  announceSaved?: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const refreshRef = useRef<(form: HTMLFormElement) => void>(() => {});
@@ -114,6 +118,8 @@ export function ProductForm({
   });
   const seenSave = useRef(0);
   const skipSave = useRef(false);
+  const openedStripe = useRef("");
+  const [stripeFallback, setStripeFallback] = useState("");
   const [state, formAction, pending] = useActionState(async (prev: FormState, formData: FormData) => {
     for (const file of restoredFiles.current) formData.append("images", file);
     return action(prev, formData);
@@ -135,7 +141,8 @@ export function ProductForm({
   const [draft, setDraft] = useState<NewPageDraft | null>(null);
   const [savedId, setSavedId] = useState(product?.id ?? "");
   const [savedSlug, setSavedSlug] = useState(product?.slug ?? "");
-  const [notice, setNotice] = useState<"saved" | null>(null);
+  const [notice, setNotice] = useState<"saved" | null>(announceSaved ? "saved" : null);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [accountIntent, setAccountIntent] = useState<"draft" | "publish">("publish");
   const [confirmClear, setConfirmClear] = useState(false);
   const [seller, setSeller] = useState(sellerName);
@@ -184,6 +191,26 @@ export function ProductForm({
     if (details) setStep(1);
     else setStep(2);
   }, [priced, quote, state.fieldErrors]);
+
+  useEffect(() => {
+    if (state.productId && (state.stripeUrl || state.error)) setSavedId(state.productId);
+    if (state.slug && (state.stripeUrl || state.error)) setSavedSlug(state.slug);
+    if (state.stripeUrl) {
+      if (openedStripe.current === state.stripeUrl) return;
+      openedStripe.current = state.stripeUrl;
+      const popup = consumeStripePopup();
+      if (popup && !popup.closed) {
+        popup.location.href = state.stripeUrl;
+        return;
+      }
+      setStripeFallback(state.stripeUrl);
+      return;
+    }
+    if (state.error) {
+      const popup = consumeStripePopup();
+      popup?.close();
+    }
+  }, [state.error, state.productId, state.slug, state.stripeUrl]);
 
   useEffect(() => {
     if (state.displayName) setSeller(state.displayName);
@@ -597,13 +624,15 @@ export function ProductForm({
     const intent = submitter instanceof HTMLButtonElement && submitter.name === "intent" ? submitter.value : "";
     if (intent !== "draft" && intent !== "publish" && intent !== "stripe") {
       event.preventDefault();
+      consumeStripePopup()?.close();
       return;
     }
     if (intent === "stripe" && !file) {
       event.preventDefault();
+      consumeStripePopup()?.close();
       return;
     }
-    if (blockedOffer()) {
+    if (intent !== "stripe" && blockedOffer()) {
       event.preventDefault();
       return;
     }
@@ -632,8 +661,21 @@ export function ProductForm({
     }
     if (needsAccount && !accountOpen) {
       event.preventDefault();
+      consumeStripePopup()?.close();
       setAccountIntent(intent === "publish" ? "publish" : "draft");
       setAccountOpen(true);
+      return;
+    }
+    if (intent === "stripe") {
+      event.preventDefault();
+      remember();
+      setStripeFallback("");
+      const data = new FormData(event.currentTarget);
+      data.set("connectStripe", "1");
+      data.set("intent", "stripe");
+      startTransition(() => {
+        formAction(data);
+      });
       return;
     }
     remember();
@@ -825,6 +867,15 @@ export function ProductForm({
     setLocalErrors((current) => ({ ...current, caseImages: "" }));
   }
 
+  function closeSaved() {
+    setNotice(null);
+    if (!announceSaved) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("saved")) return;
+    url.searchParams.delete("saved");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
   function clearAll() {
     skipSave.current = true;
     latest.current = null;
@@ -1000,11 +1051,11 @@ export function ProductForm({
         </div>
       ) : null}
       {notice ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={() => setNotice(null)} onKeyDown={(event) => { if (event.key === "Escape") setNotice(null); }}>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={closeSaved} onKeyDown={(event) => { if (event.key === "Escape") closeSaved(); }}>
           <div role="dialog" aria-modal="true" aria-labelledby="draft-saved-title" className="w-full max-w-sm rounded-[28px] border border-line bg-card p-6 text-center shadow-lg" onClick={(event) => event.stopPropagation()}>
             <h2 id="draft-saved-title" className="font-serif text-3xl">Draft saved</h2>
             <p className="mt-2 text-sm text-muted">Your Twig is saved to your account. You can keep editing.</p>
-            <button type="button" autoFocus className={`${buttonClass} mt-5 w-full`} onClick={() => setNotice(null)}>
+            <button type="button" autoFocus className={`${buttonClass} mt-5 w-full`} onClick={closeSaved}>
               OK
             </button>
           </div>
@@ -1021,6 +1072,7 @@ export function ProductForm({
         photo.kind === "kept" ? <input key={photo.id} type="hidden" name="kept" value={photo.src} /> : null
       ))}
       {state.error ? <p className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{state.error}</p> : null}
+      {stripeFallback ? <p className="mb-4 text-sm"><a href={stripeFallback} target="_blank" rel="noopener noreferrer" className="font-medium text-forest">Open Stripe in a new page</a></p> : null}
       {fresh && !previewing && quote ? (
         <div className="mt-4 flex justify-end">
           <details className="relative">
@@ -1348,9 +1400,9 @@ export function ProductForm({
           <button type="button" onClick={() => showStep(4)} className={`${buttonClass} flex-1`}>Next</button>
         </div>
       ) : (
-      <div key="edit-actions" className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg">
+      <div key="edit-actions" className="sticky bottom-3 mt-8 flex gap-1.5 rounded-full border border-line bg-card p-1.5 shadow-lg [&_button]:!px-2.5 [&_button]:text-sm">
         {stepped ? (
-          <button type="button" onClick={() => showStep(quote ? 3 : 1)} className={ghostClass}>
+          <button type="button" onClick={() => showStep(quote ? 3 : 1)} className={`${ghostClass} min-w-0 flex-1`}>
             Back
           </button>
         ) : null}
@@ -1358,8 +1410,45 @@ export function ProductForm({
         <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={openPreview} className={`${buttonClass} flex-1`}>
           Preview
         </button>
+        {product && !published ? (
+          <button type="button" onClick={() => setDiscardOpen(true)} className="inline-flex h-12 min-w-0 flex-1 items-center justify-center rounded-full bg-danger px-2.5 text-sm font-medium text-white">
+            Discard
+          </button>
+        ) : null}
       </div>
       )}
+      {discardOpen && product ? createPortal(
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={() => setDiscardOpen(false)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="delete-twig-title" className="w-full max-w-sm rounded-[28px] border border-line bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
+            <h2 id="delete-twig-title" className="font-serif text-3xl">{retired ? "Delete this Twig" : "Delete this draft"}</h2>
+            {retired ? (
+              <div className="mt-2 space-y-2 text-sm text-muted">
+                <p>This permanently deletes the Twig. It cannot be recovered.</p>
+                <p>The deactivation payment terms are canceled. Any time already paid is not refunded, and this Twig cannot be turned back on.</p>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-muted">This permanently deletes the draft. It cannot be undone.</p>
+            )}
+            <button
+              type="button"
+              className="mt-5 inline-flex h-12 w-full items-center justify-center rounded-full bg-danger px-5 text-base font-medium text-white"
+              onClick={() => {
+                const data = new FormData();
+                data.set("id", product.id);
+                startTransition(() => {
+                  void removeProduct(data);
+                });
+              }}
+            >
+              {retired ? "Delete Twig" : "Delete draft"}
+            </button>
+            <button type="button" onClick={() => setDiscardOpen(false)} className={`${ghostClass} mt-2 w-full`}>
+              Not now
+            </button>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
       <PublishAccount open={accountOpen} pending={pending} state={state} intent={accountIntent} onClose={() => setAccountOpen(false)} />
       {reactivateOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-5" onClick={() => setReactivateOpen(false)}>

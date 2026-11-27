@@ -3,7 +3,7 @@ import { signOut } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 
 export function accountLinkClass(active: boolean) {
-  return `inline-flex border-b-2 pb-1 ${active ? "border-forest font-medium text-forest" : "border-transparent text-ink hover:text-forest"}`;
+  return `relative inline-flex after:absolute after:inset-x-0 after:-bottom-1 after:h-0.5 ${active ? "font-medium text-forest after:bg-forest" : "text-ink after:bg-transparent hover:text-forest"}`;
 }
 
 export async function AccountNav({ current }: { current: "seller" | "buyer" }) {
