@@ -2005,6 +2005,49 @@ export function getDraftByKey(userId: string, draftKey: string) {
   return getProductById(str(row.id));
 }
 
+export function getRecentDraftByTitle(userId: string, cta: string, title: string, withinMs = 120_000) {
+  const trimmed = title.trim();
+  if (trimmed.length < 2) return null;
+  const row = one(
+    `SELECT id, updated_at FROM products
+     WHERE user_id = ? AND cta = ? AND status = 'draft' AND lower(trim(title)) = lower(trim(?))
+     ORDER BY updated_at DESC LIMIT 1`,
+    userId,
+    cta,
+    trimmed,
+  );
+  if (!row) return null;
+  const age = Date.now() - Date.parse(str(row.updated_at));
+  if (!Number.isFinite(age) || age > withinMs) return null;
+  return getProductById(str(row.id));
+}
+
+function collapseDraftCopies(userId: string) {
+  const rows = many(
+    `SELECT id, cta, title, draft_key, updated_at FROM products
+     WHERE user_id = ? AND status = 'draft'
+     ORDER BY updated_at DESC, id DESC`,
+    userId,
+  );
+  const kept = new Map<string, { id: string; draftKey: string }>();
+  const extras: string[] = [];
+  for (const row of rows) {
+    const identity = `${str(row.cta)}\n${str(row.title).trim().toLowerCase()}`;
+    const key = str(row.draft_key);
+    const previous = kept.get(identity);
+    if (!previous) {
+      kept.set(identity, { id: str(row.id), draftKey: key });
+      continue;
+    }
+    const sameSave = key === "" || key === previous.draftKey;
+    if (sameSave && !productHasActivity(str(row.id))) extras.push(str(row.id));
+  }
+  for (const id of extras) {
+    clearProductRows(id);
+    removeProductRow(id, userId);
+  }
+}
+
 export function claimDraftKey(id: string, userId: string, draftKey: string, onConflict: "keep" | "drop-new") {
   if (!draftKey) return id;
   try {
@@ -3036,10 +3079,33 @@ export function productHasActivity(productId: string) {
 }
 
 export function deleteProduct(id: string, userId: string) {
-  const owned = one("SELECT id FROM products WHERE id = ? AND user_id = ?", id, userId);
+  const owned = one(
+    "SELECT id, status, cta, title, draft_key FROM products WHERE id = ? AND user_id = ?",
+    id,
+    userId,
+  );
   if (!owned) return false;
+  const extras = str(owned.status) === "draft"
+    ? many(
+      `SELECT id, draft_key FROM products
+       WHERE user_id = ? AND status = 'draft' AND cta = ? AND lower(trim(title)) = lower(trim(?)) AND id != ?`,
+      userId,
+      str(owned.cta),
+      str(owned.title),
+      id,
+    ).flatMap((row) => {
+      const key = str(row.draft_key);
+      const sameSave = key === "" || key === str(owned.draft_key);
+      return sameSave && !productHasActivity(str(row.id)) ? [str(row.id)] : [];
+    })
+    : [];
   clearProductRows(id);
-  return removeProductRow(id, userId);
+  const removed = removeProductRow(id, userId);
+  for (const extra of extras) {
+    clearProductRows(extra);
+    removeProductRow(extra, userId);
+  }
+  return removed;
 }
 
 export function adminDeleteProduct(id: string) {
@@ -3051,6 +3117,7 @@ export function adminDeleteProduct(id: string) {
 
 export function sellerProducts(userId: string) {
   settleDeactivations();
+  collapseDraftCopies(userId);
   return many("SELECT * FROM products WHERE user_id = ? ORDER BY updated_at DESC", userId).map(mapProduct);
 }
 

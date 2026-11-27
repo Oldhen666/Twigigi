@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { SellerOrders } from "@/components/seller-orders";
 import { SellerQuotes } from "@/components/seller-quotes";
+import { SellerTwigs } from "@/components/seller-twigs";
 import { TwigCard } from "@/components/twig-card";
 import { getImpersonation, requireSeller } from "@/lib/auth";
 import { formatListingFee, listingFeeCurrency, platformFee } from "@/lib/billing";
@@ -136,25 +137,8 @@ async function DashboardBody({
 
       {selected ? (
         <>
-          <nav className="mt-8 flex gap-4 border-b border-line text-sm">
-            {(selected.id === "quote"
-              ? [["quotes", "Quotes", quoteAttention], ["twigs", "Twigs", 0]] as const
-              : [["orders", "Orders", attention], ["twigs", "Twigs", 0]] as const).map(([id, label, count]) => (
-              <Link
-                key={id}
-                href={`/dashboard?cta=${selected.id}&section=${id}`}
-                scroll={false}
-                aria-current={section === id ? "page" : undefined}
-                className={`inline-flex items-center border-b-2 pb-2 ${section === id ? "border-forest font-medium text-forest" : "border-transparent text-muted"}`}
-              >
-                {label}
-                <CountDot count={count} />
-              </Link>
-            ))}
-          </nav>
-
           {offer === "file" || offer === "buy" ? (
-            <section className="mt-6 rounded-3xl border border-line bg-card px-4 sm:px-5">
+            <section className="mt-6 rounded-3xl bg-card px-4 sm:px-5">
               <h2 className="pt-4 font-serif text-2xl">Your current plan</h2>
               <div className="mt-1 divide-y divide-line">
                 {offer === "file" ? (
@@ -193,6 +177,23 @@ async function DashboardBody({
               </div>
             </section>
           ) : null}
+
+          <nav className="mt-8 flex gap-4 border-b border-line text-sm">
+            {(selected.id === "quote"
+              ? [["quotes", "Quotes", quoteAttention], ["twigs", "Twigs", 0]] as const
+              : [["orders", "Orders", attention], ["twigs", "Twigs", 0]] as const).map(([id, label, count]) => (
+              <Link
+                key={id}
+                href={`/dashboard?cta=${selected.id}&section=${id}`}
+                scroll={false}
+                aria-current={section === id ? "page" : undefined}
+                className={`inline-flex items-center border-b-2 pb-2 ${section === id ? "border-forest font-medium text-forest" : "border-transparent text-muted"}`}
+              >
+                {label}
+                <CountDot count={count} />
+              </Link>
+            ))}
+          </nav>
 
           {section === "orders" ? (
             fresh || waiting ? (
@@ -298,18 +299,25 @@ async function DashboardBody({
             ) : (
               <section className="mt-6">
                 <p className="text-sm text-muted">{live} live · {drafts} {drafts === 1 ? "draft" : "drafts"}</p>
-                <div className="mt-4 space-y-3">
-                  {scopedProducts.map((product) => (
-                    <TwigCard
-                      key={product.id}
-                      product={product}
-                      publicId={user.publicId}
-                      acting={acting}
-                      canDelete={product.status === "deactivated" || (product.status === "draft" && !productHasActivity(product.id))}
-                      returnTo={`/dashboard?cta=${selected.id}&section=twigs`}
-                    />
-                  ))}
-                </div>
+                <SellerTwigs
+                  items={scopedProducts.map((product) => ({
+                    id: product.id,
+                    title: product.title,
+                    status: product.status,
+                    live: isTwigLive(product),
+                    updatedAt: product.updatedAt,
+                    views: product.viewCount,
+                    card: (
+                      <TwigCard
+                        product={product}
+                        publicId={user.publicId}
+                        acting={acting}
+                        canDelete={product.status === "deactivated" || (product.status === "draft" && !productHasActivity(product.id))}
+                        returnTo={`/dashboard?cta=${selected.id}&section=twigs`}
+                      />
+                    ),
+                  }))}
+                />
               </section>
             )
           ) : null}

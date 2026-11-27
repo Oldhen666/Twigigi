@@ -980,7 +980,15 @@ export function ProductForm({
         Save draft
       </button>
     ) : (
-      <button name="intent" value="draft" disabled={pending} className={`${ghostClass} flex-1`}>
+      <button
+        name="intent"
+        value="draft"
+        disabled={pending}
+        onMouseDown={() => {
+          if (formRef.current) ensureIdentity(formRef.current);
+        }}
+        className={`${ghostClass} flex-1`}
+      >
         Save draft
       </button>
     );

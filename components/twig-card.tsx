@@ -7,7 +7,7 @@ import { DeleteTwig } from "@/components/delete-twig";
 import { CopyLink } from "@/components/share-bar";
 import { TwigCheckbox } from "@/components/twig-selection";
 import { TwigMore } from "@/components/twig-more";
-import { addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive, productUrl } from "@/lib/format";
+import { addDays, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatDate, formatMoney, isTwigLive, productUrl } from "@/lib/format";
 import { storedUpload } from "@/lib/uploads";
 import type { Product } from "@/lib/types";
 
@@ -86,6 +86,7 @@ export function TwigCard({
           {!restricted && product.status === "deactivated" ? `Inactive${deactivatedLabel ? ` since ${deactivatedLabel}` : ""}` : null}
           {!restricted && product.status === "draft" ? "Not published" : null}
         </p>
+        <p className="mt-1 text-sm text-muted">Last updated {formatDate(product.updatedAt, product.location)}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Link href={`/dashboard/products/${product.id}`} className={pill}>Edit</Link>
           {live ? <CopyLink url={url} className={pill} /> : null}

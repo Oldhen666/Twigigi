@@ -16,6 +16,7 @@ type Selection = {
   selected: Set<string>;
   toggle: (id: string) => void;
   setAll: (on: boolean) => void;
+  setIds: (ids: string[], on: boolean) => void;
 };
 
 const SelectionContext = createContext<Selection | null>(null);
@@ -24,6 +25,10 @@ function useSelection() {
   const value = useContext(SelectionContext);
   if (!value) throw new Error("Twig selection is missing.");
   return value;
+}
+
+export function useTwigSelectionOptional() {
+  return useContext(SelectionContext);
 }
 
 export function TwigSelectionProvider({ items, children }: { items: TwigPick[]; children: ReactNode }) {
@@ -39,8 +44,18 @@ export function TwigSelectionProvider({ items, children }: { items: TwigPick[]; 
   function setAll(on: boolean) {
     setSelected(on ? new Set(items.map((item) => item.id)) : new Set());
   }
+  function setIds(ids: string[], on: boolean) {
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
   return (
-    <SelectionContext.Provider value={{ items, selected, toggle, setAll }}>
+    <SelectionContext.Provider value={{ items, selected, toggle, setAll, setIds }}>
       {children}
       <TwigBatchBar />
     </SelectionContext.Provider>

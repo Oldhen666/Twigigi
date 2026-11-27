@@ -33,6 +33,8 @@ type Sort = (typeof SORTS)[number]["value"];
 
 export function SellerQuotes({ quotes }: { quotes: SellerQuoteRow[] }) {
   const [productId, setProductId] = useState("");
+  const [status, setStatus] = useState("");
+  const [when, setWhen] = useState("all");
   const [sort, setSort] = useState<Sort>("newest");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const products = useMemo(() => {
@@ -41,7 +43,7 @@ export function SellerQuotes({ quotes }: { quotes: SellerQuoteRow[] }) {
     return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [quotes]);
   const shown = useMemo(() => {
-    const rows = quotes.filter((quote) => !productId || quote.productId === productId);
+    const rows = quotes.filter((quote) => (!productId || quote.productId === productId) && (!status || quote.status === status) && withinWindow(quote.createdAt, when));
     rows.sort((a, b) => {
       if (sort === "oldest") return a.createdAt.localeCompare(b.createdAt);
       if (sort === "name") return a.name.localeCompare(b.name) || b.createdAt.localeCompare(a.createdAt);
@@ -49,7 +51,7 @@ export function SellerQuotes({ quotes }: { quotes: SellerQuoteRow[] }) {
       return b.createdAt.localeCompare(a.createdAt);
     });
     return rows;
-  }, [quotes, productId, sort]);
+  }, [quotes, productId, sort, status, when]);
   const shownIds = shown.map((quote) => quote.id);
   const selectedCount = shownIds.filter((id) => selected.has(id)).length;
   const allVisible = shownIds.length > 0 && selectedCount === shownIds.length;
@@ -76,6 +78,23 @@ export function SellerQuotes({ quotes }: { quotes: SellerQuoteRow[] }) {
           </select>
         </label>
         <label className="w-full sm:w-44">
+          <span className={labelClass}>Status</span>
+          <select value={status} onChange={(event) => setStatus(event.target.value)} className={inputClass}>
+            <option value="">Any status</option>
+            <option value="new">New</option>
+            <option value="contacted">Contacted</option>
+            <option value="closed">Closed</option>
+          </select>
+        </label>
+        <label className="w-full sm:w-48">
+          <span className={labelClass}>Submitted</span>
+          <select value={when} onChange={(event) => setWhen(event.target.value)} className={inputClass}>
+            <option value="all">Any time</option>
+            <option value="week">Last 7 days</option>
+            <option value="month">Last 30 days</option>
+          </select>
+        </label>
+        <label className="w-full sm:w-44">
           <span className={labelClass}>Sort</span>
           <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} className={inputClass}>
             {SORTS.map((option) => (
@@ -88,7 +107,7 @@ export function SellerQuotes({ quotes }: { quotes: SellerQuoteRow[] }) {
         </button>
       </div>
       {shown.length === 0 ? (
-        <p className="mt-6 text-sm text-muted">No quotes for this Twig.</p>
+        <p className="mt-6 text-sm text-muted">No quotes match.</p>
       ) : (
         <>
           <SelectVisible allVisible={allVisible} selectedCount={selectedCount} onToggle={() => {
@@ -168,6 +187,14 @@ function QuoteMark() {
       </span>
     </span>
   );
+}
+
+function withinWindow(iso: string, when: string) {
+  if (when === "all") return true;
+  const time = Date.parse(iso);
+  if (!Number.isFinite(time)) return false;
+  const days = when === "week" ? 7 : 30;
+  return Date.now() - time < days * 24 * 60 * 60 * 1000;
 }
 
 function feeLabel(quote: SellerQuoteRow) {

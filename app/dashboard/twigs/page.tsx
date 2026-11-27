@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { SellerTwigs } from "@/components/seller-twigs";
 import { TwigCard } from "@/components/twig-card";
-import { TwigSelectAll, TwigSelectionProvider } from "@/components/twig-selection";
+import { TwigSelectionProvider } from "@/components/twig-selection";
 import { getImpersonation, requireSeller } from "@/lib/auth";
 import { productHasActivity, sellerProducts } from "@/lib/db";
 import { isTwigLive } from "@/lib/format";
@@ -33,22 +34,25 @@ async function TwigsScreen() {
         </div>
       ) : (
         <TwigSelectionProvider items={picks}>
-          <div className="mt-6 flex items-center gap-3">
-            <TwigSelectAll />
-            <p className="text-sm text-muted">Select</p>
-          </div>
-          <div className="mt-3 space-y-3">
-            {products.map((product) => (
-              <TwigCard
-                key={product.id}
-                product={product}
-                publicId={user.publicId}
-                acting={acting}
-                selectable
-                canDelete={picks.find((item) => item.id === product.id)?.canDelete ?? false}
-              />
-            ))}
-          </div>
+          <SellerTwigs
+            items={products.map((product) => ({
+              id: product.id,
+              title: product.title,
+              status: product.status,
+              live: isTwigLive(product),
+              updatedAt: product.updatedAt,
+              views: product.viewCount,
+              card: (
+                <TwigCard
+                  product={product}
+                  publicId={user.publicId}
+                  acting={acting}
+                  selectable
+                  canDelete={picks.find((item) => item.id === product.id)?.canDelete ?? false}
+                />
+              ),
+            }))}
+          />
         </TwigSelectionProvider>
       )}
     </main>

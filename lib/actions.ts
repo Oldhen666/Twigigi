@@ -59,6 +59,7 @@ import {
   setOrderFileIssue,
   getProductById,
   getDraftByKey,
+  getRecentDraftByTitle,
   claimDraftKey,
   getQuote,
   writeQuoteTwigSettings,
@@ -217,6 +218,11 @@ function fieldErrors(error: z.ZodError) {
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
+}
+
+function lastText(formData: FormData, key: string) {
+  const values = formData.getAll(key).filter((item): item is string => typeof item === "string" && item.trim() !== "");
+  return values.at(-1) ?? "";
 }
 
 function draftKeyFrom(value: string) {
@@ -567,8 +573,8 @@ async function saveQuoteDocuments(files: File[]) {
 }
 
 export async function saveProduct(_prev: FormState, formData: FormData): Promise<FormState> {
-  const id = text(formData, "id");
-  const draftKey = draftKeyFrom(text(formData, "draftKey"));
+  const id = lastText(formData, "id");
+  const draftKey = draftKeyFrom(lastText(formData, "draftKey"));
   let existing = id ? getProductById(id) : null;
 
   const intent = text(formData, "intent") === "publish" ? "publish" : "draft";
@@ -809,6 +815,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   if (!existing && draftKey) {
     const keyed = getDraftByKey(owner.id, draftKey);
     if (keyed) existing = keyed;
+  }
+  if (!existing && intent === "draft" && title.length >= 2) {
+    const recent = getRecentDraftByTitle(owner.id, cta, title);
+    if (recent) existing = recent;
   }
   if ((owner.suspended || owner.banned) && !acting && !adminEdit) return { error: "This account cannot publish.", ...sessionStamp };
   if (intent === "publish" && !sellerMayPublish(owner) && !acting && !adminEdit) return { error: "Publishing is restricted on this account.", ...sessionStamp };

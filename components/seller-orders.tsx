@@ -32,13 +32,14 @@ const selectClass = `${inputClass} h-10 text-sm`;
 export function SellerOrders({ orders }: { orders: SellerOrderRow[] }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [when, setWhen] = useState("all");
   const [sort, setSort] = useState("needs");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [action, setAction] = useState("");
   const visible = useMemo(() => {
-    const matched = orders.filter((order) => matchesFilter(order, filter) && matchesQuery(order, query));
+    const matched = orders.filter((order) => matchesFilter(order, filter) && withinWindow(order.createdAt, when) && matchesQuery(order, query));
     return sortRows(matched, sort);
-  }, [orders, filter, query, sort]);
+  }, [orders, filter, query, sort, when]);
   const visibleIds = visible.map((order) => order.id);
   const selectedCount = visibleIds.filter((id) => selected.has(id)).length;
   const allVisible = visibleIds.length > 0 && selectedCount === visibleIds.length;
@@ -65,7 +66,7 @@ export function SellerOrders({ orders }: { orders: SellerOrderRow[] }) {
 
   return (
     <>
-      <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_16rem_12rem]">
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_12rem_12rem_12rem]">
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -79,6 +80,11 @@ export function SellerOrders({ orders }: { orders: SellerOrderRow[] }) {
           <option value="waiting">Waiting on buyer</option>
           <option value="completed">Completed</option>
           <option value="canceled">Canceled</option>
+        </select>
+        <select aria-label="Placed" value={when} onChange={(event) => setWhen(event.target.value)} className={selectClass}>
+          <option value="all">Any time</option>
+          <option value="week">Placed in 7 days</option>
+          <option value="month">Placed in 30 days</option>
         </select>
         <select aria-label="Sort" value={sort} onChange={(event) => setSort(event.target.value)} className={selectClass}>
           <option value="needs">Needs you first</option>
@@ -244,6 +250,14 @@ function orderMarkCopy(attention: string) {
   if (attention === "Confirm handover") return "Open this order and choose Confirm handover. The mark goes away.";
   if (attention === "Confirm payment and handover") return "Open this order and choose Confirm payment & handover. The mark goes away.";
   return `Open this order and finish “${attention}”. The mark goes away.`;
+}
+
+function withinWindow(iso: string, when: string) {
+  if (when === "all") return true;
+  const time = Date.parse(iso);
+  if (!Number.isFinite(time)) return false;
+  const days = when === "week" ? 7 : 30;
+  return Date.now() - time < days * 24 * 60 * 60 * 1000;
 }
 
 function matchesFilter(order: SellerOrderRow, filter: string) {

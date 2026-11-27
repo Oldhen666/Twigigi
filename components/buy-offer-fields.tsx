@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { centsToInput } from "@/lib/format";
 import type { NewPageDraft } from "@/lib/new-page-draft";
@@ -82,17 +83,19 @@ function StripeSetupLink({ url, live }: { url: string; live: boolean }) {
     if (ok) window.setTimeout(() => setCopied(false), 1600);
   }
 
-  if (!url) {
-    return <p className="mt-3 text-sm text-muted">Save this draft to get the Twig link for Stripe’s website field.</p>;
-  }
-
   return (
     <div className="mt-3">
-      <button type="button" onClick={() => void copy()} className={`${ghostClass} w-full sm:w-auto`}>
-        <span>{copied ? "Copied" : "Copy link for setting up"}</span>
-      </button>
-      <p className="mt-2 break-all text-sm text-ink">{url}</p>
-      {live ? null : <p className="mt-1 text-sm text-muted">Publish this Twig so Stripe can open the page.</p>}
+      {url ? (
+        <button type="button" onClick={() => void copy()} className={`${ghostClass} w-full sm:w-auto`}>
+          <span>{copied ? "Copied" : "Copy link for setting up"}</span>
+        </button>
+      ) : (
+        <p className="text-sm text-muted">Save this draft to get the Twig link.</p>
+      )}
+      {url ? <p className="mt-2 break-all text-sm text-ink">{url}</p> : null}
+      <p className="mt-2 text-sm text-muted">Paste this link into Stripe’s Your website field.</p>
+      <Image src="/help/stripe-website-field.png" alt="Stripe’s Your website field. Paste the Twig link into this box." width={468} height={135} className="mt-2 h-auto w-full rounded-xl border border-line" />
+      {url && !live ? <p className="mt-2 text-sm text-muted">Publish this Twig so Stripe can open the page.</p> : null}
     </div>
   );
 }
@@ -742,7 +745,7 @@ function PaymentChoices({
             <summary className="cursor-pointer text-sm font-medium text-forest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">How do I set up card payments?</summary>
             <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-muted">
               <li>Select “Connect Stripe” or “Finish Stripe setup” to open the setup in a new page.</li>
-              <li>When Stripe asks for your website, choose “Copy link for setting up” and paste that Twig link into the website field.</li>
+              <li>When Stripe asks for your website, paste the Twig link into the Your website field shown above.</li>
               <li>Follow Stripe’s prompts to provide the requested account details and add a bank account for payouts.</li>
               <li>Return to Twigigi and check your status. Once card payments are enabled, buyers can choose card at checkout.</li>
             </ol>
