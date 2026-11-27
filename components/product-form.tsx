@@ -1179,10 +1179,10 @@ export function ProductForm({
           </div>
           <p className="text-sm leading-6 text-muted">Add details to your public listing. If you skip, we’ll show your seller name.</p>
           <Field label="Display name">
-            <input name="businessName" defaultValue={profileCopy.name} placeholder="North Yard Studio" onInput={(event) => setProfileCopy((current) => ({ ...current, name: event.currentTarget.value }))} className={inputClass} />
+            <input name="businessName" defaultValue={profileCopy.name} placeholder="North Yard Studio" onInput={(event) => { const name = event.currentTarget.value; setProfileCopy((current) => ({ ...current, name })); }} className={inputClass} />
           </Field>
           <Field label="About your business">
-            <textarea name="businessBio" defaultValue={profileCopy.bio} rows={3} placeholder="We embroider names and logos on shirts and hats." onInput={(event) => setProfileCopy((current) => ({ ...current, bio: event.currentTarget.value }))} className={`${inputClass} h-auto py-3`} />
+            <textarea name="businessBio" defaultValue={profileCopy.bio} rows={3} placeholder="We embroider names and logos on shirts and hats." onInput={(event) => { const bio = event.currentTarget.value; setProfileCopy((current) => ({ ...current, bio })); }} className={`${inputClass} h-auto py-3`} />
           </Field>
           <div>
             <span className={labelClass}>Logo</span>
