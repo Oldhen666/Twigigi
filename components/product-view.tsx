@@ -13,14 +13,12 @@ import { Logo } from "@/components/logo";
 import { BackButton } from "@/components/back-button";
 import { PayMethods } from "@/components/pay-methods";
 import { ReportListing } from "@/components/report-listing";
-import { QuoteProfileBlock } from "@/components/quote-profile";
 import { RichDescription } from "@/components/rich-description";
 import { Stars } from "@/components/stars";
 import { toggleLikeAction, toggleSaved } from "@/lib/actions";
 import { twigigiFileHeld } from "@/lib/copyright";
 import { getCurrentUser } from "@/lib/auth";
 import { findUserById, getProductById, isFavorite, isGuestLiked, isLiked, likeCount, listProductReviews, readQuoteTwigSettings, sellerReviewSummary, soldCount } from "@/lib/db";
-import { publicBusinessName } from "@/lib/quote-followup";
 import { digitalPayMethods } from "@/lib/payments";
 import { collectsPersonalization } from "@/lib/personalization";
 import { readVisitor } from "@/lib/visitor";
@@ -70,7 +68,7 @@ export async function ProductView({
   const category = categoryLabel(product.categoryKind, product.categoryGroup, product.category);
   const categoryLink = resolveCategory(product.categoryKind, product.categoryGroup, product.category, true);
   const quoteProfile = product.cta === "quote" ? readQuoteTwigSettings(product.id) : null;
-  const businessName = quoteProfile ? publicBusinessName({ skipped: quoteProfile.profileSkipped, businessName: quoteProfile.businessName, displayName: product.displayName }) : "";
+  const listedName = quoteProfile && !quoteProfile.profileSkipped && quoteProfile.businessName.trim() ? quoteProfile.businessName.trim() : product.displayName;
   const embed = videoEmbed(product.videoUrl);
   const image = product.images[0] ? `${appUrl()}${product.images[0]}` : undefined;
   const jsonLd = {
@@ -193,11 +191,6 @@ export async function ProductView({
               <p className="mt-2 font-serif text-3xl text-forest">
                 {product.cta === "quote" && product.priceCents != null ? `Starting at ${formatMoney(product.priceCents, product.currency)}` : product.priceCents != null ? formatMoney(product.priceCents, product.currency) : "Pricing on request"}
               </p>
-              {quoteProfile && !quoteProfile.profileSkipped && (quoteProfile.businessName || quoteProfile.businessBio || quoteProfile.businessLogo || quoteProfile.caseImages.length > 0) ? (
-                <section className="mt-4">
-                  <QuoteProfileBlock name={businessName} bio={quoteProfile.businessBio} logo={quoteProfile.businessLogo} photos={quoteProfile.caseImages} />
-                </section>
-              ) : null}
               {product.cta === "file" ? (
                 <p className="mt-2 text-sm text-muted">Pay the seller with PayPal or a card. The file is emailed as soon as the payment is confirmed.</p>
               ) : null}
@@ -210,7 +203,7 @@ export async function ProductView({
                   ))}
                 </ul>
               ) : null}
-              <SellerCredit username={product.publicId} name={product.displayName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
+              <SellerCredit username={product.publicId} name={listedName} rating={rating} productId={product.id} path={`/${product.publicId}/${product.slug}`} title={product.title} reporterName={account?.displayName ?? ""} reporterEmail={account?.email ?? ""} />
               <ProductMarks productId={product.id} path={`/${product.publicId}/${product.slug}`} signedIn={Boolean(account)} ownTwig={ownTwig} saved={saved} liked={liked} likes={likes} sold={sold} />
               {product.cta === "file" ? <PayMethods methods={fileMethods} cardPaymentUrl="" /> : product.cta === "buy" ? <PayMethods methods={product.paymentMethods} cardPaymentUrl="" /> : null}
             </>

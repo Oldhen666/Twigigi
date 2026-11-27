@@ -18,6 +18,9 @@ import {
   saveFollowupDraft,
   saveQuoteSettings,
   setFollowupStatus,
+  listBusinessProfiles,
+  sellerBusinessProfiles,
+  upsertBusinessProfile,
 } from "../lib/quote-followup-store.ts";
 
 const NOW = "2026-11-21T18:00:00.000Z";
@@ -75,6 +78,34 @@ test("a skipped business profile keeps the seller display name", () => {
   const settings = readQuoteSettings(database, "prd");
   assert.equal(settings?.businessName, "");
   assert.equal(publicBusinessName({ skipped: true, businessName: "", displayName: "Ava" }), "Ava");
+});
+
+test("a display name can be added once and reused, while a draft name stays off the public profile", () => {
+  const database = db();
+  database.exec(`ALTER TABLE products ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`);
+  database.prepare(`INSERT INTO products (id, cta, status, title, user_id) VALUES ('live', 'quote', 'published', 'Turf', 'usr')`).run();
+  database.prepare(`INSERT INTO products (id, cta, status, title, user_id) VALUES ('draft', 'quote', 'draft', 'Patio', 'usr')`).run();
+  const settings = {
+    businessLogo: "",
+    caseImages: [] as string[],
+    profileSkipped: false,
+    visitEnabled: false,
+    offerEnabled: false,
+    invoiceEnabled: false,
+    now: NOW,
+  };
+  saveQuoteSettings(database, { ...settings, productId: "live", businessName: "Houzble", businessBio: "Lawns" });
+  saveQuoteSettings(database, { ...settings, productId: "draft", businessName: "North Yard", businessBio: "Patios", caseImages: ["/uploads/patio.jpg"] });
+  const houzble = upsertBusinessProfile(database, { userId: "usr", name: "Houzble", bio: "Pavers", logo: "", photos: ["/uploads/paver.jpg"], now: NOW });
+  const same = upsertBusinessProfile(database, { userId: "usr", name: "houzble", bio: "Pavers and turf", logo: "", photos: ["/uploads/paver.jpg"], now: NOW });
+  assert.equal(houzble, same);
+  upsertBusinessProfile(database, { userId: "usr", name: "North Yard", bio: "Patios", logo: "", photos: ["/uploads/patio.jpg"], now: NOW });
+  const saved = listBusinessProfiles(database, "usr");
+  assert.equal(saved.length, 2);
+  assert.equal(saved.find((item) => item.name.toLowerCase() === "houzble")?.bio, "Pavers and turf");
+  assert.equal(sellerBusinessProfiles(database, "usr", null).length, 2);
+  assert.deepEqual(sellerBusinessProfiles(database, "usr", ["live"]).map((item) => item.name.toLowerCase()), ["houzble"]);
+  assert.equal(sellerBusinessProfiles(database, "usr", []).length, 0);
 });
 
 test("an existing published quote listing keeps C$1.49 and a new one locks C$4.99", () => {

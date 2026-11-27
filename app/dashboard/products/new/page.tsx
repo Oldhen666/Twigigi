@@ -3,10 +3,9 @@ import { redirect } from "next/navigation";
 import { saveProduct } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { ProductForm } from "@/components/product-form";
-import { setStripeAccount } from "@/lib/db";
+import { listBusinessProfiles, setStripeAccount } from "@/lib/db";
 import { readCta } from "@/lib/format";
 import { stripeConnectCountry } from "@/lib/payments";
-import { quotePublishOffer } from "@/lib/quote-followup";
 import { currentStripeConnect } from "@/lib/stripe";
 
 async function NewProduct({
@@ -26,7 +25,7 @@ async function NewProduct({
   return (
     <main className="mx-auto w-full max-w-xl px-5 py-6">
       <h1 className="font-serif text-4xl">{title}</h1>
-      <ProductForm action={saveProduct} defaultEmail={user.email} sellerName={user.displayName} publicId={user.publicId} sellerBio={user.bio} cta={cta} quoteOffer={cta === "quote" ? quotePublishOffer({ now: new Date().toISOString(), settings: null }) : null} stripeReady={stripe.chargesEnabled} stripeStarted={Boolean(stripe.accountId) && !stripe.chargesEnabled} stripeCountry={stripeConnectCountry(user)} paymentDefaults={{ interac: user.payoutInterac, venmo: user.payoutVenmo, paypalMe: user.payoutPaypalMe, paypalEmail: user.payoutPaypalEmail }} />
+      <ProductForm action={saveProduct} defaultEmail={user.email} sellerName={user.displayName} publicId={user.publicId} sellerBio={user.bio} cta={cta} businessPresets={cta === "quote" ? listBusinessProfiles(user.id) : []} stripeReady={stripe.chargesEnabled} stripeStarted={Boolean(stripe.accountId) && !stripe.chargesEnabled} stripeCountry={stripeConnectCountry(user)} paymentDefaults={{ interac: user.payoutInterac, venmo: user.payoutVenmo, paypalMe: user.payoutPaypalMe, paypalEmail: user.payoutPaypalEmail }} />
     </main>
   );
 }

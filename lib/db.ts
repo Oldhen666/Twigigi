@@ -59,6 +59,9 @@ import {
   saveFollowupDraft,
   saveQuoteSettings,
   setFollowupStatus,
+  listBusinessProfiles as readBusinessProfileList,
+  sellerBusinessProfiles as readSellerBusinessProfiles,
+  upsertBusinessProfile,
 } from "@/lib/quote-followup-store";
 import type { QuoteTool } from "@/lib/quote-followup";
 import {
@@ -2724,6 +2727,18 @@ export function writeQuoteTwigSettings(input: {
   invoiceEnabled: boolean;
 }) {
   saveQuoteSettings(db, { ...input, now: new Date().toISOString() });
+}
+
+export function listBusinessProfiles(userId: string) {
+  return readBusinessProfileList(db, userId);
+}
+
+export function saveBusinessProfile(input: { userId: string; name: string; bio: string; logo: string; photos: string[] }) {
+  return upsertBusinessProfile(db, { ...input, now: new Date().toISOString() });
+}
+
+export function sellerBusinessProfiles(userId: string, publicProductIds: string[] | null) {
+  return readSellerBusinessProfiles(db, userId, publicProductIds);
 }
 
 export function readQuoteListingCharge(productId: string) {

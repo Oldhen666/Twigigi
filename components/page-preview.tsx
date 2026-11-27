@@ -1,5 +1,5 @@
-import { QuoteProfileBlock } from "@/components/quote-profile";
 import { RichDescription } from "@/components/rich-description";
+import { saleCurrency } from "@/lib/billing";
 import { categoryLabel } from "@/lib/categories";
 import { ctaCopy, formatMoney, pickupDetail, videoEmbed } from "@/lib/format";
 import { normalizeQuoteForm } from "@/lib/quote-form";
@@ -29,19 +29,17 @@ export type PagePreviewDraft = {
   videoUrl: string;
   quoteFields: { label: string; required: boolean; upload?: boolean; choices?: string[] }[];
   sellerName: string;
-  profile: { name: string; bio: string; logo: string; photos: string[] } | null;
 };
 
-export function readPagePreview(
-  formData: FormData,
-  images: string[],
-  cta: Cta,
-  sellerName: string,
-  profile: PagePreviewDraft["profile"] = null,
-): PagePreviewDraft {
+function previewPrice(cta: Cta, price: string, location: string) {
+  if (!/^\d+(\.\d{1,2})?$/.test(price)) return cta === "buy" || cta === "file" ? "Add a price" : "Pricing on request";
+  const formatted = formatMoney(Math.round(Number(price) * 100), saleCurrency({ cta, location }));
+  return cta === "quote" ? `Starting at ${formatted}` : formatted;
+}
+
+export function readPagePreview(formData: FormData, images: string[], cta: Cta, sellerName: string): PagePreviewDraft {
   const title = text(formData, "title") || "Untitled";
   const price = text(formData, "price");
-  const amount = Number(price);
   const methods =
     cta === "file"
       ? [{ label: "Digital file", detail: "Link and password are emailed after payment." }]
@@ -69,14 +67,13 @@ export function readPagePreview(
     description: text(formData, "description"),
     location: text(formData, "location"),
     images,
-    priceLabel: (cta === "buy" || cta === "file") && price && Number.isFinite(amount) ? formatMoney(Math.round(amount * 100), "CAD") : cta === "buy" || cta === "file" ? "Add a price" : "Pricing on request",
+    priceLabel: previewPrice(cta, price, text(formData, "location")),
     methods,
     ctaLabel: ctaCopy(cta).label,
     phone: text(formData, "contactPhone"),
     videoUrl: text(formData, "videoUrl"),
     quoteFields: cta === "quote" ? quoteFields(text(formData, "quoteFormJson")) : [],
     sellerName,
-    profile: cta === "quote" ? profile : null,
   };
 }
 
@@ -107,11 +104,6 @@ export function PagePreview({ draft }: { draft: PagePreviewDraft }) {
             </div>
           ) : null}
           {draft.priceLabel ? <p className="mt-2 font-serif text-3xl text-forest">{draft.priceLabel}</p> : null}
-          {draft.profile ? (
-            <div className="mt-4">
-              <QuoteProfileBlock name={draft.profile.name} bio={draft.profile.bio} logo={draft.profile.logo} photos={draft.profile.photos} />
-            </div>
-          ) : null}
           {draft.methods.length > 0 ? (
             <ul className="mt-3 flex flex-wrap gap-2">
               {draft.methods.map((method) => (

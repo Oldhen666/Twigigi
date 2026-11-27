@@ -63,6 +63,7 @@ import {
   claimDraftKey,
   getQuote,
   writeQuoteTwigSettings,
+  saveBusinessProfile,
   readQuoteTwigSettings,
   readQuoteListingCharge,
   quoteFollowups,
@@ -995,17 +996,23 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       const caseFiles = formData.getAll("caseImages").filter((item): item is File => item instanceof File && item.size > 0).slice(0, 4);
       if (caseFiles.length > 0) caseImages.push(...await saveImages(caseFiles));
     }
+    const businessName = text(formData, "businessName").trim().slice(0, 80);
+    const businessBio = text(formData, "businessBio").trim().slice(0, 400);
+    const portfolio = caseImages.slice(0, 4);
     writeQuoteTwigSettings({
       productId: savedProductId,
-      businessName: text(formData, "businessName").trim().slice(0, 80),
-      businessBio: text(formData, "businessBio").trim().slice(0, 400),
+      businessName,
+      businessBio,
       businessLogo,
-      caseImages: caseImages.slice(0, 4),
+      caseImages: portfolio,
       profileSkipped: skipped,
       visitEnabled: formData.get("visitEnabled") === "on",
       offerEnabled: formData.get("offerEnabled") === "on",
       invoiceEnabled: formData.get("invoiceEnabled") === "on",
     });
+    if (!skipped && businessName) {
+      saveBusinessProfile({ userId: owner.id, name: businessName, bio: businessBio, logo: businessLogo, photos: portfolio });
+    }
   }
 
   if (connectStripe) {

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import {
   QUOTE_FEE_CURRENCY,
@@ -195,6 +196,130 @@ export function saveQuoteSettings(
     input.invoiceEnabled ? 1 : 0,
     input.now,
   );
+}
+
+export type BusinessProfile = {
+  id: string;
+  name: string;
+  bio: string;
+  logo: string;
+  photos: string[];
+};
+
+function profileId() {
+  return `biz_${randomBytes(9).toString("base64url")}`;
+}
+
+function mapProfile(row: SqlRow): BusinessProfile {
+  const logo = text(row.logo);
+  return {
+    id: text(row.id),
+    name: text(row.name).trim(),
+    bio: text(row.bio),
+    logo: logo.startsWith("/uploads/") ? logo : "",
+    photos: parseImages(text(row.photos_json)),
+  };
+}
+
+export function ensureBusinessProfiles(database: DatabaseSync) {
+  ensureQuoteFollowup(database);
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS business_profiles (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      bio TEXT NOT NULL DEFAULT '',
+      logo TEXT NOT NULL DEFAULT '',
+      photos_json TEXT NOT NULL DEFAULT '[]',
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS business_profiles_user_name ON business_profiles(user_id, name COLLATE NOCASE);
+  `);
+  const done = one(database, `SELECT value FROM quote_followup_meta WHERE key = 'business_profiles_backfill'`);
+  if (done) return;
+  const columns = database.prepare(`PRAGMA table_info(products)`).all() as Array<{ name: string }>;
+  if (columns.some((column) => column.name === "user_id")) {
+    const existing = rows(
+      database,
+      `SELECT p.user_id AS user_id, s.business_name AS business_name, s.business_bio AS business_bio,
+              s.business_logo AS business_logo, s.case_images_json AS case_images_json, s.updated_at AS updated_at
+       FROM quote_twig_settings s
+       JOIN products p ON p.id = s.product_id
+       WHERE s.profile_skipped = 0 AND trim(s.business_name) != ''
+       ORDER BY s.updated_at ASC`,
+    );
+    for (const row of existing) writeBusinessProfile(database, {
+      userId: text(row.user_id),
+      name: text(row.business_name),
+      bio: text(row.business_bio),
+      logo: text(row.business_logo),
+      photos: parseImages(text(row.case_images_json)),
+      now: text(row.updated_at),
+    });
+  }
+  database.prepare(`INSERT INTO quote_followup_meta (key, value) VALUES ('business_profiles_backfill', '1')`).run();
+}
+
+function writeBusinessProfile(
+  database: DatabaseSync,
+  input: { userId: string; name: string; bio: string; logo: string; photos: string[]; now: string },
+) {
+  const name = input.name.trim().slice(0, 80);
+  if (!input.userId || !name) return "";
+  const bio = input.bio.trim().slice(0, 400);
+  const logo = input.logo.startsWith("/uploads/") ? input.logo : "";
+  const photos = JSON.stringify(input.photos.filter((item) => item.startsWith("/uploads/")).slice(0, 4));
+  const current = one(database, `SELECT id FROM business_profiles WHERE user_id = ? AND name = ? COLLATE NOCASE`, input.userId, name);
+  if (current) {
+    database.prepare(`UPDATE business_profiles SET name = ?, bio = ?, logo = ?, photos_json = ?, updated_at = ? WHERE id = ?`).run(name, bio, logo, photos, input.now, text(current.id));
+    return text(current.id);
+  }
+  const id = profileId();
+  database.prepare(
+    `INSERT INTO business_profiles (id, user_id, name, bio, logo, photos_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, input.userId, name, bio, logo, photos, input.now);
+  return id;
+}
+
+export function listBusinessProfiles(database: DatabaseSync, userId: string) {
+  ensureBusinessProfiles(database);
+  if (!userId) return [];
+  return rows(database, `SELECT * FROM business_profiles WHERE user_id = ? ORDER BY name COLLATE NOCASE`, userId).map(mapProfile);
+}
+
+export function upsertBusinessProfile(
+  database: DatabaseSync,
+  input: { userId: string; name: string; bio: string; logo: string; photos: string[]; now: string },
+) {
+  ensureBusinessProfiles(database);
+  return writeBusinessProfile(database, input);
+}
+
+export function sellerBusinessProfiles(database: DatabaseSync, userId: string, publicProductIds: string[] | null) {
+  ensureBusinessProfiles(database);
+  if (!userId) return [];
+  if (publicProductIds && publicProductIds.length === 0) return [];
+  const ids = publicProductIds ?? [];
+  const filter = publicProductIds ? `AND p.id IN (${ids.map(() => "?").join(", ")})` : "";
+  return rows(
+    database,
+    `SELECT bp.id AS id, bp.name AS name, bp.bio AS bio, bp.logo AS logo, bp.photos_json AS photos_json
+     FROM business_profiles bp
+     WHERE bp.user_id = ?
+       AND EXISTS (
+         SELECT 1
+         FROM quote_twig_settings s
+         JOIN products p ON p.id = s.product_id
+         WHERE p.user_id = bp.user_id
+           AND p.cta = 'quote'
+           AND s.profile_skipped = 0
+           AND lower(trim(s.business_name)) = lower(trim(bp.name))
+           ${filter}
+       )
+     ORDER BY bp.name COLLATE NOCASE`,
+    userId,
+    ...ids,
+  ).map(mapProfile);
 }
 
 export function lockQuoteListingRate(database: DatabaseSync, productId: string, now = new Date().toISOString()) {

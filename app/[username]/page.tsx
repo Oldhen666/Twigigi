@@ -6,6 +6,7 @@ import { toggleFollowSeller } from "@/lib/actions";
 import { Logo } from "@/components/logo";
 import { BackButton } from "@/components/back-button";
 import { CopyText } from "@/components/copy-text";
+import { QuoteProfileBlock } from "@/components/quote-profile";
 import { SellerBio } from "@/components/seller-bio";
 import { SellerListings } from "@/components/seller-listings";
 import { listingStillPaid } from "@/lib/billing";
@@ -14,7 +15,7 @@ import { DisplayNameForm } from "@/components/display-name-form";
 import { UsernameForm } from "@/components/username-form";
 import { filterLiveTwigs, getPublicSeller, staticProductParams } from "@/lib/catalog";
 import { sellerPath } from "@/lib/seller-route";
-import { findUserById, findUserByUsername, followerCount, isFollowing, sellerProducts } from "@/lib/db";
+import { findUserById, findUserByUsername, followerCount, isFollowing, sellerBusinessProfiles, sellerProducts } from "@/lib/db";
 import { addDays, ctaCopy, DEACTIVATION_GRACE_DAYS, formatBillingDate, formatMoney, isTwigLive } from "@/lib/format";
 import { PROVINCES } from "@/lib/places";
 import type { Product } from "@/lib/types";
@@ -42,6 +43,9 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
   const profile = sellerId ? findUserById(sellerId) : null;
   const followers = sellerId ? followerCount(sellerId) : 0;
   const following = Boolean(account && sellerId && isFollowing(account.id, sellerId));
+  const businesses = sellerId
+    ? sellerBusinessProfiles(sellerId, owner ? null : products.filter((product) => product.cta === "quote").map((product) => product.id))
+    : [];
   const place = sellerLocation(products.map((product) => product.location));
   const listingLabel = products.length === 1 ? "1 listing" : `${products.length} listings`;
   const followerLabel = followers === 1 ? "1 follower" : `${followers} followers`;
@@ -97,6 +101,13 @@ async function SellerPage({ params }: { params: Promise<{ username: string }> })
           </div>
         </div>
         {owner ? <SellerBio bio={profile?.bio ?? ""} next={pagePath} /> : profile?.bio ? <p className="mt-3 text-sm leading-6 text-muted">{profile.bio}</p> : null}
+        {businesses.length > 0 ? (
+          <div className="mt-5 space-y-5 border-t border-line pt-5">
+            {businesses.map((business) => (
+              <QuoteProfileBlock key={business.id} name={business.name} bio={business.bio} logo={business.logo} photos={business.photos} />
+            ))}
+          </div>
+        ) : null}
         <CopyText
           value={pagePath}
           label="Copy profile link"

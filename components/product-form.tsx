@@ -11,11 +11,9 @@ import { BuyOfferFields, consumeStripePopup, type PaymentDefaults } from "@/comp
 import { CategoryFields } from "@/components/category-fields";
 import { FileLinkFields } from "@/components/file-link-fields";
 import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/components/page-preview";
-import { QuoteProfileBlock } from "@/components/quote-profile";
 import { PhotoFrame } from "@/components/photo-frame";
 import { PublishAccount } from "@/components/publish-account";
 import { QuoteFormFields } from "@/components/quote-form-fields";
-import { QuotePublishCard } from "@/components/quote-publish-card";
 import { DescriptionEditor } from "@/components/description-editor";
 import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { categoryProblem } from "@/lib/categories";
@@ -24,7 +22,7 @@ import { PROVINCES, joinLocation, lookupCurrentPlace, placeProblem, splitLocatio
 import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMethods, paypalMeProblem, safeEmail, sellerContactProblem, venmoUsernameProblem } from "@/lib/payments";
 import { descriptionPlain } from "@/lib/rich-text";
 import { digitalRightsDue } from "@/lib/copyright";
-import { FOLLOWUP_DRAFT_LINE, quotePublishOffer } from "@/lib/quote-followup";
+import { FOLLOWUP_DRAFT_LINE } from "@/lib/quote-followup";
 import { productUrl } from "@/lib/format";
 
 type Action = (state: FormState, formData: FormData) => Promise<FormState>;
@@ -80,7 +78,7 @@ export function ProductForm({
   initialStep = 1,
   sellerBio = "",
   quoteSettings = null,
-  quoteOffer = null,
+  businessPresets = [],
   announceSaved = false,
 }: {
   action: Action;
@@ -108,7 +106,7 @@ export function ProductForm({
     offerEnabled: boolean;
     invoiceEnabled: boolean;
   } | null;
-  quoteOffer?: { cents: number; currency: string; anchor: 15 | 28 } | null;
+  businessPresets?: { id: string; name: string; bio: string; logo: string; photos: string[] }[];
   announceSaved?: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -133,15 +131,25 @@ export function ProductForm({
   const [framing, setFraming] = useState<FrameRequest | null>(null);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(initialStep);
   const [profileSkipped, setProfileSkipped] = useState(quoteSettings?.profileSkipped ?? false);
+  const savedBusinessName = quoteSettings?.profileSkipped ? "" : (quoteSettings?.businessName ?? "").trim();
+  const matchedPreset = businessPresets.find((item) => item.name.trim().toLowerCase() === savedBusinessName.toLowerCase()) ?? null;
+  const [addingName, setAddingName] = useState(businessPresets.length === 0 || (savedBusinessName.length > 0 && !matchedPreset));
+  const [chosenName, setChosenName] = useState(matchedPreset?.name ?? savedBusinessName);
+  const [profileEpoch, setProfileEpoch] = useState(0);
+  const savedNameRef = useRef(matchedPreset?.name ?? "");
   const [logoImage, setLogoImage] = useState<ProfileImage | null>(
-    quoteSettings?.businessLogo && !quoteSettings.profileSkipped ? { id: "logo", src: quoteSettings.businessLogo, kept: true } : null,
+    matchedPreset
+      ? matchedPreset.logo ? { id: matchedPreset.logo, src: matchedPreset.logo, kept: true } : null
+      : quoteSettings?.businessLogo && !quoteSettings.profileSkipped ? { id: "logo", src: quoteSettings.businessLogo, kept: true } : null,
   );
   const [portfolio, setPortfolio] = useState<ProfileImage[]>(
-    quoteSettings && !quoteSettings.profileSkipped ? quoteSettings.caseImages.map((src) => ({ id: src, src, kept: true })) : [],
+    matchedPreset
+      ? matchedPreset.photos.map((src) => ({ id: src, src, kept: true }))
+      : quoteSettings && !quoteSettings.profileSkipped ? quoteSettings.caseImages.map((src) => ({ id: src, src, kept: true })) : [],
   );
   const [profileCopy, setProfileCopy] = useState({
-    name: quoteSettings?.profileSkipped ? "" : quoteSettings?.businessName || sellerName,
-    bio: quoteSettings?.profileSkipped ? "" : quoteSettings?.businessBio || sellerBio,
+    name: matchedPreset?.name ?? savedBusinessName,
+    bio: matchedPreset ? matchedPreset.bio : quoteSettings?.profileSkipped ? "" : quoteSettings?.businessBio || sellerBio,
   });
   const logoInput = useRef<HTMLInputElement>(null);
   const portfolioInput = useRef<HTMLInputElement>(null);
@@ -178,9 +186,6 @@ export function ProductForm({
   const quote = cta === "quote";
   const stepped = priced || quote;
   const fresh = !product;
-  const quoteConfirmation = quote && !published && !product?.feeExempt
-    ? quoteOffer ?? quotePublishOffer({ now: new Date().toISOString(), anchorDay: product?.billingAnchorDay, settings: null })
-    : null;
   keptCount.current = photos.filter((photo) => photo.kind === "kept").length;
 
   useEffect(() => {
@@ -615,14 +620,42 @@ export function ProductForm({
     return typeof value === "string" ? value.trim() : "";
   }
 
-  function quoteProfilePreview(formData: FormData): PagePreviewDraft["profile"] {
-    if (cta !== "quote" || formData.get("profileSkipped") === "1") return null;
-    const name = formText(formData, "businessName") || seller;
-    const bio = formText(formData, "businessBio");
-    const logo = logoImage?.src ?? "";
-    const photos = portfolio.map((photo) => photo.src);
-    if (!name && !bio && !logo && photos.length === 0) return null;
-    return { name, bio, logo, photos };
+  function replaceProfileImages(logo: string, photos: string[]) {
+    if (logoInput.current) logoInput.current.value = "";
+    if (portfolioInput.current) portfolioInput.current.value = "";
+    setLogoImage((current) => {
+      if (current && !current.kept) URL.revokeObjectURL(current.src);
+      return logo ? { id: logo, src: logo, kept: true } : null;
+    });
+    setPortfolio((current) => {
+      for (const photo of current) if (!photo.kept) URL.revokeObjectURL(photo.src);
+      return photos.map((src) => ({ id: src, src, kept: true as const }));
+    });
+  }
+
+  function applyPreset(name: string) {
+    const preset = businessPresets.find((item) => item.name === name);
+    const nextName = preset?.name ?? name;
+    setChosenName(nextName);
+    if (nextName) savedNameRef.current = nextName;
+    setProfileCopy({ name: nextName, bio: preset?.bio ?? "" });
+    replaceProfileImages(preset?.logo ?? "", preset?.photos ?? []);
+    setProfileEpoch((value) => value + 1);
+  }
+
+  function startNewName() {
+    savedNameRef.current = chosenName;
+    setAddingName(true);
+    setChosenName("");
+    setProfileCopy({ name: "", bio: "" });
+    replaceProfileImages("", []);
+    setProfileEpoch((value) => value + 1);
+  }
+
+  function showSavedNames() {
+    setAddingName(false);
+    const restore = businessPresets.find((item) => item.name === savedNameRef.current);
+    applyPreset(restore?.name ?? "");
   }
 
   function openPreview(event: React.MouseEvent<HTMLButtonElement>) {
@@ -631,7 +664,8 @@ export function ProductForm({
     const form = formRef.current;
     if (!form) return;
     const previewForm = new FormData(form);
-    const next = readPagePreview(previewForm, photos.map((photo) => photo.src), cta, seller, quoteProfilePreview(previewForm));
+    const displayName = cta === "quote" && previewForm.get("profileSkipped") !== "1" ? formText(previewForm, "businessName") : "";
+    const next = readPagePreview(previewForm, photos.map((photo) => photo.src), cta, displayName || seller);
     remember();
     // Wait until this click finishes. Replacing the button immediately can submit the form.
     window.setTimeout(() => {
@@ -1177,12 +1211,30 @@ export function ProductForm({
             <h2 className="font-serif text-2xl">Business profile</h2>
             <span className="text-sm text-muted">Optional</span>
           </div>
-          <p className="text-sm leading-6 text-muted">Add details to your public listing. If you skip, we’ll show your seller name.</p>
+          <p className="text-sm leading-6 text-muted">Choose one display name for this Twig. Add a new name, or pick one you saved before. The logo, bio, and photos show on your seller profile. If you skip, the listing uses your account name.</p>
           <Field label="Display name">
-            <input name="businessName" defaultValue={profileCopy.name} placeholder="North Yard Studio" onInput={(event) => { const name = event.currentTarget.value; setProfileCopy((current) => ({ ...current, name })); }} className={inputClass} />
+            <div className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                {addingName ? (
+                  <input key={`name-${profileEpoch}`} name="businessName" defaultValue={chosenName} placeholder="North Yard Studio" maxLength={80} className={inputClass} />
+                ) : (
+                  <select name="businessName" value={chosenName} onChange={(event) => { const name = event.target.value; applyPreset(name); }} className={inputClass}>
+                    <option value="">Choose a saved name</option>
+                    {businessPresets.map((preset) => (
+                      <option key={preset.id} value={preset.name}>{preset.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {businessPresets.length > 0 ? (
+                <button type="button" className={`${ghostClass} shrink-0 px-4`} onClick={addingName ? showSavedNames : startNewName}>
+                  {addingName ? "Saved" : "Add"}
+                </button>
+              ) : null}
+            </div>
           </Field>
           <Field label="About your business">
-            <textarea name="businessBio" defaultValue={profileCopy.bio} rows={3} placeholder="We embroider names and logos on shirts and hats." onInput={(event) => { const bio = event.currentTarget.value; setProfileCopy((current) => ({ ...current, bio })); }} className={`${inputClass} h-auto py-3`} />
+            <textarea key={`bio-${profileEpoch}`} name="businessBio" defaultValue={profileCopy.bio} rows={3} placeholder="We embroider names and logos on shirts and hats." onInput={(event) => { const bio = event.currentTarget.value; setProfileCopy((current) => ({ ...current, bio })); }} className={`${inputClass} h-auto py-3`} />
           </Field>
           <div>
             <span className={labelClass}>Logo</span>
@@ -1220,19 +1272,6 @@ export function ProductForm({
             <p className="mt-2 text-sm text-muted">{PROFILE_PHOTO_HELP} Up to {PORTFOLIO_LIMIT}.</p>
             {visibleErrors.caseImages ? <p className="mt-1 text-sm text-danger">{visibleErrors.caseImages}</p> : null}
           </div>
-          {logoImage || portfolio.length > 0 ? (
-            <div className="rounded-2xl border border-line bg-white px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">On your listing</p>
-              <div className="mt-3">
-                <QuoteProfileBlock
-                  name={profileCopy.name.trim() || seller}
-                  bio={profileCopy.bio.trim()}
-                  logo={logoImage?.src}
-                  photos={portfolio.map((photo) => photo.src)}
-                />
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : null}
 
@@ -1427,15 +1466,6 @@ export function ProductForm({
           </label>
           {visibleErrors.contentRights ? <p className="mt-2 text-sm text-danger">{visibleErrors.contentRights}</p> : null}
         </div>
-      ) : null}
-
-      {previewing && quoteConfirmation ? (
-        <QuotePublishCard
-          title={preview?.title.trim() || "This Twig"}
-          cents={quoteConfirmation.cents}
-          currency={quoteConfirmation.currency}
-          anchor={quoteConfirmation.anchor}
-        />
       ) : null}
 
       {previewing ? (

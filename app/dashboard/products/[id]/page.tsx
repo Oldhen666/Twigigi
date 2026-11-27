@@ -4,9 +4,8 @@ import { Suspense } from "react";
 import { saveProduct } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { ProductForm } from "@/components/product-form";
-import { findUserById, getProductById, readQuoteTwigSettings, setStripeAccount } from "@/lib/db";
+import { findUserById, getProductById, listBusinessProfiles, readQuoteTwigSettings, setStripeAccount } from "@/lib/db";
 import { stripeConnectCountry } from "@/lib/payments";
-import { quotePublishOffer } from "@/lib/quote-followup";
 import { currentStripeConnect } from "@/lib/stripe";
 
 async function Editor({
@@ -23,9 +22,6 @@ async function Editor({
   const owner = product && product.userId !== user.id && user.role === "admin" ? findUserById(product.userId) : user;
   if (!product || !owner || (product.userId !== user.id && user.role !== "admin")) notFound();
   const quoteSettings = product.cta === "quote" ? readQuoteTwigSettings(product.id) : null;
-  const quoteOffer = product.cta === "quote"
-    ? quotePublishOffer({ now: new Date().toISOString(), anchorDay: product.billingAnchorDay, settings: quoteSettings })
-    : null;
   const stripeQuery = typeof query.stripe === "string" ? query.stripe : "";
   const stripe = product.cta === "file"
     ? await currentStripeConnect({ accountId: owner.stripeAccountId, chargesEnabled: owner.stripeChargesEnabled, query: stripeQuery })
@@ -54,7 +50,7 @@ async function Editor({
           A live Twig cannot be deleted. Deactivate it from the dashboard first.
         </p>
       ) : null}
-      <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} publicId={owner.publicId} sellerBio={owner.bio} quoteSettings={quoteSettings} quoteOffer={quoteOffer} cta={product.cta} stripeReady={stripe.chargesEnabled} stripeStarted={Boolean(stripe.accountId) && !stripe.chargesEnabled} stripeCountry={stripeConnectCountry(owner)} stripeNotice={stripeNotice} stripeReason={stripeReason} paymentDefaults={{ interac: owner.payoutInterac, venmo: owner.payoutVenmo, paypalMe: owner.payoutPaypalMe, paypalEmail: owner.payoutPaypalEmail }} initialStep={initialStep} announceSaved={query.saved === "1"} />
+      <ProductForm action={saveProduct} product={product} defaultEmail={owner.email} sellerName={owner.displayName} publicId={owner.publicId} sellerBio={owner.bio} quoteSettings={quoteSettings} businessPresets={product.cta === "quote" ? listBusinessProfiles(owner.id) : []} cta={product.cta} stripeReady={stripe.chargesEnabled} stripeStarted={Boolean(stripe.accountId) && !stripe.chargesEnabled} stripeCountry={stripeConnectCountry(owner)} stripeNotice={stripeNotice} stripeReason={stripeReason} paymentDefaults={{ interac: owner.payoutInterac, venmo: owner.payoutVenmo, paypalMe: owner.payoutPaypalMe, paypalEmail: owner.payoutPaypalEmail }} initialStep={initialStep} announceSaved={query.saved === "1"} />
       {product.status === "published" ? (
         <p className="mt-6 text-sm text-muted">
           This Twig is live, so it cannot be deleted. Deactivate it from the dashboard. The page becomes inactive. Turn it back on before the next charge date and you will not be charged again. If you do not reactivate, it is permanently deleted 30 days after it deactivates.

@@ -5,7 +5,6 @@ import { BackButton } from "@/components/back-button";
 import { saveProduct } from "@/lib/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { readCta } from "@/lib/format";
-import { quotePublishOffer } from "@/lib/quote-followup";
 
 async function NewPage({
   searchParams,
@@ -22,7 +21,7 @@ async function NewPage({
     <main className="mx-auto w-full max-w-xl px-5 py-6">
       <BackButton />
       <h1 className="mt-4 font-serif text-4xl">{title}</h1>
-      <ProductForm action={saveProduct} defaultEmail="" sellerName="" cta={cta} guest quoteOffer={cta === "quote" ? quotePublishOffer({ now: new Date().toISOString(), settings: null }) : null} />
+      <ProductForm action={saveProduct} defaultEmail="" sellerName="" cta={cta} guest />
     </main>
   );
 }
