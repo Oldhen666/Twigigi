@@ -81,7 +81,7 @@ export function readDigitalSubscriptionRow(database: DatabaseSync, userId: strin
 export function countPublishedDigitalFiles(database: DatabaseSync, userId: string) {
   const row = one(
     database,
-    `SELECT COUNT(*) AS n FROM products WHERE user_id = ? AND cta = 'file' AND status = 'published'`,
+    `SELECT COUNT(*) AS n FROM products WHERE user_id = ? AND cta = 'file' AND status = 'published' AND fee_exempt = 0`,
     userId,
   );
   return num(row?.n);
@@ -95,12 +95,25 @@ export function claimFilePublish(database: DatabaseSync, productId: string, user
   ensureDigitalStore(database);
   database.exec("BEGIN IMMEDIATE");
   try {
-    const product = one(database, `SELECT id, user_id, cta, status FROM products WHERE id = ? AND user_id = ?`, productId, userId);
+    const product = one(database, `SELECT id, user_id, cta, status, fee_exempt FROM products WHERE id = ? AND user_id = ?`, productId, userId);
     if (!product || text(product.cta) !== "file") {
       database.exec("ROLLBACK");
       return { ok: false, reason: "missing", limit: null, published: 0 };
     }
     if (text(product.status) === "published") {
+      database.exec("COMMIT");
+      return { ok: true };
+    }
+    if (num(product.fee_exempt) === 1) {
+      const updated = database.prepare(
+        `UPDATE products
+         SET status = 'published', deactivates_at = NULL, deactivated_at = NULL, updated_at = ?
+         WHERE id = ? AND user_id = ? AND cta = 'file' AND status IN ('draft', 'deactivated')`,
+      ).run(now, productId, userId);
+      if (updated.changes < 1) {
+        database.exec("ROLLBACK");
+        return { ok: false, reason: "missing", limit: null, published: 0 };
+      }
       database.exec("COMMIT");
       return { ok: true };
     }
@@ -421,7 +434,7 @@ export type LegacyDigitalBilling = {
 export function legacyDigitalFileBilling(database: DatabaseSync, userId = ""): LegacyDigitalBilling {
   const owner = userId ? " AND p.user_id = ?" : "";
   const params = userId ? [userId] : [];
-  const published = one(database, `SELECT COUNT(*) AS n FROM products p WHERE p.cta = 'file' AND p.status = 'published'${owner}`, ...params);
+  const published = one(database, `SELECT COUNT(*) AS n FROM products p WHERE p.cta = 'file' AND p.status = 'published' AND p.fee_exempt = 0${owner}`, ...params);
   const withBills = one(
     database,
     `SELECT COUNT(DISTINCT p.id) AS n

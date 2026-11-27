@@ -1312,7 +1312,7 @@ export async function confirmBuyPlan(formData: FormData) {
   const addSlots = Number(text(formData, "add") || "0");
   const safeExtra = Number.isInteger(extraSlots) ? extraSlots : -1;
   const draft = ownedBuyDraft(text(formData, "draft"), user.id);
-  const published = sellerProducts(user.id).filter((product) => product.cta === "buy" && product.status === "published").length;
+  const published = sellerProducts(user.id).filter((product) => product.cta === "buy" && product.status === "published" && !product.feeExempt).length;
   const managementBack = `/dashboard/buy?add=${encodeURIComponent(String(addSlots || ""))}&plan=${encodeURIComponent(planId)}&extra=${encodeURIComponent(String(Math.max(safeExtra, 0)))}`;
   const back = draft
     ? `/dashboard/buy?draft=${encodeURIComponent(draft.id)}&choice=${encodeURIComponent(`${planId}:${Math.max(safeExtra, 0)}`)}`

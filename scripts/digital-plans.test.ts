@@ -13,7 +13,7 @@ import {
   singlePlanAlternative,
   snapshotPlatformFee,
 } from "../lib/digital-plans.ts";
-import { claimFilePublish, commitPlanChange, ensureDigitalStore, readDigitalSubscriptionRow } from "../lib/digital-store.ts";
+import { claimFilePublish, commitPlanChange, countPublishedDigitalFiles, ensureDigitalStore, readDigitalSubscriptionRow } from "../lib/digital-store.ts";
 import { applyPaymentResult, ensurePaymentLedger } from "../lib/payment-ledger.ts";
 
 const EXPECTED = [
@@ -108,7 +108,8 @@ function shopDb() {
   db.exec(`
     CREATE TABLE products (
       id TEXT PRIMARY KEY, user_id TEXT, cta TEXT, status TEXT,
-      deactivates_at TEXT, deactivated_at TEXT, updated_at TEXT
+      deactivates_at TEXT, deactivated_at TEXT, updated_at TEXT,
+      fee_exempt INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE twig_bills (
       id TEXT PRIMARY KEY, user_id TEXT, product_id TEXT, kind TEXT, amount_cents INTEGER, currency TEXT,
@@ -147,6 +148,19 @@ test("a draft stays a draft at the listing limit, and one more publish is refuse
   if (!claimed.ok) assert.equal(claimed.reason, "quota");
   const status = db.prepare(`SELECT status FROM products WHERE id = 'draft_1'`).get() as { status: string };
   assert.equal(status.status, "draft");
+  db.prepare(`INSERT INTO products (id, user_id, cta, status, fee_exempt) VALUES ('waived', 'usr', 'file', 'draft', 1)`).run();
+  const waived = claimFilePublish(db, "waived", "usr", "2026-11-21T16:00:00.000Z");
+  assert.equal(waived.ok, true);
+  assert.equal(countPublishedDigitalFiles(db, "usr"), 5);
+});
+
+test("a payment-waived Digital File draft publishes with no plan and does not use a slot", () => {
+  const db = shopDb();
+  db.prepare(`INSERT INTO products (id, user_id, cta, status, fee_exempt) VALUES ('waived', 'usr', 'file', 'draft', 1)`).run();
+  const claimed = claimFilePublish(db, "waived", "usr", "2026-11-21T16:00:00.000Z");
+  assert.equal(claimed.ok, true);
+  assert.equal((db.prepare(`SELECT status FROM products WHERE id = 'waived'`).get() as { status: string }).status, "published");
+  assert.equal(countPublishedDigitalFiles(db, "usr"), 0);
 });
 
 test("Creator times two is stored once when the same payment is confirmed again", () => {

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { stopBuyPlanRenewal } from "@/lib/actions";
+import { publishBuyDraft, stopBuyPlanRenewal } from "@/lib/actions";
 import { requireSeller } from "@/lib/auth";
 import { formatListingFee, listingFeeCurrency, platformFee } from "@/lib/billing";
 import { BuyBundlePicker, type BuyBundleRow } from "@/components/buy-bundle-picker";
@@ -46,7 +46,7 @@ export default async function Page({
   const current = readBuySubscription(user.id);
   const active = activeBuyQuote(current);
   const products = sellerProducts(user.id);
-  const publishedBuy = products.filter((product) => product.cta === "buy" && product.status === "published");
+  const publishedBuy = products.filter((product) => product.cta === "buy" && product.status === "published" && !product.feeExempt);
   const published = publishedBuy.length;
   const legacy = legacyBuyBilling(user.id);
   const requestedPlan = typeof params.plan === "string" ? params.plan : "";
@@ -60,6 +60,24 @@ export default async function Page({
         <h1 className="font-serif text-4xl">Your Twig is published</h1>
         <p className="mt-3 text-lg">{owned.title}</p>
         <Link href={`/${user.publicId}/${owned.slug}`} className={`${buttonClass} mt-6`}>View Twig</Link>
+      </main>
+    );
+  }
+  if (owned?.feeExempt && (owned.status === "draft" || owned.status === "deactivated")) {
+    const ready = owned.title.trim().length >= 2 && owned.images.length > 0;
+    return (
+      <main className="mx-auto w-full max-w-[600px] px-5 py-8">
+        <h1 className="font-serif text-4xl">{owned.status === "draft" ? "Publish this Twig" : "Reactivate this Twig"}</h1>
+        <p className="mt-3 text-lg">{owned.title}</p>
+        <p className="mt-3 text-sm leading-6 text-muted">Payment is waived for this Twig. It does not use a bundle slot.</p>
+        {ready ? (
+          <form action={publishBuyDraft} className="mt-6">
+            <input type="hidden" name="id" value={owned.id} />
+            <button className={buttonClass}>{owned.status === "draft" ? "Publish" : "Reactivate"}</button>
+          </form>
+        ) : (
+          <Link href={`/dashboard/products/${owned.id}`} className={`${buttonClass} mt-6`}>Finish the draft</Link>
+        )}
       </main>
     );
   }

@@ -54,11 +54,11 @@ async function DashboardBody({
   const sales = salesOf(scopedOrders);
   const digitalSubscription = readDigitalSubscription(user.id);
   const digitalPlan = activePlanQuote(digitalSubscription);
-  const publishedFiles = products.filter((product) => product.cta === "file" && product.status === "published").length;
+  const publishedFiles = products.filter((product) => product.cta === "file" && product.status === "published" && !product.feeExempt).length;
   const digitalLegacy = legacyDigitalBilling(user.id);
   const buySubscription = readBuySubscription(user.id);
   const buyPlan = activeBuyQuote(buySubscription);
-  const publishedBuy = products.filter((product) => product.cta === "buy" && product.status === "published").length;
+  const publishedBuy = products.filter((product) => product.cta === "buy" && product.status === "published" && !product.feeExempt).length;
   const selected = OFFERS.find((item) => item.id === offer);
 
   return (
@@ -348,7 +348,7 @@ function publishedUsage(count: number, limit?: number | null) {
 }
 
 function buyListingRate(products: Product[]) {
-  const published = products.filter((product) => product.cta === "buy" && product.status === "published");
+  const published = products.filter((product) => product.cta === "buy" && product.status === "published" && !product.feeExempt);
   const currencies = [...new Set(published.map((product) => listingFeeCurrency("buy", product.location)))].sort();
   const amounts = (currencies.length > 0 ? currencies : ["CAD"]).map((currency) => formatListingFee(currency));
   return `${amounts.join(" or ")} every 30 days`;
@@ -406,7 +406,7 @@ function categoryBrief(input: {
   const ids = new Set(input.products.filter((product) => product.cta === input.offer).map((product) => product.id));
   if (input.offer === "quote") {
     const rows = input.quotes.filter((quote) => ids.has(quote.productId));
-    const published = input.products.filter((product) => product.cta === "quote" && product.status === "published").length;
+    const published = input.products.filter((product) => product.cta === "quote" && product.status === "published" && !product.feeExempt).length;
     return {
       totalLabel: "Total quotes",
       total: rows.length,

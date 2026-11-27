@@ -63,7 +63,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <li key={product.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card px-4 py-3 text-sm">
             <div>
               <p className="font-medium">{product.title}</p>
-              <p className="text-muted">{product.displayName} · {product.status}{product.demo ? " · Demo" : ""}{product.deactivatesAt ? " · ending" : ""}{product.feeExempt ? " · free forever" : ""}{product.cta === "quote" && product.quoteFeeExempt ? " · quote fee waived" : ""} · Last updated {formatDate(product.updatedAt, product.location)}</p>
+              <p className="text-muted">{product.displayName} · {product.status}{product.demo ? " · Demo" : ""}{product.deactivatesAt ? " · ending" : ""}{product.feeExempt ? (product.status === "draft" ? " · payment waived" : " · free forever") : ""}{product.cta === "quote" && product.quoteFeeExempt ? " · quote fee waived" : ""} · Last updated {formatDate(product.updatedAt, product.location)}</p>
             </div>
             <div className="flex items-center gap-3">
               <Link href={`/dashboard/products/${product.id}?from=admin`} className="text-forest">Edit</Link>
@@ -83,7 +83,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
                 <input type="hidden" name="id" value={product.id} />
                 <input type="hidden" name="free" value={product.feeExempt ? "0" : "1"} />
                 <input type="hidden" name="next" value="/admin/twigs" />
-                <button className="text-forest">{product.feeExempt ? "Charge this Twig" : "Make free forever"}</button>
+                <button className="text-forest">{product.status === "draft" ? (product.feeExempt ? "Restore payment" : "Waive payment") : (product.feeExempt ? "Charge this Twig" : "Make free forever")}</button>
               </form>
               {product.status === "published" ? <Link href={`/${product.publicId}/${product.slug}`} className="text-forest">Open</Link> : null}
               {product.status === "published" && !product.deactivatesAt ? (

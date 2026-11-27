@@ -84,7 +84,7 @@ export function TwigCard({
           {!restricted && live && !ending ? (free ? "Free" : product.billingStatus === "legacy_review" ? "Not on automatic billing" : fee > 0 && renews ? `Renews ${renews} · ${listingLabel} / 30 days` : fee > 0 ? `${listingLabel} / 30 days` : "No listing fee") : null}
           {!restricted && ending ? `Active until ${shortDate(product.deactivatesAt || "")}` : null}
           {!restricted && product.status === "deactivated" ? `Inactive${deactivatedLabel ? ` since ${deactivatedLabel}` : ""}` : null}
-          {!restricted && product.status === "draft" ? "Not published" : null}
+          {!restricted && product.status === "draft" ? (free ? "Payment waived" : "Not published") : null}
         </p>
         <p className="mt-1 text-sm text-muted">Last updated {formatDate(product.updatedAt, product.location)}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -126,7 +126,7 @@ export function TwigCard({
                   <input type="hidden" name="id" value={product.id} />
                   <input type="hidden" name="free" value={free ? "0" : "1"} />
                   <input type="hidden" name="next" value={returnTo} />
-                  <button className="w-full rounded-xl px-3 py-2 text-left hover:bg-paper">{free ? "Charge this Twig" : "Make free forever"}</button>
+                  <button className="w-full rounded-xl px-3 py-2 text-left hover:bg-paper">{product.status === "draft" ? (free ? "Restore payment" : "Waive payment") : (free ? "Charge this Twig" : "Make free forever")}</button>
                 </form>
               ) : null}
               {fee > 0 && product.paidUntil && !acting ? (

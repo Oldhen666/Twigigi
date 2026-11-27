@@ -26,7 +26,7 @@ export default async function Page({
   const current = readDigitalSubscription(user.id);
   const active = activePlanQuote(current);
   const covered = subscriptionCovers(current);
-  const published = sellerProducts(user.id).filter((product) => product.cta === "file" && product.status === "published").length;
+  const published = sellerProducts(user.id).filter((product) => product.cta === "file" && product.status === "published" && !product.feeExempt).length;
   const legacy = legacyDigitalBilling(user.id);
   const notice = typeof params.notice === "string" ? params.notice : "";
   const noticeText = notice === "saved"

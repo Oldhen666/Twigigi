@@ -16,7 +16,7 @@ import {
   buyExpansionCopy,
   recommendBuyTarget,
 } from "../lib/buy-plans.ts";
-import { claimBuyPublish, commitBuyChange, ensureBuyStore, readBuySubscriptionRow } from "../lib/buy-store.ts";
+import { claimBuyPublish, commitBuyChange, countPublishedBuyListings, ensureBuyStore, readBuySubscriptionRow } from "../lib/buy-store.ts";
 import { applyPaymentResult, ensurePaymentLedger } from "../lib/payment-ledger.ts";
 
 const NOW = "2026-11-21T16:00:00.000Z";
@@ -157,6 +157,19 @@ test("a draft stays a draft when the bundle is full, and a deactivated Buy Now l
   assert.equal(republished.ok, true);
   const again = claimBuyPublish(db, "draft_1", "usr", NOW);
   assert.equal(again.ok, false);
+  db.prepare(`INSERT INTO products (id, user_id, cta, status, fee_exempt) VALUES ('waived', 'usr', 'buy', 'draft', 1)`).run();
+  const waived = claimBuyPublish(db, "waived", "usr", NOW);
+  assert.equal(waived.ok, true);
+  assert.equal(countPublishedBuyListings(db, "usr"), 10);
+});
+
+test("a payment-waived Buy Now draft publishes with no bundle and does not use a slot", () => {
+  const db = shopDb();
+  db.prepare(`INSERT INTO products (id, user_id, cta, status, fee_exempt) VALUES ('waived', 'usr', 'buy', 'draft', 1)`).run();
+  const claimed = claimBuyPublish(db, "waived", "usr", NOW);
+  assert.equal(claimed.ok, true);
+  assert.equal((db.prepare(`SELECT status FROM products WHERE id = 'waived'`).get() as { status: string }).status, "published");
+  assert.equal(countPublishedBuyListings(db, "usr"), 0);
 });
 
 test("a rejected change and a failed payment keep the original bundle, slots, and draft", () => {
@@ -261,7 +274,8 @@ function shopDb() {
   db.exec(`
     CREATE TABLE products (
       id TEXT PRIMARY KEY, user_id TEXT, cta TEXT, status TEXT,
-      deactivates_at TEXT, deactivated_at TEXT, updated_at TEXT
+      deactivates_at TEXT, deactivated_at TEXT, updated_at TEXT,
+      fee_exempt INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE twig_bills (
       id TEXT PRIMARY KEY, user_id TEXT, product_id TEXT, kind TEXT, amount_cents INTEGER, currency TEXT,
