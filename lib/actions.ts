@@ -58,6 +58,8 @@ import {
   getOrder,
   setOrderFileIssue,
   getProductById,
+  getDraftByKey,
+  claimDraftKey,
   getQuote,
   writeQuoteTwigSettings,
   readQuoteTwigSettings,
@@ -215,6 +217,11 @@ function fieldErrors(error: z.ZodError) {
 function text(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
+}
+
+function draftKeyFrom(value: string) {
+  const key = value.trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(key) ? key : "";
 }
 
 function readJson(raw: string) {
@@ -561,7 +568,8 @@ async function saveQuoteDocuments(files: File[]) {
 
 export async function saveProduct(_prev: FormState, formData: FormData): Promise<FormState> {
   const id = text(formData, "id");
-  const existing = id ? getProductById(id) : null;
+  const draftKey = draftKeyFrom(text(formData, "draftKey"));
+  let existing = id ? getProductById(id) : null;
 
   const intent = text(formData, "intent") === "publish" ? "publish" : "draft";
   const errors: Record<string, string> = {};
@@ -798,6 +806,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   if (!owner || (id && (!existing || existing.userId !== owner.id))) {
     return { error: "That Twig was not found.", ...sessionStamp };
   }
+  if (!existing && draftKey) {
+    const keyed = getDraftByKey(owner.id, draftKey);
+    if (keyed) existing = keyed;
+  }
   if ((owner.suspended || owner.banned) && !acting && !adminEdit) return { error: "This account cannot publish.", ...sessionStamp };
   if (intent === "publish" && !sellerMayPublish(owner) && !acting && !adminEdit) return { error: "Publishing is restricted on this account.", ...sessionStamp };
   if (cta === "file") {
@@ -900,7 +912,7 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
     filePassword,
   };
 
-  const savedProductId = existing?.id ?? newId("prd");
+  let savedProductId = existing?.id ?? newId("prd");
   const publishingNewFile = cta === "file" && intent === "publish" && existing?.status !== "published";
   const publishingNewBuy = cta === "buy" && intent === "publish" && existing?.status !== "published";
   const needsBilling = intent === "publish" && !publishingNewFile && !publishingNewBuy && !adminEdit && !acting && !existing?.feeExempt && !user.billingMethod;
@@ -909,9 +921,20 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   try {
     if (existing) {
       updateProduct(existing.id, owner.id, input);
+      if (draftKey) claimDraftKey(existing.id, owner.id, draftKey, "keep");
       if (input.status !== "published" || existing.status === "deactivated") clearDeactivatesAt(existing.id, owner.id);
       if (input.status === "published" && existing.status === "deactivated") clearDeactivatedAt(existing.id, owner.id);
-    } else insertProduct(savedProductId, owner.id, input);
+    } else {
+      insertProduct(savedProductId, owner.id, input);
+      if (draftKey) {
+        const claimed = claimDraftKey(savedProductId, owner.id, draftKey, "drop-new");
+        if (claimed !== savedProductId) {
+          updateProduct(claimed, owner.id, input);
+          savedProductId = claimed;
+          existing = getProductById(claimed);
+        }
+      }
+    }
     if (input.status === "published" && cta === "file" && text(formData, "digitalRights") === "yes") {
       confirmDigitalRights(savedProductId, owner.id, TERMS_VERSION, COPYRIGHT_POLICY_VERSION, digitalContentVersion(parsedLinks.links, images));
     } else if (input.status === "published" && cta !== "file") {
@@ -3196,6 +3219,18 @@ export async function setQuoteFeeFree(formData: FormData) {
     updateTag(sellerTag(owner.publicId));
   }
   redirect(back || "/admin/twigs");
+}
+
+export async function copyTwig(formData: FormData) {
+  const user = await requireSeller();
+  const back = safeNext(text(formData, "next"));
+  const product = getProductById(text(formData, "id"));
+  if (!product || product.userId !== user.id || product.status !== "draft") redirect(back);
+  const copy = duplicateProduct(product.id, newId("prd"));
+  if (!copy) redirect(back);
+  updateTag(sellerTag(user.publicId));
+  updateTag(productTag(user.publicId, copy.slug));
+  redirect(back);
 }
 
 export async function duplicateTwig(formData: FormData) {

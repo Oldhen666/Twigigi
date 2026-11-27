@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { payAndPublish, payToResume, reactivateTwig, setListingFree, setListingRenewal } from "@/lib/actions";
+import { copyTwig, payAndPublish, payToResume, reactivateTwig, setListingFree, setListingRenewal } from "@/lib/actions";
 import { formatListingFee, listingFeeCents, listingFeeCurrency, listingStillPaid } from "@/lib/billing";
 import { DeactivateTwig } from "@/components/deactivate-twig";
 import { DeleteTwig } from "@/components/delete-twig";
@@ -49,6 +49,7 @@ export function TwigCard({
   const publishLabel = product.cta === "buy" || product.cta === "file" || skipPay || fee === 0 ? "Publish" : `Publish · ${listingLabel} / 30 days`;
   const paidThrough = product.status === "deactivated" && listingStillPaid(product);
   const showDeactivate = product.status === "published";
+  const showDuplicate = product.status === "draft";
   const showDelete = canDelete && (product.status === "draft" || product.status === "deactivated");
   const period = product.paidUntil ? `Paid until ${formatBillingDate(product.paidUntil)}` : product.billingStatus === "legacy_review" ? "Not on automatic billing" : "";
 
@@ -116,7 +117,7 @@ export function TwigCard({
               <button className="inline-flex h-9 items-center rounded-full bg-forest px-4 text-sm font-medium text-card">{skipPay || fee === 0 ? "Reactivate" : publishLabel}</button>
             </form>
           ) : null}
-          {showDeactivate || showDelete || acting || period ? (
+          {showDeactivate || showDuplicate || showDelete || acting || period ? (
             <TwigMore>
               {period ? <p className="px-3 py-2 text-muted">{period}</p> : null}
               {acting ? (
@@ -137,6 +138,13 @@ export function TwigCard({
               ) : null}
               {showDeactivate ? (
                 <DeactivateTwig productId={product.id} mode={ending ? "ending" : "live"} endsLabel={endsLabel} deleteLabel={deleteLabel} next={returnTo} variant="menu" />
+              ) : null}
+              {showDuplicate ? (
+                <form action={copyTwig}>
+                  <input type="hidden" name="id" value={product.id} />
+                  <input type="hidden" name="next" value={returnTo} />
+                  <button className="w-full rounded-xl px-3 py-2 text-left hover:bg-paper">Duplicate</button>
+                </form>
               ) : null}
               {showDelete ? <DeleteTwig productId={product.id} mode={product.status === "deactivated" ? "deactivated" : "draft"} variant="menu" /> : null}
             </TwigMore>

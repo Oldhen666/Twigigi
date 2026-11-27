@@ -4,6 +4,7 @@ import { startTransition, useEffect, useRef, useState } from "react";
 import { useActionState } from "react";
 import { createPortal } from "react-dom";
 import { removeProduct } from "@/lib/actions";
+import { nextDraftKey, rememberDraftKey } from "@/lib/draft-session";
 import { captureDraft, readDraftImage, type DraftImage, type NewPageDraft } from "@/lib/new-page-draft";
 import type { Cta, FormState, Product, QuoteForm } from "@/lib/types";
 import { BuyOfferFields, consumeStripePopup, type PaymentDefaults } from "@/components/buy-offer-fields";
@@ -23,6 +24,7 @@ import { cardLinkProblem, interacEmailProblem, isTransferMethod, parsePaymentMet
 import { descriptionPlain } from "@/lib/rich-text";
 import { digitalRightsDue } from "@/lib/copyright";
 import { FOLLOWUP_DRAFT_LINE, quotePublishOffer } from "@/lib/quote-followup";
+import { productUrl } from "@/lib/format";
 
 type Action = (state: FormState, formData: FormData) => Promise<FormState>;
 
@@ -66,6 +68,7 @@ export function ProductForm({
   defaultEmail,
   cta,
   sellerName,
+  publicId = "",
   guest = false,
   stripeReady = false,
   stripeStarted = false,
@@ -84,6 +87,7 @@ export function ProductForm({
   defaultEmail: string;
   cta: Cta;
   sellerName: string;
+  publicId?: string;
   guest?: boolean;
   stripeReady?: boolean;
   stripeStarted?: boolean;
@@ -140,6 +144,7 @@ export function ProductForm({
   const [preview, setPreview] = useState<PagePreviewDraft | null>(null);
   const [draft, setDraft] = useState<NewPageDraft | null>(null);
   const [savedId, setSavedId] = useState(product?.id ?? "");
+  const [draftKey, setDraftKey] = useState(product?.draftKey ?? "");
   const [savedSlug, setSavedSlug] = useState(product?.slug ?? "");
   const [notice, setNotice] = useState<"saved" | null>(announceSaved ? "saved" : null);
   const [discardOpen, setDiscardOpen] = useState(false);
@@ -219,6 +224,20 @@ export function ProductForm({
       setAccountOpen(false);
     }
   }, [state.displayName, state.signedIn]);
+
+  const editing = Boolean(product);
+  useEffect(() => {
+    if (product?.id) setSavedId(product.id);
+    if (product?.draftKey) {
+      rememberDraftKey(product.draftKey);
+      setDraftKey(product.draftKey);
+    }
+  }, [product?.id, product?.draftKey]);
+
+  useEffect(() => {
+    if (editing) return;
+    setDraftKey((current) => current || nextDraftKey());
+  }, [editing]);
 
   useEffect(() => {
     if (!state.saved || !state.productId || state.savedAt == null || seenSave.current === state.savedAt) return;
@@ -619,9 +638,18 @@ export function ProductForm({
     });
   }
 
+  function ensureIdentity(form: HTMLFormElement) {
+    const id = savedId || product?.id || "";
+    if (id) hiddenInput(form, "id").value = id;
+    const key = (product?.draftKey || draftKey || (product ? "" : nextDraftKey())).toLowerCase();
+    if (key && key !== draftKey) setDraftKey(key);
+    if (key) hiddenInput(form, "draftKey").value = key;
+  }
+
   function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const intent = submitter instanceof HTMLButtonElement && submitter.name === "intent" ? submitter.value : "";
+    if (intent === "draft" || intent === "publish" || intent === "stripe") ensureIdentity(event.currentTarget);
     if (intent !== "draft" && intent !== "publish" && intent !== "stripe") {
       event.preventDefault();
       consumeStripePopup()?.close();
@@ -1062,6 +1090,7 @@ export function ProductForm({
         </div>
       ) : null}
       {savedId ? <input type="hidden" name="id" value={savedId} /> : null}
+      {draftKey ? <input type="hidden" name="draftKey" value={draftKey} /> : null}
       {savedSlug ? <input type="hidden" name="slug" value={savedSlug} /> : null}
       <input type="hidden" name="cta" value={cta} />
       <input type="hidden" name="editorStep" value={step} />
@@ -1272,7 +1301,7 @@ export function ProductForm({
 
       {priced ? (
         <div className={step !== 2 ? "hidden" : undefined}>
-          <BuyOfferFields product={product} errors={visibleErrors} seed={fresh ? draft : null} onChange={fresh ? remember : undefined} digital={file} stripeReady={stripeReady} stripeStarted={stripeStarted} stripeCountry={stripeCountry} stripeNotice={stripeNotice} stripeReason={stripeReason} pending={pending} paymentDefaults={paymentDefaults} />
+          <BuyOfferFields product={product} errors={visibleErrors} seed={fresh ? draft : null} onChange={fresh ? remember : undefined} digital={file} stripeReady={stripeReady} stripeStarted={stripeStarted} stripeCountry={stripeCountry} stripeNotice={stripeNotice} stripeReason={stripeReason} pending={pending} paymentDefaults={paymentDefaults} twigUrl={publicId && (savedSlug || product?.slug) ? productUrl(publicId, savedSlug || product?.slug || "") : ""} />
           <Section title="Order email">
             <Field label="Email for new orders" error={visibleErrors.contactEmail}>
               <input name="contactEmail" type="email" defaultValue={emailValue(draft, product, defaultEmail)} placeholder="name@email.com (email)" className={inputClass} />
@@ -1475,6 +1504,16 @@ export function ProductForm({
 }
 
 const ACCOUNT_FIELDS = new Set(["displayName", "username", "email", "password"]);
+
+function hiddenInput(form: HTMLFormElement, name: string) {
+  const found = form.querySelector(`input[type="hidden"][name="${name}"]`);
+  if (found instanceof HTMLInputElement) return found;
+  const input = document.createElement("input");
+  input.type = "hidden";
+  input.name = name;
+  form.appendChild(input);
+  return input;
+}
 
 function boxCheckedByName(form: HTMLFormElement, name: string) {
   const field = form.elements.namedItem(name);

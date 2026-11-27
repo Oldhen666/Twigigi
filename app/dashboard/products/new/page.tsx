@@ -26,7 +26,7 @@ async function NewProduct({
   return (
     <main className="mx-auto w-full max-w-xl px-5 py-6">
       <h1 className="font-serif text-4xl">{title}</h1>
-      <ProductForm action={saveProduct} defaultEmail={user.email} sellerName={user.displayName} sellerBio={user.bio} cta={cta} quoteOffer={cta === "quote" ? quotePublishOffer({ now: new Date().toISOString(), settings: null }) : null} stripeReady={stripe.chargesEnabled} stripeStarted={Boolean(stripe.accountId) && !stripe.chargesEnabled} stripeCountry={stripeConnectCountry(user)} paymentDefaults={{ interac: user.payoutInterac, venmo: user.payoutVenmo, paypalMe: user.payoutPaypalMe, paypalEmail: user.payoutPaypalEmail }} />
+      <ProductForm action={saveProduct} defaultEmail={user.email} sellerName={user.displayName} publicId={user.publicId} sellerBio={user.bio} cta={cta} quoteOffer={cta === "quote" ? quotePublishOffer({ now: new Date().toISOString(), settings: null }) : null} stripeReady={stripe.chargesEnabled} stripeStarted={Boolean(stripe.accountId) && !stripe.chargesEnabled} stripeCountry={stripeConnectCountry(user)} paymentDefaults={{ interac: user.payoutInterac, venmo: user.payoutVenmo, paypalMe: user.payoutPaypalMe, paypalEmail: user.payoutPaypalEmail }} />
     </main>
   );
 }

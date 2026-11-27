@@ -152,6 +152,7 @@ export type ProductInput = {
 
 export type Product = ProductInput & {
   id: string;
+  draftKey: string;
   userId: string;
   currency: string;
   viewCount: number;

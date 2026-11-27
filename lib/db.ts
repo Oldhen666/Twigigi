@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { updateTag } from "next/cache";
 import fs from "node:fs";
 import path from "node:path";
@@ -313,6 +313,12 @@ function ensureColumns(database: DatabaseSync) {
   add("products", "free_shipping_over_cents", "free_shipping_over_cents INTEGER");
   add("products", "file_links", "file_links TEXT NOT NULL DEFAULT '[]'");
   add("products", "file_password", "file_password TEXT NOT NULL DEFAULT ''");
+  add("products", "draft_key", "draft_key TEXT NOT NULL DEFAULT ''");
+  database.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS products_owner_draft_key
+     ON products(user_id, draft_key)
+     WHERE draft_key != '' AND status = 'draft'`,
+  );
   add("orders", "file_links", "file_links TEXT NOT NULL DEFAULT '[]'");
   add("orders", "file_password", "file_password TEXT NOT NULL DEFAULT ''");
   add("orders", "file_issue", "file_issue TEXT NOT NULL DEFAULT ''");
@@ -988,6 +994,7 @@ function mapProduct(row: Row): Product {
   const priceCents = nullableNum(row.price_cents);
   return {
     id: str(row.id),
+    draftKey: str(row.draft_key),
     userId: str(row.user_id),
     slug: str(row.slug),
     title: str(row.title),
@@ -1127,7 +1134,7 @@ function eraseProduct(id: string) {
 }
 
 function mapPublic(row: Row): PublicProduct {
-  return { ...mapProduct(row), paypalEmail: "", username: str(row.username), publicId: str(row.public_id), displayName: str(row.display_name) };
+  return { ...mapProduct(row), draftKey: "", paypalEmail: "", username: str(row.username), publicId: str(row.public_id), displayName: str(row.display_name) };
 }
 
 function mapUser(row: Row): User {
@@ -1964,10 +1971,54 @@ export function duplicateProduct(sourceId: string, id: string) {
   const title = duplicateTitle(product.title);
   const slug = uniqueSlug(product.userId, slugify(title));
   insertProduct(id, product.userId, { ...product, title, slug, status: "draft" });
+  db.prepare("UPDATE products SET draft_key = ? WHERE id = ?").run(randomUUID(), id);
   if (product.currency && product.currency !== "CAD") {
     db.prepare("UPDATE products SET currency = ? WHERE id = ?").run(product.currency, id);
   }
+  if (product.cta === "quote") {
+    const settings = readQuoteTwigSettings(sourceId);
+    if (settings) {
+      writeQuoteTwigSettings({
+        productId: id,
+        businessName: settings.businessName,
+        businessBio: settings.businessBio,
+        businessLogo: settings.businessLogo,
+        caseImages: settings.caseImages,
+        profileSkipped: settings.profileSkipped,
+        visitEnabled: settings.visitEnabled,
+        offerEnabled: settings.offerEnabled,
+        invoiceEnabled: settings.invoiceEnabled,
+      });
+    }
+  }
   return { id, userId: product.userId, slug, title };
+}
+
+export function getDraftByKey(userId: string, draftKey: string) {
+  if (!draftKey) return null;
+  const row = one(
+    "SELECT id FROM products WHERE user_id = ? AND draft_key = ? AND status = 'draft' LIMIT 1",
+    userId,
+    draftKey,
+  );
+  if (!row) return null;
+  return getProductById(str(row.id));
+}
+
+export function claimDraftKey(id: string, userId: string, draftKey: string, onConflict: "keep" | "drop-new") {
+  if (!draftKey) return id;
+  try {
+    db.prepare("UPDATE products SET draft_key = ? WHERE id = ? AND user_id = ? AND draft_key = ''").run(draftKey, id, userId);
+    return id;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!/UNIQUE/i.test(message)) throw error;
+    if (onConflict === "keep") return id;
+    deleteProduct(id, userId);
+    const winner = getDraftByKey(userId, draftKey);
+    if (!winner) throw error;
+    return winner.id;
+  }
 }
 
 export function insertProduct(id: string, userId: string, input: ProductInput) {

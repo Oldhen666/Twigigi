@@ -5,7 +5,7 @@ import { centsToInput } from "@/lib/format";
 import type { NewPageDraft } from "@/lib/new-page-draft";
 import type { Product, ProductOption, ProductVariant } from "@/lib/types";
 import { MAX_VALUES, OPTION_NAMES, normalizeVariants, variantLabel } from "@/lib/variants";
-import { buttonClass, inputClass, labelClass } from "@/components/ui";
+import { buttonClass, ghostClass, inputClass, labelClass } from "@/components/ui";
 import { PersonalizationEditor } from "@/components/personalization-editor";
 import { readPersonalization } from "@/lib/personalization";
 import { CA_PROVINCES, US_STATES, joinLocation, lookupCurrentPlace, lookupIpPlace, splitLocation } from "@/lib/places";
@@ -58,6 +58,45 @@ function readVariants(seed: NewPageDraft | null, product?: Product): ProductVari
   }
 }
 
+function StripeSetupLink({ url, live }: { url: string; live: boolean }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    if (!url) return;
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(url);
+      ok = true;
+    } catch {
+      const field = document.createElement("textarea");
+      field.value = url;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.left = "-9999px";
+      document.body.append(field);
+      field.select();
+      ok = document.execCommand("copy");
+      field.remove();
+    }
+    setCopied(ok);
+    if (ok) window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  if (!url) {
+    return <p className="mt-3 text-sm text-muted">Save this draft to get the Twig link for Stripe’s website field.</p>;
+  }
+
+  return (
+    <div className="mt-3">
+      <button type="button" onClick={() => void copy()} className={`${ghostClass} w-full sm:w-auto`}>
+        <span>{copied ? "Copied" : "Copy link for setting up"}</span>
+      </button>
+      <p className="mt-2 break-all text-sm text-ink">{url}</p>
+      {live ? null : <p className="mt-1 text-sm text-muted">Publish this Twig so Stripe can open the page.</p>}
+    </div>
+  );
+}
+
 export function BuyOfferFields({
   product,
   errors,
@@ -71,6 +110,7 @@ export function BuyOfferFields({
   stripeReason = "",
   pending = false,
   paymentDefaults,
+  twigUrl = "",
 }: {
   product?: Product;
   errors?: Record<string, string>;
@@ -84,6 +124,7 @@ export function BuyOfferFields({
   stripeReason?: string;
   pending?: boolean;
   paymentDefaults?: PaymentDefaults;
+  twigUrl?: string;
 }) {
   const seededOptions = readOptions(seed, product);
   const [price, setPrice] = useState(seed?.fields.price ?? centsToInput(product?.priceCents ?? null));
@@ -532,6 +573,8 @@ export function BuyOfferFields({
           stripeReason={stripeReason}
           pending={pending}
           pickup={pickup}
+          twigUrl={twigUrl}
+          twigLive={product?.status === "published"}
           onToggle={toggleMethod}
           onCardUrl={setCardUrl}
           onInteracEmail={setInteracEmail}
@@ -575,6 +618,8 @@ function PaymentChoices({
   stripeReason = "",
   pending = false,
   pickup = true,
+  twigUrl = "",
+  twigLive = false,
   onToggle,
   onCardUrl,
   onInteracEmail,
@@ -611,6 +656,8 @@ function PaymentChoices({
   stripeReason?: string;
   pending?: boolean;
   pickup?: boolean;
+  twigUrl?: string;
+  twigLive?: boolean;
   onToggle: (id: string) => void;
   onCardUrl: (value: string) => void;
   onInteracEmail: (value: string) => void;
@@ -688,12 +735,14 @@ function PaymentChoices({
               {stripeStarted ? "Finish Stripe setup" : "Connect Stripe"}
             </button>
           )}
+          <StripeSetupLink url={twigUrl} live={twigLive} />
           {stripeNotice === "setup" ? <p className="mt-3 text-sm text-danger">Stripe is not set up on this server yet.</p> : null}
           {stripeNotice === "error" ? <p className="mt-3 text-sm text-danger">{stripeReason || "Stripe could not open the connection page. Try again in a moment."}</p> : null}
           <details className="mt-3">
             <summary className="cursor-pointer text-sm font-medium text-forest focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest">How do I set up card payments?</summary>
             <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-muted">
-              <li>Select “Connect Stripe” to open the setup in a new page.</li>
+              <li>Select “Connect Stripe” or “Finish Stripe setup” to open the setup in a new page.</li>
+              <li>When Stripe asks for your website, choose “Copy link for setting up” and paste that Twig link into the website field.</li>
               <li>Follow Stripe’s prompts to provide the requested account details and add a bank account for payouts.</li>
               <li>Return to Twigigi and check your status. Once card payments are enabled, buyers can choose card at checkout.</li>
             </ol>
