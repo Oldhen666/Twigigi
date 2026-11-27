@@ -13,6 +13,7 @@ import { Logo } from "@/components/logo";
 import { BackButton } from "@/components/back-button";
 import { PayMethods } from "@/components/pay-methods";
 import { ReportListing } from "@/components/report-listing";
+import { QuoteProfileBlock } from "@/components/quote-profile";
 import { RichDescription } from "@/components/rich-description";
 import { Stars } from "@/components/stars";
 import { toggleLikeAction, toggleSaved } from "@/lib/actions";
@@ -194,15 +195,7 @@ export async function ProductView({
               </p>
               {quoteProfile && !quoteProfile.profileSkipped && (quoteProfile.businessName || quoteProfile.businessBio || quoteProfile.businessLogo || quoteProfile.caseImages.length > 0) ? (
                 <section className="mt-4">
-                  <h2 className="font-serif text-2xl">{businessName}</h2>
-                  {quoteProfile.businessBio ? <p className="mt-2 text-sm leading-6">{quoteProfile.businessBio}</p> : null}
-                  {quoteProfile.caseImages.length > 0 ? (
-                    <div className="mt-3 flex gap-2">
-                      {quoteProfile.caseImages.map((src) => (
-                        <Image key={src} src={src} alt="" width={72} height={72} unoptimized={storedUpload(src)} className="h-[72px] w-[72px] rounded-xl object-cover" />
-                      ))}
-                    </div>
-                  ) : null}
+                  <QuoteProfileBlock name={businessName} bio={quoteProfile.businessBio} logo={quoteProfile.businessLogo} photos={quoteProfile.caseImages} />
                 </section>
               ) : null}
               {product.cta === "file" ? (

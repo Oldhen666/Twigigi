@@ -11,6 +11,7 @@ import { BuyOfferFields, consumeStripePopup, type PaymentDefaults } from "@/comp
 import { CategoryFields } from "@/components/category-fields";
 import { FileLinkFields } from "@/components/file-link-fields";
 import { PagePreview, readPagePreview, type PagePreviewDraft } from "@/components/page-preview";
+import { QuoteProfileBlock } from "@/components/quote-profile";
 import { PhotoFrame } from "@/components/photo-frame";
 import { PublishAccount } from "@/components/publish-account";
 import { QuoteFormFields } from "@/components/quote-form-fields";
@@ -138,6 +139,10 @@ export function ProductForm({
   const [portfolio, setPortfolio] = useState<ProfileImage[]>(
     quoteSettings && !quoteSettings.profileSkipped ? quoteSettings.caseImages.map((src) => ({ id: src, src, kept: true })) : [],
   );
+  const [profileCopy, setProfileCopy] = useState({
+    name: quoteSettings?.profileSkipped ? "" : quoteSettings?.businessName || sellerName,
+    bio: quoteSettings?.profileSkipped ? "" : quoteSettings?.businessBio || sellerBio,
+  });
   const logoInput = useRef<HTMLInputElement>(null);
   const portfolioInput = useRef<HTMLInputElement>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -605,12 +610,28 @@ export function ProductForm({
     window.scrollTo({ top: 0 });
   }
 
+  function formText(formData: FormData, key: string) {
+    const value = formData.get(key);
+    return typeof value === "string" ? value.trim() : "";
+  }
+
+  function quoteProfilePreview(formData: FormData): PagePreviewDraft["profile"] {
+    if (cta !== "quote" || formData.get("profileSkipped") === "1") return null;
+    const name = formText(formData, "businessName") || seller;
+    const bio = formText(formData, "businessBio");
+    const logo = logoImage?.src ?? "";
+    const photos = portfolio.map((photo) => photo.src);
+    if (!name && !bio && !logo && photos.length === 0) return null;
+    return { name, bio, logo, photos };
+  }
+
   function openPreview(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
     const form = formRef.current;
     if (!form) return;
-    const next = readPagePreview(new FormData(form), photos.map((photo) => photo.src), cta, seller);
+    const previewForm = new FormData(form);
+    const next = readPagePreview(previewForm, photos.map((photo) => photo.src), cta, seller, quoteProfilePreview(previewForm));
     remember();
     // Wait until this click finishes. Replacing the button immediately can submit the form.
     window.setTimeout(() => {
@@ -660,7 +681,7 @@ export function ProductForm({
       consumeStripePopup()?.close();
       return;
     }
-    if (intent !== "stripe" && blockedOffer()) {
+    if (intent !== "draft" && intent !== "stripe" && blockedOffer()) {
       event.preventDefault();
       return;
     }
@@ -743,7 +764,7 @@ export function ProductForm({
   }
 
   function openAccount(intent: "draft" | "publish") {
-    if (blockedOffer()) return;
+    if (intent === "publish" && blockedOffer()) return;
     if (intent === "publish" && blockedPayments()) return;
     remember();
     setAccountIntent(intent);
@@ -1158,17 +1179,17 @@ export function ProductForm({
           </div>
           <p className="text-sm leading-6 text-muted">Add details to your public listing. If you skip, we’ll show your seller name.</p>
           <Field label="Display name">
-            <input name="businessName" defaultValue={quoteSettings?.profileSkipped ? "" : quoteSettings?.businessName || sellerName} placeholder="North Yard Studio" className={inputClass} />
+            <input name="businessName" defaultValue={profileCopy.name} placeholder="North Yard Studio" onInput={(event) => setProfileCopy((current) => ({ ...current, name: event.currentTarget.value }))} className={inputClass} />
           </Field>
           <Field label="About your business">
-            <textarea name="businessBio" defaultValue={quoteSettings?.profileSkipped ? "" : quoteSettings?.businessBio || sellerBio} rows={3} placeholder="We embroider names and logos on shirts and hats." className={`${inputClass} h-auto py-3`} />
+            <textarea name="businessBio" defaultValue={profileCopy.bio} rows={3} placeholder="We embroider names and logos on shirts and hats." onInput={(event) => setProfileCopy((current) => ({ ...current, bio: event.currentTarget.value }))} className={`${inputClass} h-auto py-3`} />
           </Field>
           <div>
             <span className={labelClass}>Logo</span>
             <div className="flex items-center gap-3">
               {logoImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={logoImage.src} alt="" className="size-14 rounded-xl border border-line object-cover" />
+                <img src={logoImage.src} alt="" className="size-16 rounded-xl border border-line bg-white object-contain" />
               ) : null}
               <button type="button" className={`${ghostClass} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forest`} onClick={() => logoInput.current?.click()}>{logoImage ? "Replace logo" : "Upload logo"}</button>
               {logoImage ? <button type="button" className="text-sm font-medium text-danger" onClick={removeLogo}>Remove</button> : null}
@@ -1199,6 +1220,19 @@ export function ProductForm({
             <p className="mt-2 text-sm text-muted">{PROFILE_PHOTO_HELP} Up to {PORTFOLIO_LIMIT}.</p>
             {visibleErrors.caseImages ? <p className="mt-1 text-sm text-danger">{visibleErrors.caseImages}</p> : null}
           </div>
+          {logoImage || portfolio.length > 0 ? (
+            <div className="rounded-2xl border border-line bg-white px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted">On your listing</p>
+              <div className="mt-3">
+                <QuoteProfileBlock
+                  name={profileCopy.name.trim() || seller}
+                  bio={profileCopy.bio.trim()}
+                  logo={logoImage?.src}
+                  photos={portfolio.map((photo) => photo.src)}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1350,9 +1384,6 @@ export function ProductForm({
 
       {quote ? (
         <div className={step !== 3 ? "hidden" : undefined}>
-          <Section title="Quote Requirements">
-            <p className="text-sm text-muted">Choose what the customer fills in. Email stays required. Custom fields can be required. Customers can also attach photos or files.</p>
-          </Section>
           <QuoteFormFields value={quoteDraft(draft, product)} onChange={remember} />
         </div>
       ) : null}
@@ -1416,25 +1447,29 @@ export function ProductForm({
           {publishButton}
         </div>
       ) : quote && step === 1 ? (
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button type="button" onClick={() => { setProfileSkipped(true); showStep(2); }} className="order-2 h-12 text-sm font-medium text-muted hover:text-ink sm:order-1">Skip for now</button>
+        <div className="sticky bottom-3 z-10 mt-8 flex flex-col gap-2 rounded-[28px] border border-line bg-card p-2 shadow-lg sm:flex-row sm:items-center">
+          <button type="button" onClick={() => { setProfileSkipped(true); showStep(2); }} className="order-3 h-12 px-4 text-sm font-medium text-muted hover:text-ink sm:order-1">Skip for now</button>
+          {draftButton}
           <button type="button" onClick={() => { setProfileSkipped(false); showStep(2); }} className={`${buttonClass} order-1 w-full sm:order-2 sm:w-auto`}>Continue to listing details</button>
         </div>
       ) : stepped && step === 1 ? (
-        <div className="sticky bottom-3 z-10 mt-8 rounded-full border border-line bg-card p-2 shadow-lg">
-          <button type="button" onClick={() => showStep(2)} className={`${buttonClass} w-full`}>
+        <div className="sticky bottom-3 z-10 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg [&_button]:!px-2.5 [&_button]:text-sm">
+          {draftButton}
+          <button type="button" onClick={() => showStep(2)} className={`${buttonClass} min-w-0 flex-1`}>
             Next
           </button>
         </div>
       ) : quote && step === 2 ? (
-        <div className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg">
-          <button type="button" onClick={() => showStep(1)} className={`${ghostClass} flex-1`}>Back</button>
-          <button type="button" onClick={() => showStep(3)} className={`${buttonClass} flex-1`}>Next</button>
+        <div className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg [&_button]:!px-2.5 [&_button]:text-sm">
+          <button type="button" onClick={() => showStep(1)} className={`${ghostClass} min-w-0 flex-1`}>Back</button>
+          {draftButton}
+          <button type="button" onClick={() => showStep(3)} className={`${buttonClass} min-w-0 flex-1`}>Next</button>
         </div>
       ) : quote && step === 3 ? (
-        <div className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg">
-          <button type="button" onClick={() => showStep(2)} className={`${ghostClass} flex-1`}>Back</button>
-          <button type="button" onClick={() => showStep(4)} className={`${buttonClass} flex-1`}>Next</button>
+        <div className="sticky bottom-3 mt-8 flex gap-2 rounded-full border border-line bg-card p-2 shadow-lg [&_button]:!px-2.5 [&_button]:text-sm">
+          <button type="button" onClick={() => showStep(2)} className={`${ghostClass} min-w-0 flex-1`}>Back</button>
+          {draftButton}
+          <button type="button" onClick={() => showStep(4)} className={`${buttonClass} min-w-0 flex-1`}>Next</button>
         </div>
       ) : (
       <div key="edit-actions" className="sticky bottom-3 mt-8 flex gap-1.5 rounded-full border border-line bg-card p-1.5 shadow-lg [&_button]:!px-2.5 [&_button]:text-sm">

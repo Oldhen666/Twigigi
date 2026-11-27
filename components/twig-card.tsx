@@ -52,12 +52,13 @@ export function TwigCard({
   const showDuplicate = product.status === "draft";
   const showDelete = canDelete && (product.status === "draft" || product.status === "deactivated");
   const period = product.paidUntil ? `Paid until ${formatBillingDate(product.paidUntil)}` : product.billingStatus === "legacy_review" ? "Not on automatic billing" : "";
+  const name = product.title.trim() || "Untitled";
 
   return (
     <article className="flex gap-3 rounded-3xl border border-line bg-card p-3">
-      {selectable ? <TwigCheckbox id={product.id} title={product.title} /> : null}
+      {selectable ? <TwigCheckbox id={product.id} title={name} /> : null}
       {live ? (
-        <Link href={url} aria-label={product.title} className="relative block size-16 shrink-0 overflow-hidden rounded-2xl bg-paper-deep">
+        <Link href={url} aria-label={name} className="relative block size-16 shrink-0 overflow-hidden rounded-2xl bg-paper-deep">
           {product.images[0] ? <Image src={product.images[0]} alt="" fill unoptimized={storedUpload(product.images[0])} className="object-cover" sizes="64px" /> : null}
         </Link>
       ) : (
@@ -68,9 +69,9 @@ export function TwigCard({
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
           {live ? (
-            <Link href={url} className="min-w-0 font-medium leading-5 hover:underline">{product.title}</Link>
+            <Link href={url} className="min-w-0 font-medium leading-5 hover:underline">{name}</Link>
           ) : (
-            <h3 className="min-w-0 font-medium leading-5">{product.title}</h3>
+            <h3 className="min-w-0 font-medium leading-5">{name}</h3>
           )}
           <span className="flex shrink-0 items-center gap-1">
             {product.demo ? <span className="rounded-full bg-paper-deep px-2 py-0.5 text-xs text-muted">Demo</span> : null}

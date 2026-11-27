@@ -1,3 +1,4 @@
+import { QuoteProfileBlock } from "@/components/quote-profile";
 import { RichDescription } from "@/components/rich-description";
 import { categoryLabel } from "@/lib/categories";
 import { ctaCopy, formatMoney, pickupDetail, videoEmbed } from "@/lib/format";
@@ -28,9 +29,16 @@ export type PagePreviewDraft = {
   videoUrl: string;
   quoteFields: { label: string; required: boolean; upload?: boolean; choices?: string[] }[];
   sellerName: string;
+  profile: { name: string; bio: string; logo: string; photos: string[] } | null;
 };
 
-export function readPagePreview(formData: FormData, images: string[], cta: Cta, sellerName: string): PagePreviewDraft {
+export function readPagePreview(
+  formData: FormData,
+  images: string[],
+  cta: Cta,
+  sellerName: string,
+  profile: PagePreviewDraft["profile"] = null,
+): PagePreviewDraft {
   const title = text(formData, "title") || "Untitled";
   const price = text(formData, "price");
   const amount = Number(price);
@@ -68,6 +76,7 @@ export function readPagePreview(formData: FormData, images: string[], cta: Cta, 
     videoUrl: text(formData, "videoUrl"),
     quoteFields: cta === "quote" ? quoteFields(text(formData, "quoteFormJson")) : [],
     sellerName,
+    profile: cta === "quote" ? profile : null,
   };
 }
 
@@ -98,6 +107,11 @@ export function PagePreview({ draft }: { draft: PagePreviewDraft }) {
             </div>
           ) : null}
           {draft.priceLabel ? <p className="mt-2 font-serif text-3xl text-forest">{draft.priceLabel}</p> : null}
+          {draft.profile ? (
+            <div className="mt-4">
+              <QuoteProfileBlock name={draft.profile.name} bio={draft.profile.bio} logo={draft.profile.logo} photos={draft.profile.photos} />
+            </div>
+          ) : null}
           {draft.methods.length > 0 ? (
             <ul className="mt-3 flex flex-wrap gap-2">
               {draft.methods.map((method) => (

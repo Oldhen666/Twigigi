@@ -7,6 +7,7 @@ import { ghostClass, inputClass } from "@/components/ui";
 
 const MAX_FIELDS = 8;
 const MAX_CHOICES = 12;
+const EXAMPLE_FIELD = "Can you describe the scope of your work?";
 
 export function QuoteFormFields({ value, onChange }: { value?: QuoteForm | null; onChange?: () => void }) {
   const [form, setForm] = useState<QuoteForm>(() => editorForm(value));
@@ -41,7 +42,7 @@ export function QuoteFormFields({ value, onChange }: { value?: QuoteForm | null;
   return (
     <section className="mt-8">
       <h2 className="font-serif text-2xl">Quotation Form</h2>
-      <p className="mt-2 text-sm text-muted">This is the form customers fill in when they request a quote.</p>
+      <p className="mt-2 text-sm text-muted">Build your own quote request form. Choose what customers need to share before you prepare a quote, from contact details and project requirements to photos and files.</p>
       <input type="hidden" name="quoteFormJson" value={JSON.stringify(saved)} />
 
       <div className="mt-4 space-y-3 rounded-2xl border border-line bg-white p-4">
@@ -171,8 +172,12 @@ function editorForm(value?: QuoteForm | null): QuoteForm {
     ...base,
     items: [],
     terms: "",
-    questions: base.questions.length > 0 ? base.questions.map(readyQuestion) : [blankQuestion("q-1")],
+    questions: base.questions.length > 0 ? base.questions.map(readyQuestion) : [exampleQuestion("q-1")],
   };
+}
+
+function exampleQuestion(id: string): QuoteForm["questions"][number] {
+  return { id, label: EXAMPLE_FIELD, required: false, answer: "text", choices: [] };
 }
 
 function blankQuestion(id: string): QuoteForm["questions"][number] {

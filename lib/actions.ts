@@ -595,7 +595,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const videoRaw = text(formData, "videoUrl").trim();
   const videoUrl = videoRaw ? cleanHttpUrl(videoRaw) : null;
 
-  if (title.length < 2) errors.title = "Enter a product name.";
+  const drafting = intent === "draft";
+  if (!drafting && title.length < 2) errors.title = "Enter a product name.";
   if (title.length > 80) errors.title = "Keep the name under 80 characters.";
   const allowService = cta === "buy" || cta === "quote";
   const categoryKindInput = text(formData, "categoryKind");
@@ -605,12 +606,12 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
       : cta === "contact"
         ? null
         : resolveCategory(categoryKindInput, text(formData, "categoryGroup"), text(formData, "category"), allowService);
-  if (cta !== "contact" && cta !== "file" && !chosenCategory) {
+  if (!drafting && cta !== "contact" && cta !== "file" && !chosenCategory) {
     errors.category = categoryProblem(categoryKindInput, text(formData, "categoryGroup"), text(formData, "category"), allowService) ?? "Choose a category.";
   }
   if (descriptionLength > 2000) {
     errors.description = `Keep the description under 2,000 characters (${descriptionLength.toLocaleString("en-US")} so far).`;
-  } else if (descriptionLength < 10) {
+  } else if (!drafting && descriptionLength < 10) {
     const remaining = 10 - descriptionLength;
     errors.description =
       remaining === 10
@@ -655,8 +656,8 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   const quantityRaw = parseWhole(text(formData, "quantityAvailable"));
   let quantityAvailable: number | null = null;
   if (priced && quantityMode === "limited") {
-    if (quantityRaw === "invalid" || quantityRaw == null) errors.quantityAvailable = "Enter how many you can sell, or choose Unlimited.";
-    else quantityAvailable = quantityRaw;
+    if (quantityRaw === "invalid" || (!drafting && quantityRaw == null)) errors.quantityAvailable = "Enter how many you can sell, or choose Unlimited.";
+    else if (typeof quantityRaw === "number") quantityAvailable = quantityRaw;
   }
   const offer =
     cta === "buy"
@@ -672,10 +673,10 @@ export async function saveProduct(_prev: FormState, formData: FormData): Promise
   Object.assign(errors, offer.errors);
   if (buttonLabel.length > 40) errors.buttonLabel = "Keep the button text under 40 characters.";
 
-  if (priced && price !== "invalid" && (typeof price !== "number" || price < 50)) {
+  if (!drafting && priced && price !== "invalid" && (typeof price !== "number" || price < 50)) {
     errors.price = "Enter a price of at least $0.50.";
   }
-  if (cta === "buy") {
+  if (!drafting && cta === "buy") {
     const place = placeProblem(location);
     if (place) errors.location = place;
   }
