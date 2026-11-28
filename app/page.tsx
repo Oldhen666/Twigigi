@@ -67,6 +67,16 @@ const fallbacks = [
     image: "/seed/deck-1.jpg",
     seller: "Ava Chen",
   },
+  {
+    href: "/ava/mobile-home",
+    slug: "mobile-home",
+    title: "Mobile home",
+    location: "Edmonton, Alberta",
+    price: "Starting at $89,000 CAD per home",
+    cta: "Request a Quote",
+    image: "/seed/mobile-home-1.jpg",
+    seller: "Ava Chen",
+  },
 ] as const;
 
 function StepIcon({ kind }: { kind: "create" | "share" | "sell" }) {

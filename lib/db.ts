@@ -5411,8 +5411,97 @@ function ensureAvaDesk() {
   );
 }
 
+function ensureMobileHomeDemo() {
+  if (!one("SELECT id FROM users WHERE id = 'usr_ava'")) return;
+  const now = "2026-10-24T15:00:00.000Z";
+  const description = "A manufactured home for an Edmonton-area lot. Share the size you need and where it should be set up. The quote covers the home, delivery, and setup.";
+  const images = JSON.stringify(["/seed/mobile-home-1.jpg"]);
+  const form = JSON.stringify({
+    askName: true,
+    askPhone: true,
+    askCompany: false,
+    askAddress: true,
+    askQuantity: false,
+    items: [],
+    questions: [
+      { id: "size", label: "What size of home do you need?", required: true, answer: "text", choices: [] },
+      { id: "site", label: "Where should it be delivered?", required: true, answer: "text", choices: [] },
+    ],
+    terms: "",
+  });
+  if (!one("SELECT id FROM products WHERE id = 'prd_mobile'") && !one("SELECT id FROM products WHERE user_id = 'usr_ava' AND lower(slug) = 'mobile-home'")) {
+    db.prepare(
+      `INSERT INTO products (
+        id, user_id, slug, title, description, price_cents, currency, location,
+        delivery_enabled, onsite_enabled, cta, contact_email, contact_phone,
+        status, images_json, button_label, quote_form_json,
+        category_kind, category_group, category,
+        require_name, require_email, require_phone, seller_contact_mode, seller_contact,
+        demo, quote_fee_exempt, billing_status, auto_renew, created_at, updated_at
+      ) VALUES (
+        'prd_mobile', 'usr_ava', 'mobile-home', 'Mobile home', ?, 8900000, 'CAD', 'Edmonton, Alberta',
+        1, 1, 'quote', 'ava@twigigi.demo', '780-555-0148',
+        'published', ?, 'Request a Quote', ?,
+        'service', 'property-real-estate', 'other-property-services',
+        1, 1, 1, 'email', 'ava@twigigi.demo',
+        1, 1, 'legacy_review', 0, ?, ?
+      )`,
+    ).run(description, images, form, now, now);
+  }
+  db.prepare(
+    `UPDATE products SET
+      slug = 'mobile-home',
+      title = 'Mobile home',
+      description = ?,
+      price_cents = 8900000,
+      currency = 'CAD',
+      location = 'Edmonton, Alberta',
+      pickup_enabled = 0,
+      delivery_enabled = 1,
+      shipping_enabled = 0,
+      onsite_enabled = 1,
+      remote_enabled = 0,
+      at_location_enabled = 0,
+      cta = 'quote',
+      contact_email = 'ava@twigigi.demo',
+      contact_phone = '780-555-0148',
+      status = 'published',
+      images_json = ?,
+      button_label = 'Request a Quote',
+      quote_form_json = ?,
+      category_kind = 'service',
+      category_group = 'property-real-estate',
+      category = 'other-property-services',
+      payment_methods = '[]',
+      require_name = 1,
+      require_email = 1,
+      require_phone = 1,
+      seller_contact_mode = 'email',
+      seller_contact = 'ava@twigigi.demo',
+      quote_price_mode = 'starting',
+      quote_price_max_cents = NULL,
+      quote_price_unit = 'custom',
+      quote_price_unit_custom = 'home',
+      demo = 1,
+      fee_exempt = 0,
+      quote_fee_exempt = 1,
+      billing_status = 'legacy_review',
+      auto_renew = 0
+     WHERE id = 'prd_mobile' AND user_id = 'usr_ava'`,
+  ).run(description, images, form);
+  const ava = one("SELECT public_id FROM users WHERE id = 'usr_ava'");
+  const publicId = str(ava?.public_id).toLowerCase();
+  if (!publicId) return;
+  try {
+    updateTag(`seller:${publicId}`);
+    updateTag(`product:${publicId}:mobile-home`);
+  } catch {
+    // Cache tags are not ready while the database module is loading.
+  }
+}
+
 function ensureCurrentDemoTwigs() {
-  const ids = ["prd_cedar", "prd_bench", "prd_wreath", "prd_plan", "prd_tee", "prd_desk"];
+  const ids = ["prd_cedar", "prd_bench", "prd_wreath", "prd_plan", "prd_tee", "prd_desk", "prd_mobile"];
   const mark = db.prepare("UPDATE products SET demo = 1 WHERE id = ? AND user_id = 'usr_ava'");
   for (const id of ids) mark.run(id);
   db.prepare(
@@ -5554,6 +5643,7 @@ ensureDemoCategories();
 ensureAvaDemoDetails();
 ensureAvaTee();
 ensureAvaDesk();
+ensureMobileHomeDemo();
 ensureCurrentDemoTwigs();
 ensurePublicIds();
 voidWaivedOpenFees();
