@@ -3158,6 +3158,67 @@ export function adminDeleteProduct(id: string) {
   return removeProductRow(id);
 }
 
+export function transferProductOwner(productId: string, targetUserId: string) {
+  const row = one(
+    "SELECT id, user_id, slug, title, cta, demo, draft_key FROM products WHERE id = ?",
+    productId,
+  );
+  if (!row) return { ok: false as const, reason: "missing" as const };
+  if (num(row.demo) === 1) return { ok: false as const, reason: "demo" as const };
+  const previousUserId = str(row.user_id);
+  if (previousUserId === targetUserId) return { ok: false as const, reason: "same" as const };
+  if (!one("SELECT id FROM users WHERE id = ?", targetUserId)) return { ok: false as const, reason: "target" as const };
+  const previousSlug = str(row.slug);
+  const slug = uniqueSlug(targetUserId, previousSlug);
+  const now = new Date().toISOString();
+  const draftKey = randomUUID();
+  const settings = str(row.cta) === "quote" ? readQuoteTwigSettings(productId) : null;
+  if (settings && !settings.profileSkipped && settings.businessName) listBusinessProfiles(targetUserId);
+  db.exec("BEGIN");
+  try {
+    const collisions = many(
+      `SELECT id FROM products
+       WHERE user_id = ? AND status = 'draft' AND cta = ? AND lower(trim(title)) = lower(trim(?))
+         AND (draft_key = '' OR draft_key = ?)`,
+      targetUserId,
+      str(row.cta),
+      str(row.title),
+      str(row.draft_key),
+    );
+    const separate = db.prepare("UPDATE products SET draft_key = ? WHERE id = ? AND user_id = ? AND status = 'draft'");
+    for (const item of collisions) separate.run(randomUUID(), str(item.id), targetUserId);
+    const moved = db.prepare(
+      `UPDATE products SET
+         user_id = ?, slug = ?, status = 'draft', fee_exempt = 0, quote_fee_exempt = 0,
+         paid_until = '', next_renewal_at = '', grace_until = '', billing_status = '', auto_renew = 0,
+         billing_anchor_day = 0, billing_started_at = NULL, deactivates_at = NULL, deactivated_at = NULL,
+         draft_key = ?, updated_at = ?
+       WHERE id = ? AND user_id = ?`,
+    ).run(targetUserId, slug, draftKey, now, productId, previousUserId);
+    if (moved.changes !== 1) throw new Error("Could not transfer this Twig.");
+    db.prepare(
+      `UPDATE twig_bills
+       SET status = CASE WHEN status = 'paid' THEN status ELSE 'void' END,
+           billing_period_key = CASE WHEN billing_period_key = '' THEN '' ELSE 'transferred:' || id END
+       WHERE product_id = ? AND kind = 'listing' AND status != 'void'`,
+    ).run(productId);
+    if (settings && !settings.profileSkipped && settings.businessName) {
+      saveBusinessProfile({
+        userId: targetUserId,
+        name: settings.businessName,
+        bio: settings.businessBio,
+        logo: settings.businessLogo,
+        photos: settings.caseImages,
+      });
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return { ok: true as const, previousUserId, previousSlug, slug, userId: targetUserId };
+}
+
 export function sellerProducts(userId: string) {
   settleDeactivations();
   collapseDraftCopies(userId);

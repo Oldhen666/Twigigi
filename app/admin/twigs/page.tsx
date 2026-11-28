@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AdminListTools } from "@/components/admin-list-tools";
 import { AdminDeleteTwig } from "@/components/admin-delete-twig";
+import { AdminTransferTwig } from "@/components/admin-transfer-twig";
 import { adminSetTwig, duplicateTwig, setListingFree, setQuoteFeeFree } from "@/lib/actions";
 import { emptyListMessage, includesText, pick, queryValue, sortRows } from "@/lib/admin-list";
 import { requireAdmin } from "@/lib/auth";
@@ -15,6 +16,8 @@ const SORTS = ["updated", "title", "seller"] as const;
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requireAdmin();
   const query = await searchParams;
+  const error = typeof query.error === "string" ? query.error : "";
+  const transferred = query.transferred === "1";
   const q = queryValue(query.q);
   const status = pick(queryValue(query.status), STATUSES);
   const type = pick(queryValue(query.type), TYPES);
@@ -38,7 +41,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   return (
     <main className="mx-auto w-full max-w-5xl px-5 pb-16">
       <h1 className="font-serif text-4xl">Twigs</h1>
-      <p className="mt-2 text-sm text-muted">Edit any Twig, or deactivate and reactivate it.</p>
+      <p className="mt-2 text-sm text-muted">Edit any Twig, deactivate it, or transfer it to another seller. A transferred Twig becomes a draft until that seller publishes it and pays.</p>
+      {error ? <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
+      {transferred ? <p className="mt-4 rounded-xl bg-card px-3 py-2 text-sm text-forest">Transferred. It is a draft until that seller publishes it and pays.</p> : null}
       <AdminListTools
         path="/admin/twigs"
         q={q}
@@ -60,7 +65,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       {empty ? <p className="mt-6 text-sm text-muted">{empty}</p> : (
       <ul className="mt-6 space-y-3">
         {products.map((product) => (
-          <li key={product.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card px-4 py-3 text-sm">
+          <li key={product.id} className="rounded-2xl border border-line bg-card px-4 py-3 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="font-medium">{product.title}</p>
               <p className="text-muted">{product.displayName} · {product.status}{product.demo ? " · Demo" : ""}{product.deactivatesAt ? " · ending" : ""}{product.feeExempt ? (product.status === "draft" ? " · payment waived" : " · free forever") : ""}{product.cta === "quote" && product.quoteFeeExempt ? " · quote fee waived" : ""} · Last updated {formatDate(product.updatedAt, product.location)}</p>
@@ -102,6 +108,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
               ) : null}
               <AdminDeleteTwig id={product.id} title={product.title} />
             </div>
+            </div>
+            {product.demo ? null : <AdminTransferTwig id={product.id} title={product.title} />}
           </li>
         ))}
       </ul>

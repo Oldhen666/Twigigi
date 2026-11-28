@@ -37,6 +37,7 @@ import {
   clearDeactivatesAt,
   clearDeactivatedAt,
   adminDeleteProduct,
+  transferProductOwner,
   deleteProduct,
   deleteUserAccount,
   duplicateProduct,
@@ -3280,6 +3281,35 @@ export async function adminDeleteTwig(formData: FormData) {
     updateTag(sellerTag(seller.publicId));
   }
   redirect("/admin/twigs");
+}
+
+export async function adminTransferTwig(formData: FormData) {
+  await requireAdmin();
+  const product = getProductById(text(formData, "id"));
+  const sellerText = text(formData, "seller").trim();
+  const next = "/admin/twigs";
+  if (!product) redirect(`${next}?error=${encodeURIComponent("That Twig was not found.")}`);
+  const seller = sellerText.includes("@")
+    ? findUserByEmail(sellerText)
+    : findUserById(findUserByUsername(sellerText) || "");
+  if (!seller) redirect(`${next}?error=${encodeURIComponent("No seller matches that email or username.")}`);
+  const moved = transferProductOwner(product.id, seller.id);
+  if (!moved.ok) {
+    const message = moved.reason === "demo"
+      ? "Demo Twigs stay on their demo account."
+      : moved.reason === "same"
+        ? "That seller already owns this Twig."
+        : "That Twig was not found.";
+    redirect(`${next}?error=${encodeURIComponent(message)}`);
+  }
+  const previous = findUserById(moved.previousUserId);
+  if (previous) {
+    updateTag(productTag(previous.publicId, moved.previousSlug));
+    updateTag(sellerTag(previous.publicId));
+  }
+  updateTag(productTag(seller.publicId, moved.slug));
+  updateTag(sellerTag(seller.publicId));
+  redirect(`${next}?transferred=1`);
 }
 
 export async function adminSetTwig(formData: FormData) {
